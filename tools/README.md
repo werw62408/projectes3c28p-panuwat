@@ -11,8 +11,8 @@
 ```
 cd tools/sim
 ./setup.sh                                          # ครั้งแรกครั้งเดียว: โหลด LovyanGFX 1.2.30 + ArduinoJson 7.4.2
-./run_tests.sh ../../SomudTick_v11.2/SomudTick      # รันทุกการทดสอบ
-./shots.sh shots_v11.cpp ../../SomudTick_v11.2/SomudTick run/shots   # ถ่ายภาพหน้าจอ
+./run_tests.sh ../../SomudTick_v11.4/SomudTick      # รันทุกการทดสอบ
+./shots.sh shots_v11.cpp ../../SomudTick_v11.4/SomudTick run/shots   # ถ่ายภาพหน้าจอ
 python3 sheet.py out.png 4 run/shots/*.png          # รวมภาพหลายภาพเป็นแผ่นเดียว
 ```
 ✅ ต้องเห็นบรรทัดสุดท้ายเป็น `ALL TESTS PASSED`
@@ -31,6 +31,23 @@ python3 sheet.py out.png 4 run/shots/*.png          # รวมภาพหล�
 
 ## 2. สร้างไฟล์เฟิร์มแวร์ (`build_firmware.sh`)
 ```
-ARD=/path/to/arduino-cli ARD_DATA=/path/to/arduino-data ./build_firmware.sh ../SomudTick_v11.2/SomudTick
+ARD=/path/to/arduino-cli ARD_DATA=/path/to/arduino-data ./build_firmware.sh ../SomudTick_v11.4/SomudTick
 ```
 ได้ไฟล์ `SomudTick_merged.bin` สำหรับแฟลชที่ตำแหน่ง 0x0 ไฟล์นี้**ไม่เติมเต็ม 16 MB** จึงไม่ทับพื้นที่เก็บ log
+
+## 3. ทดสอบตัวแปลงคลิปของหน้าเว็บ (`web/`) (v11.4)
+รันโค้ดแปลงคลิปของหน้าเว็บ (`sendVideo` ใน `webpage.h`) ใน Chromium บนคอม โดยจำลองบอร์ดขึ้นมาแทน แล้วนับว่าได้ภาพครบไหม
+```
+cd tools/web
+node test_video.js ../../SomudTick_v11.4/SomudTick/webpage.h
+```
+ต้องมี Node กับ Playwright (`npm i -g playwright`) ใช้คลิปทดสอบ `test.webm` ยาว 6 วินาที ต้องได้ 90 ภาพ (15 ภาพต่อวินาที)
+ทดสอบ 5 แบบ:
+- เล่นปกติ
+- มือถือไม่ยอมเล่นคลิป
+- คลิปหยุดกลางทาง
+- สัญญาณ "กระโดดเสร็จ" หายบางครั้ง
+- สัญญาณ "กระโดดเสร็จ" หายทุกครั้ง
+
+✅ 4 แบบแรกต้องขึ้น `done` และ `frames=90`
+✅ แบบสุดท้าย (`noframes`) ต้องขึ้น `ERROR:` พร้อมข้อความ ภายในประมาณ 20 วินาที ห้ามค้าง

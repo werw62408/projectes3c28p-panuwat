@@ -19,6 +19,7 @@ MDNSClass MDNS;
 bool g_simOffline = false;
 std::string g_simLogsRoot;
 std::vector<SimBle> g_simBle;
+int g_simIrMsgs = 0; int g_simDriveCap[64] = {0};   // IR messages sent, pin drive strength (tests)
 int g_simAnalog[64], g_simDigital[64];
 static bool g_simPinsInit = [] { for (int i = 0; i < 64; i++) { g_simAnalog[i] = 2048; g_simDigital[i] = HIGH; } return true; }();
 bool g_simTouch = false; int g_simTouchX = 0, g_simTouchY = 0;   // a finger on the screen

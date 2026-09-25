@@ -136,6 +136,8 @@ class IPAddress {
  public:
   IPAddress(uint8_t a = 0, uint8_t b = 0, uint8_t c = 0, uint8_t d = 0) : a_{a, b, c, d} {}
   String toString() const { char b[20]; snprintf(b, sizeof b, "%u.%u.%u.%u", a_[0], a_[1], a_[2], a_[3]); return String(b); }
+  bool operator==(const IPAddress& o) const { return memcmp(a_, o.a_, 4) == 0; }
+  bool operator!=(const IPAddress& o) const { return !(*this == o); }
 };
 enum { WIFI_OFF = 0, WIFI_STA = 1, WIFI_AP = 2, WIFI_AP_STA = 3 };
 enum { WL_IDLE_STATUS = 0, WL_CONNECTED = 3, WL_DISCONNECTED = 6 };
@@ -203,6 +205,8 @@ class WebServer {
   void setContentLength(size_t) {}
   void sendContent(const String& s) { lastBody += s; }
   HTTPUpload& upload() { static HTTPUpload u; return u; }
+  struct SimClient { IPAddress local = IPAddress(192, 168, 1, 57); IPAddress localIP() { return local; } } simClient;   // tests: which Wi-Fi the phone came in on
+  SimClient& client() { return simClient; }
 };
 
 // ---------------- HTTP client: really downloads with curl ----------------
@@ -255,11 +259,16 @@ const uint8_t kPanasonicAcAuto = 0, kPanasonicAcDry = 2, kPanasonicAcCool = 3, k
 const uint8_t kPanasonicAcMinTemp = 16, kPanasonicAcMaxTemp = 30;
 const uint8_t kPanasonicAcFanMin = 0, kPanasonicAcFanLow = 1, kPanasonicAcFanMed = 2, kPanasonicAcFanHigh = 3, kPanasonicAcFanMax = 4, kPanasonicAcFanAuto = 7;
 const uint8_t kPanasonicAcSwingVHighest = 1, kPanasonicAcSwingVHigh = 2, kPanasonicAcSwingVMiddle = 3, kPanasonicAcSwingVLow = 4, kPanasonicAcSwingVLowest = 5, kPanasonicAcSwingVAuto = 15;
+extern int g_simIrMsgs;   // IR messages sent (tests)
+typedef int gpio_num_t;
+enum { GPIO_DRIVE_CAP_0, GPIO_DRIVE_CAP_1, GPIO_DRIVE_CAP_2, GPIO_DRIVE_CAP_3 };
+extern int g_simDriveCap[64];
+inline int gpio_set_drive_capability(gpio_num_t p, int c) { g_simDriveCap[p & 63] = c; return 0; }
 class IRPanasonicAc {
  public:
   IRPanasonicAc(int) {}
   void begin() {} void stateReset() {} void setModel(panasonic_ac_remote_model_t) {} void setMode(uint8_t) {}
-  void setTemp(uint8_t) {} void setFan(uint8_t) {} void setSwingVertical(uint8_t) {} void setQuiet(bool) {} void setPower(bool) {} void send() {}
+  void setTemp(uint8_t) {} void setFan(uint8_t) {} void setSwingVertical(uint8_t) {} void setQuiet(bool) {} void setPower(bool) {} void send(uint16_t repeat = 0) { g_simIrMsgs += 1 + repeat; }
 };
 
 // ---------------- BLE ----------------
