@@ -5,17 +5,17 @@
 // ---------------- Touch ----------------
 void goScreen(Screen s) {
   if (s == S_SET) setPage = 0;   // Settings tab = main settings page
-  if (s == S_STATS && scr != S_STATS) { statTotalsOk = false; st.clear(); }   // fresh numbers when you open Stats
+  // Stats: the numbers are kept and counted again only when the logs changed (see statsNeed)
   scr = s;
   dirty = true;
 }
 void refreshStatsIfVisible() {
-  if (scr == S_STATS) { statTotalsOk = false; st.clear(); dirty = true; }
+  if (scr == S_STATS) dirty = true;   // statsNeed() sees the new logRev and counts again
 }
 void onTap(int x, int y) {
   if (scr == S_GAME) { gameTap(x, y); return; }
   if (remindBarShown && y >= remindBarY && y < remindBarY + 30) {
-    if (remindAct >= 0) { remindAct = -1; kpAct = -1; goScreen(S_HOME); return; }   // reminder bar: go to Log
+    if (!remindBarIsNotice) { remindAct = -1; kpAct = -1; goScreen(S_HOME); return; }   // reminder bar: go to Log
     int n = logNotice();   // notice on Log: time -> Settings > Wi-Fi, space -> About
     goScreen(S_SET); setOpenPage(n == 3 ? 2 : 3); if (n != 3) setAboutPage();
     return;
@@ -115,6 +115,7 @@ void onLongPress(int x, int y) {
 void wake() {
   lastTouchMs = millis();
   if (pw != P_ON) {
+    powerLow(false);   // full speed, screen chip awake, hotspot back on
     pw = P_ON; lcd.setBrightness(BRIGHT[brightIdx]); dirty = true;
     if (scr == S_SUDOKU && !sdkStartMs) sdkStartMs = millis();   // Sudoku clock runs again
   }
@@ -175,6 +176,7 @@ void calText(const char* l1, const char* l2, const char* l3, const char* l4) {
   lcd.drawString(l2, cx, 145); lcd.drawString(l3, cx, 167); lcd.drawString(l4, cx, 189);
 }
 void runTouchCal() {
+  powerLow(false);   // BOOT held while the screen was off
   lcd.setBrightness(BRIGHT[brightIdx]);
   lcd.setRotation(0);   // always calibrate standing up (the result works for every direction)
   while (true) {

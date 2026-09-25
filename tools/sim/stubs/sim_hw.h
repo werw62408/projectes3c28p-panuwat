@@ -147,11 +147,13 @@ class WiFiClass {
   String ssid = "Panuwat_Home_5G";
   std::vector<SimNet> nets;
   int scanState = WIFI_SCAN_FAILED;
-  bool mode(int) { return true; }
-  bool softAP(const char*, const char*) { return true; }
-  bool softAPdisconnect(bool) { return true; }
+  int curMode = 0; bool apUp = false; int stations = 0, beginCalls = 0;   // for tests
+  bool mode(int m) { curMode = m; if (m != 2 && m != 3) apUp = false; return true; }   // 2 = AP, 3 = AP+STA
+  bool softAP(const char*, const char*) { apUp = true; return true; }
+  bool softAPdisconnect(bool) { apUp = false; return true; }
+  int softAPgetStationNum() { return stations; }
   void setAutoReconnect(bool) {}
-  int begin(const char*, const char*) { return 0; }
+  int begin(const char*, const char*) { beginCalls++; return 0; }
   bool disconnect() { return true; }
   int status() { return connected ? WL_CONNECTED : WL_DISCONNECTED; }
   String SSID() { return ssid; }

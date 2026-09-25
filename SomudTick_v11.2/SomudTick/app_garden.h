@@ -62,6 +62,9 @@ void gardenSync() {
   String yesterday = dayKey(n - 86400);
   int back = gdDay.length() ? 30 : 7;   // first time: grow from the last 7 days of logs
   bool changed = false;
+  if (gdDay.length() && strcmp(dayKey(n - (time_t)(back + 1) * 86400).c_str(), gdDay.c_str()) > 0 && gdStreak) {
+    gdStreak = 0; changed = true;   // more than 30 days since the last count: days were missed, the streak is over
+  }
   for (int d = back; d >= 1; --d) {
     String k = dayKey(n - (time_t)d * 86400);
     if (gdDay.length() && strcmp(k.c_str(), gdDay.c_str()) <= 0) continue;   // already counted

@@ -19,11 +19,12 @@ int statView = 0, statScroll = 0, statMax = 0;
 bool statTotalsOk = false;
 const char* STAT_VIEWS[3] = {"All", "Days", "Hours"};
 int statTop() { return HDR_H + 36; }
-void statsNeed(int days) {   // make sure the numbers for `days` days are ready
-  if (st.size() != acts.size()) statTotalsOk = false;
+uint32_t stRev = 0; String stDay;   // the logs / day the numbers were counted for
+void statsNeed(int days) {   // make sure the numbers for `days` days are ready (count again only if something changed)
+  if (st.size() != acts.size() || stRev != logRev || stDay != curDay) statTotalsOk = false;
   if (st.size() == acts.size() && stDays == days && statTotalsOk) return;
   computeStats(days, !statTotalsOk);
-  statTotalsOk = true;
+  statTotalsOk = true; stRev = logRev; stDay = curDay;
 }
 // top row: [< Back] [All] [Days] [Hours]. Back goes to Log.
 int statTabW() { return (W - 74 - 4 - 6) / 3; }   // 3 buttons after Back (gap 3)

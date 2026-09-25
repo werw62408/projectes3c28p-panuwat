@@ -3,13 +3,14 @@
   (ESP32-S3 + 2.8" IPS 240x320 screen + FT6336G touch)
 
   Screen text is in simple English. (The web page on the phone stays in Thai.)
-  Tabs:  Log | Stats | Apps | Settings
+  Tabs:  Log (Stats opens from Log) | Apps | Settings
   Apps:  Files (SD photos/videos) | AC Remote (Panasonic IR) | Games | Internet
   Games: Pixel Swim | Sudoku | Sand & Water | Habit Garden
 
   Extra parts (optional):
     Joystick  VRX -> IO2, VRY -> IO3, SW -> IO14, +5V -> 3.3V (not 5V!), GND -> GND
     KY-005    S -> IO21, middle -> 3.3V, "-" -> GND
+    DS3231    SDA -> IO16, SCL -> IO15, VCC -> 3.3V (not 5V!), GND -> GND   (clock module, v11.2)
     (3.3V and GND can be taken from the I2C connector)
 
   Arduino IDE: board "ESP32S3 Dev Module", Flash Size 16MB, PSRAM "OPI PSRAM",
@@ -161,6 +162,7 @@ void kbdOpen(const String& title, const String& start, void (*done)(const String
 #include "ui_main.h"
 #include "input.h"
 #include "web_api.h"
+#include "backup.h"
 
 // ---------------- setup / loop ----------------
 // First start of v10: move the day files from the small area to the new 12 MB "logs" area.
@@ -216,16 +218,13 @@ void setup() {
 
   if (!LittleFS.begin(true)) Serial.println("LittleFS mount failed");
   logsMove();
+  dayFilesRepair();   // a power cut while a day file was being saved: finish it
   totalsLoad();
   namesLoad();
   logPctCache = logUsedPct();
 
   setenv("TZ", "ICT-7", 1); tzset();
-  if (nowT() < 1700000000) {   // ไม่มีเวลาจริง → ใช้เวลาล่าสุดที่จำไว้
-    uint32_t e = prefs.getUInt("epoch", 1767200000UL);
-    setClock(e + 30, false);
-    timeApprox = true;
-  }
+  timeBegin();   // clock module -> time kept over a restart -> last saved time (a guess)
   sntp_set_time_sync_notification_cb(onTimeSync);
   configTzTime("ICT-7", "pool.ntp.org", "time.google.com", "th.pool.ntp.org");
 
@@ -238,6 +237,7 @@ void setup() {
   offIdx = min(3, (int)prefs.getUChar("offT", 1));
   apPass = prefs.getString("appass", AP_PASS); if (apPass.length() < 8) apPass = AP_PASS;
   acLoad();
+  backupLoad();
 
   loadActs();
   loadDay();
@@ -266,11 +266,12 @@ void loop() {
   if (scr == S_FILES) filesTick();
   if (scr == S_USB) usbTick();
   netPoll();   // a background download finished?
+  rtcTask();   // new real time came in -> write it to the clock module
   { static uint32_t anim = 0;   // "Loading..." / "Scanning..." dots
     if (((scr == S_NET && netBusy) || (scr == S_BT && btBusy)) && pw == P_ON && millis() - anim > 350) { anim = millis(); dirty = true; } }
   if (scr != S_WIFI && scr != S_KBD) autoPlaceTask();   // the Wi-Fi page uses the scanner itself
 
-  static uint32_t tick = 0, slow = 0;
+  static uint32_t tick = 0, slow = 0, lastMin = 99, homeT = 0;
   uint32_t ms = millis();
   static uint32_t gardenT = 0;
   if (scr == S_GARDEN && pw == P_ON && ms - gardenT > 80) { gardenT = ms; dirty = true; }   // the tree sways, clouds move
@@ -283,8 +284,15 @@ void loop() {
   if (ms - tick > 1000) {
     tick = ms;
     if (dayKey(nowT()) != curDay) { loadDay(); refreshStatsIfVisible(); dirty = true; }
-    if (scr == S_HOME || scr == S_SET || scr == S_AC || scr == S_SUDOKU || scr == S_WIFI) dirty = true;   // update clock / "min ago"
-    if (flashIdx >= 0 && ms > flashUntil) { flashIdx = -1; dirty = true; }
+    // the clock shows minutes: the Log page is drawn again when the minute changes (and every 15 s for "5m ago"),
+    // not every second (drawing the whole screen takes ~30 ms of the processor each time)
+    uint32_t minute = (uint32_t)nowT() / 60;
+    bool newMin = minute != lastMin; lastMin = minute;
+    if (scr == S_HOME && (newMin || ms - homeT > 15000)) { homeT = ms; dirty = true; }
+    if (scr == S_SUDOKU || scr == S_WIFI || (scr == S_AC && ms - acSentMs < 2500)) dirty = true;   // a running clock / status / "Sent!"
+    if ((scr == S_SET && (newMin || ms - homeT > 5000)) || (scr == S_AC && newMin)) { homeT = ms; dirty = true; }   // Settings: Wi-Fi / battery state
+    if (flashIdx >= 0 && (int32_t)(ms - flashUntil) > 0) { flashIdx = -1; dirty = true; }
+    overdueCheck();   // for the LED blink
     // เตือน: ปลุกจอครั้งเดียวต่อรอบ
     for (auto& a : acts) {
       if (overdue(a) && !remindedFor.count(a.id)) {   // show a bar at the bottom, don't leave the screen you are on
@@ -309,8 +317,13 @@ void loop() {
   if (offMs && pw == P_DIM && idle > offMs) {
     pw = P_OFF; lcd.setBrightness(0);
     if (scr == S_SUDOKU) { sdkSave(); sdkStartMs = 0; }   // pause the Sudoku clock while the screen is off
+    if (scr != S_USB) powerLow(true);   // save battery: slower processor, screen chip asleep (not while a PC uses the card)
+  }
+  if (ms - slow < 50) {   // right after the battery check (every 30 s): hotspot rest, weekly backup
+    if (pw == P_OFF) hotspotSleepTask(idle > offMs ? idle - offMs : 0);
+    backupTask(idle);
   }
 
   if (dirty && pw != P_OFF) render();
-  delay(5);
+  delay(pw == P_OFF ? 40 : 5);   // screen off: check touch 25 times a second instead of 200
 }

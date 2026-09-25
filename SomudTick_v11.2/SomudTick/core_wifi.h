@@ -8,9 +8,10 @@
 //   staOn = board joins your home Wi-Fi / phone hotspot (internet: time, weather, news)
 void setupWifi() {
   static bool mdnsUp = false;
-  if (!apOn && !staOn) { WiFi.mode(WIFI_OFF); return; }
-  WiFi.mode(apOn && staOn ? WIFI_AP_STA : apOn ? WIFI_AP : WIFI_STA);
-  if (apOn) WiFi.softAP(AP_SSID, apPass.c_str());
+  bool ap = apOn && !apAsleep;   // apAsleep: hotspot resting while the screen is off (see core_power.h)
+  if (!ap && !staOn) { WiFi.mode(WIFI_OFF); return; }
+  WiFi.mode(ap && staOn ? WIFI_AP_STA : ap ? WIFI_AP : WIFI_STA);
+  if (ap) WiFi.softAP(AP_SSID, apPass.c_str());
   if (staOn) {
     WiFi.setAutoReconnect(true);
     if (staSsid.length() && WiFi.status() != WL_CONNECTED) WiFi.begin(staSsid.c_str(), staPass.c_str());

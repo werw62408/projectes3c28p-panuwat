@@ -35,6 +35,9 @@ std::vector<FEntry> fList;
 String curDir = "/";
 String filesMsg;
 int viewIdx = -1;
+bool fmViewing = false;    // the photo viewer / video player is open
+bool filesStale = false;   // the card changed (phone web page) while a window was open: reload the list later
+bool filesMore = false;    // the folder has more than 300 files (only the first 300 are listed)
 
 // ---------------- SD ----------------
 bool sdMount() {
@@ -110,6 +113,10 @@ String fsFreeName(const String& dir, const String& name) {
   for (int k = 2; k < 100; k++) { String n = b + " (" + k + ")" + e; if (!SD_MMC.exists(joinPath(dir, n))) return n; }
   return b + "_" + String(millis()) + e;
 }
+void sdMkdirs(const String& path) {   // make every folder on the way ("/a/b/c")
+  for (int i = 1; i <= (int)path.length(); i++)
+    if (i == (int)path.length() || path[i] == '/') { String p = path.substring(0, i); if (p.length() > 1 && !SD_MMC.exists(p)) SD_MMC.mkdir(p); }
+}
 // ---- trash index ----
 std::vector<std::pair<String, String>> trashIndex() {
   std::vector<std::pair<String, String>> v;
@@ -149,7 +156,7 @@ String fsTrash(const String& path) {           // "delete": move to the Trash
 String fsRestore(const String& tn) {           // take a file out of the Trash, back to its folder
   if (!sdMount()) return "nocard";
   String from = trashFrom(tn);
-  if (!SD_MMC.exists(from)) SD_MMC.mkdir(from);
+  if (!SD_MMC.exists(from)) sdMkdirs(from);   // its folder (and the folders around it) may be gone
   String e = fsMovePair(joinPath(TRASH_DIR, tn), joinPath(from, fsFreeName(from, trashShowName(tn))));
   if (e.length()) return e;
   auto v = trashIndex(); v.erase(std::remove_if(v.begin(), v.end(), [&](const std::pair<String, String>& x) { return x.first == tn; }), v.end()); trashIndexWrite(v);
@@ -239,7 +246,7 @@ void filesLoad() {
   if (!d || !d.isDirectory()) { curDir = "/"; d = SD_MMC.open("/"); }
   File f = d.openNextFile();
   bool tr = inTrash();
-  while (f && fList.size() < 300) {
+  while (f && fList.size() < 300) {   // (a folder with more is shown with a note at the end)
     String n = baseOf(f.path());
     if (n.length() && n[0] != '.' && n != "System Volume Information") {
       if (f.isDirectory()) { if (!tr) fList.push_back({n, 0, FT_DIR, n}); }
@@ -253,6 +260,7 @@ void filesLoad() {
     f.close();
     f = d.openNextFile();
   }
+  filesMore = (bool)f; if (f) f.close();
   d.close();
   std::sort(fList.begin(), fList.end(), [](const FEntry& a, const FEntry& b) {
     if ((a.type == FT_DIR) != (b.type == FT_DIR)) return a.type == FT_DIR;
@@ -281,7 +289,7 @@ String fmPath(int i) { return joinPath(curDir, fList[i].name); }
 
 const int FROW = 38;
 int filesTop() { return HDR_H + 38; }
-int filesMax() { return max(0, (int)fList.size() * FROW - (FTR_Y - filesTop())); }
+int filesMax() { return max(0, (int)fList.size() * FROW + (filesMore ? 24 : 0) - (FTR_Y - filesTop())); }
 void drawFileIcon(FType t, int x, int cy, uint32_t c) {
   if (t == FT_DIR) { spr.fillRoundRect(x, cy - 8, 10, 4, 1, C(c)); spr.fillRoundRect(x, cy - 5, 22, 14, 2, C(c)); }
   else if (t == FT_IMG) { spr.drawRoundRect(x, cy - 8, 22, 17, 2, C(c)); spr.fillTriangle(x + 3, cy + 6, x + 10, cy - 2, x + 16, cy + 6, C(c)); spr.fillCircle(x + 16, cy - 3, 2, C(c)); }
@@ -388,10 +396,11 @@ void drawFiles() {
     txt(FS, inTrash() ? "Trash is empty" : "Nothing here yet", W / 2, top + 24, SOFT, D_TC);
     if (!inTrash()) txt(FS, fitText(FS, "Send photos from the phone web page", W - 20), W / 2, top + 46, SOFT, D_TC);
   }
+  if (filesMore) txt(FS, fitText(FS, "First 300 files shown", W - 20), W / 2, top + fList.size() * FROW - filesScroll + 2, SOFT, D_TC);
   scrollBar(top, FTR_Y - top, filesScroll, filesMax());
   spr.clearClipRect();
   // hint line at the bottom of the list
-  if (!fList.empty() && fmUi == FU_LIST && filesMax() == 0) {
+  if (!fList.empty() && fmUi == FU_LIST && filesMax() == 0 && !filesMore) {
     int y = top + fList.size() * FROW + 4;
     if (y < FTR_Y - 20) txt(FS, fitText(FS, inTrash() ? "Tap a file to put it back" : "Hold a file for more", W - 20), W / 2, y, SOFT, D_TC);
   }
@@ -423,8 +432,16 @@ void drawFiles() {
     txt(FS, fitText(FS, fmToast, tw - 12), W / 2, FTR_Y - 21, ONINK, D_MC);
   }
 }
-void filesTick() {   // called from loop(): hide the message after a moment
+void filesTick() {   // called from loop(): hide the message after a moment, reload a list that changed meanwhile
   if (fmToastT && millis() - fmToastT > 2600) { fmToastT = 0; dirty = true; }
+  if (filesStale && fmUi == FU_LIST && !fmViewing) { filesStale = false; filesLoad(); dirty = true; }
+}
+// the card was changed from the phone: reload now, or later if a menu / the viewer is open
+// (reloading under an open menu made it act on a different file)
+void filesChanged() {
+  if (scr != S_FILES) return;
+  if (fmUi != FU_LIST || fmViewing) { filesStale = true; return; }
+  filesLoad(); dirty = true;
 }
 
 // ---------------- Audio (ES8311) ----------------
@@ -583,6 +600,7 @@ void viewerBar() {
 }
 // Photo viewer: tap left half = previous, right half = next, bottom bar = buttons
 void runImageViewer(int idx) {
+  fmViewing = true;
   while (idx >= 0 && idx < (int)fList.size()) {
     showImage(fmPath(idx));
     viewerBar();
@@ -612,6 +630,7 @@ void runImageViewer(int idx) {
       idx = n;
     }
   }
+  fmViewing = false;
 }
 
 // read picture size from a JPEG header (SOF0/SOF2)
@@ -789,6 +808,7 @@ void filesTap(int x, int y) {
   if (e.type == FT_IMG) runImageViewer(i);
   else {
     String p = joinPath(curDir, e.name);
+    fmViewing = true;
     while (true) {
       runVideo(p);
       int a = videoEndMenu(e.show);
@@ -798,6 +818,7 @@ void filesTap(int x, int y) {
       }
       break;
     }
+    fmViewing = false;
   }
   lastTouchMs = millis();
 }

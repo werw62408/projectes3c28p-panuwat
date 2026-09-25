@@ -360,8 +360,8 @@ void netTaskFn(void*) {
     jobOk = newsFetch(netJob.cat, jobNews);
     if (!jobOk) jobMsg = "Could not get the news. Tap Reload to try again.";
   }
+  netBusy = false;   // first "not busy", then "done": netPoll() may start the next download at once
   netDone = true;
-  netBusy = false;
   vTaskDelete(NULL);
 }
 void netStart(int tab, int cat) {
@@ -370,7 +370,7 @@ void netStart(int tab, int cat) {
   xTaskCreatePinnedToCore(netTaskFn, "net", 16384, nullptr, 1, nullptr, 0);
 }
 void netPoll() {   // from loop(): a download finished -> show it
-  if (!netDone) return;
+  if (!netDone) { if (netHasNext && !netBusy) { netHasNext = false; netStart(netNext.tab, netNext.cat); } return; }
   netDone = false;
   if (netJob.tab == 0) { if (jobOk) wx = jobWx; }
   else {

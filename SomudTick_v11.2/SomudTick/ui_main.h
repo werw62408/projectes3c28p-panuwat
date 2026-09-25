@@ -15,6 +15,7 @@ void drawAskUpdate() {   // Settings > About > Update firmware: ask first
 
 // reminder: a dark bar just above the tabs, "Time for Water  >". Tap it = go to Log.
 bool remindBarShown = false; int remindBarY = 0;
+bool remindBarIsNotice = false;   // the bar on screen is a Log notice (not a reminder): a tap opens where to fix it
 // Log page only: important notices in the same place (tap = go where you can fix it)
 int logNotice() {   // 0 none, 1 cannot save (full), 2 almost full, 3 time not set
   if (logFull) return 1;
@@ -24,16 +25,16 @@ int logNotice() {   // 0 none, 1 cannot save (full), 2 almost full, 3 time not s
 }
 void drawLogNotice() {
   int n = logNotice();
-  if (!n || scr != S_HOME || remindAct >= 0) return;
+  if (!n || scr != S_HOME) return;   // (a pending reminder has no bar on Log, so the notice is shown)
   const char* T[] = {"", "Log space FULL: logs not saved", "Log space almost full", "Time not set: tap here"};
   remindBarY = FTR_Y - 34;
   spr.fillRoundRect(6, remindBarY, W - 12, 30, 10, C(n <= 2 ? 0xD03030 : INK));
   txt(FB, fitText(FB, T[n], W - 50), 14, remindBarY + 15, n <= 2 ? 0xFFFFFF : ONINK, D_ML);
   txt(FB, ">", W - 18, remindBarY + 15, n <= 2 ? 0xFFFFFF : ONINK, D_MC);
-  remindBarShown = true;
+  remindBarShown = true; remindBarIsNotice = true;
 }
 void drawRemindBar() {
-  remindBarShown = false;
+  remindBarShown = false; remindBarIsNotice = false;
   drawLogNotice();
   if (remindAct < 0 || remindAct >= (int)acts.size() || scr == S_KEYPAD || scr == S_KBD || scr == S_SUDOKU || scr == S_USB) return;
   if (scr == S_HOME) return;   // on Log you see the tile already

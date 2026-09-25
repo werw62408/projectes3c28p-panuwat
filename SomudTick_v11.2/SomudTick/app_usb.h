@@ -57,24 +57,10 @@ static bool usbStartStop(uint8_t power, bool start, bool loadEject) {
 }
 
 // all logs -> SomudTick/logs.csv on the card (same columns as the web page export)
-String csvRow(const Ev& e);
+int writeLogsCsv(const String& path);   // backup.h
 int usbCopyLogs() {
   if (!SD_MMC.exists("/SomudTick")) SD_MMC.mkdir("/SomudTick");
-  File out = SD_MMC.open("/SomudTick/logs.csv", FILE_WRITE);
-  if (!out) return -1;
-  out.print("\xEF\xBB\xBF" "datetime,epoch,activity_id,activity_name,value,unit,place,time_ok\n");
-  std::vector<String> keys;
-  File root = logFs().open("/log");
-  if (root) { for (File f = root.openNextFile(); f; f = root.openNextFile()) { String nm = f.name(); if (nm.endsWith(".csv")) keys.push_back(nm); f.close(); } root.close(); }
-  std::sort(keys.begin(), keys.end());
-  int rows = 0;
-  for (auto& k : keys) {
-    File f = logFs().open("/log/" + k, "r"); if (!f) continue;
-    while (f.available()) { String l = f.readStringUntil('\n'); Ev e; if (parseLine(l, e)) { out.print(csvRow(e)); rows++; } }
-    f.close();
-  }
-  out.close();
-  return rows;
+  return writeLogsCsv("/SomudTick/logs.csv");
 }
 
 void usbDriveStart() {

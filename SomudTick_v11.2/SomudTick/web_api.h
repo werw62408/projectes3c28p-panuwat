@@ -42,7 +42,7 @@ void apiActsPost() {
   if (deserializeJson(d, server.arg("plain")) || !d.is<JsonArray>() || !actsFromJson(d.as<JsonArrayConst>())) {
     server.send(400, "text/plain", "invalid"); return;
   }
-  saveActs(); scrollY = 0; statSel = 0;
+  saveActs(); scrollY = 0; statSel = 0; stRev = 0;
   refreshStatsIfVisible();
   dirty = true;
   apiActsGet();
@@ -62,7 +62,8 @@ void apiStats() {
     o["total"] = st[i].total; o["totalCount"] = st[i].totalCnt;
     o["gapMin"] = st[i].gapN ? st[i].gapSum / st[i].gapN / 60.0 : 0;
   }
-  refreshStatsIfVisible();   // คืนค่าสถิติของหน้าจอบอร์ด
+  stRev = 0;   // the board's Stats numbers were replaced: count them again when shown
+  refreshStatsIfVisible();
   sendJson(d);
 }
 String csvRow(const Ev& e) {   // one line of the CSV export (web page and USB drive)
@@ -110,7 +111,7 @@ void apiTime() {
   uint32_t t = strtoul(server.arg("t").c_str(), nullptr, 10);
   if (t > 1700000000UL) {
     bool wasApprox = timeApprox;
-    setClock(t, true);
+    setClock(t, true, TS_PHONE);
     if (wasApprox || dayKey(nowT()) != curDay) loadDay();
     dirty = true;
   }
@@ -131,8 +132,10 @@ void apiWifiGet() {
   sendJson(d);
 }
 void apiWifiPost() {
-  staSsid = server.arg("ssid"); if (server.hasArg("pass") && server.arg("pass") != "********") staPass = server.arg("pass");
-  homeSsid = server.arg("home"); uniSsid = server.arg("uni");
+  if (server.hasArg("ssid")) staSsid = server.arg("ssid");
+  if (server.hasArg("pass") && server.arg("pass") != "********") staPass = server.arg("pass");
+  if (server.hasArg("home")) homeSsid = server.arg("home");
+  if (server.hasArg("uni")) uniSsid = server.arg("uni");
   if (server.hasArg("auto")) autoPlace = server.arg("auto") == "1";
   prefs.putString("ssid", staSsid); prefs.putString("pass", staPass);
   prefs.putString("home", homeSsid); prefs.putString("uni", uniSsid); prefs.putBool("auto", autoPlace);
@@ -143,8 +146,10 @@ void apiWifiPost() {
   }
   server.send(200, "application/json", "{\"ok\":true}");
   delay(200);
-  WiFi.disconnect();
-  if (staSsid.length()) WiFi.begin(staSsid.c_str(), staPass.c_str());
+  if (staOn) {   // "Internet Wi-Fi" OFF: only save, do not join
+    WiFi.disconnect();
+    if (staSsid.length()) WiFi.begin(staSsid.c_str(), staPass.c_str());
+  }
   if (apChanged) { WiFi.softAPdisconnect(false); WiFi.softAP(AP_SSID, apPass.c_str()); }
   dirty = true;
 }
@@ -172,7 +177,7 @@ void apiUploadData() {
     if (upFile && upFile.write(u.buf, u.currentSize) != u.currentSize) upErr = "SD card full?";
   } else if (u.status == UPLOAD_FILE_END) {
     if (upFile) upFile.close();
-    if (scr == S_FILES) { filesLoad(); dirty = true; }
+    filesChanged();
   } else if (u.status == UPLOAD_FILE_ABORTED) {
     if (upFile) { String pth = String(upFile.path()); upFile.close(); SD_MMC.remove(pth); }
     upErr = "Upload stopped";
@@ -237,7 +242,7 @@ void apiSdOp() {
   else if (op == "rename") e = fsRename(path, name);
   else if (op == "move") e = fsMove(path, dest);
   else e = "fail";
-  if (scr == S_FILES) { fmUi = FU_LIST; filesLoad(); dirty = true; }
+  filesChanged();
   if (e.length()) server.send(400, "application/json", "{\"err\":\"" + e + "\"}");
   else server.send(200, "application/json", "{\"ok\":true}");
 }
@@ -245,7 +250,7 @@ void apiSdDel() {   // old web page: "delete" = move to Trash
   String pth = server.arg("path");
   if (!webPathOk(pth)) { server.send(400, "text/plain", "bad path"); return; }
   fsTrash(pth);
-  if (scr == S_FILES) { filesLoad(); dirty = true; }
+  filesChanged();
   server.send(200, "application/json", "{\"ok\":true}");
 }
 

@@ -19,6 +19,8 @@ MDNSClass MDNS;
 bool g_simOffline = false;
 std::string g_simLogsRoot;
 std::vector<SimBle> g_simBle;
+bool g_simRtcOn = false;           // a DS3231 clock module on the I2C wires
+uint8_t g_simRtc[19] = {0};        // its registers
 
 #include "SomudTick.ino"
 

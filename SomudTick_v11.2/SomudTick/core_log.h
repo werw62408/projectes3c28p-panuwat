@@ -43,6 +43,7 @@ bool overdue(const Act& a) {
   struct tm s = tm; s.tm_hour = REMIND_FROM_H; s.tm_min = 0; s.tm_sec = 0;
   uint32_t base = (uint32_t)mktime(&s);
   if (last < base) last = base;   // เริ่มนับจาก 8 โมงเช้า
+  if (last > (uint32_t)n) return false;   // last log looks newer than now (the clock was moved back): not late
   return (uint32_t)n - last > (uint32_t)a.remind * 60;
 }
 
@@ -58,6 +59,7 @@ uint64_t logUsedBytes() { return logFsOk ? LOGFS.usedBytes() : LittleFS.usedByte
 int logUsedPct() { uint64_t t = logTotalBytes(); return t ? (int)(logUsedBytes() * 100 / t) : 0; }
 int logPctCache = 0;   // updated now and then (reading it is not free)
 String logPath(const String& key) { return "/log/" + key + ".csv"; }
+uint32_t logRev = 1;   // +1 on every change to the logs (Stats counts again only when this changed)
 String evLine(const Ev& e) {
   char b[96];
   snprintf(b, sizeof b, "%lu,%s,%s,%c,%d\n", (unsigned long)e.t, e.id.c_str(), fmtNum(e.v).c_str(), e.place, e.ok ? 1 : 0);
@@ -94,6 +96,25 @@ void writeDayFile(const String& key, const std::vector<String>& lines) {
   f.close();
   logFs().remove(p);
   logFs().rename(tmp, p);
+  logRev++;
+}
+// after a power cut in the middle of writeDayFile(): finish the swap (or drop the half-written copy)
+void dayFilesRepair() {
+  std::vector<String> news;
+  File root = logFs().open("/log");
+  if (root) { for (File f = root.openNextFile(); f; f = root.openNextFile()) { String n = f.name(); if (n.endsWith(".csv.new")) news.push_back(n); f.close(); } root.close(); }
+  for (auto& n : news) {
+    String tmp = "/log/" + n, p = tmp.substring(0, tmp.length() - 4);
+    if (logFs().exists(p)) logFs().remove(tmp);   // the old file is still there: the swap never started
+    else logFs().rename(tmp, p);                  // the old one was removed: the new copy is complete
+  }
+}
+// sort one day file by time (after logs were moved there from a guessed time)
+void sortDayFile(const String& key) {
+  std::vector<Ev> ev; forEachEvent(key, [&](const Ev& e) { ev.push_back(e); });
+  std::stable_sort(ev.begin(), ev.end(), [](const Ev& a, const Ev& b) { return a.t < b.t; });
+  std::vector<String> lines; for (auto& e : ev) lines.push_back(evLine(e));
+  writeDayFile(key, lines);
 }
 void rewriteToday() {
   std::vector<String> lines;
@@ -276,17 +297,17 @@ void totalsAdd(const String& id, int dc, float dv) {
 std::vector<Ev> guessedEv;   // logs made this start while the time was a guess (moved when the real time arrives)
 bool logFull = false;         // the last write failed: storage full
 int remindAct = -1;           // the activity shown in the reminder bar (-1 = none)
-void logEvent(int i, float v) {
-  if (i < 0 || i >= (int)acts.size()) return;
+void logEvent(int i, float v, int times = 1) {   // times: the same log n times (typed "3" on a count activity)
+  if (i < 0 || i >= (int)acts.size() || times < 1) return;
   if (dayKey(nowT()) != curDay) loadDay();
   Ev e{(uint32_t)nowT(), v, place, !timeApprox, acts[i].id};
-  todayEv.push_back(e);
-  File f = logFs().open(logPath(curDay), "a");
-  String line = evLine(e);
-  logFull = !f || f.print(line) != line.length();
+  String line = evLine(e), lines;
+  for (int k = 0; k < times; k++) { todayEv.push_back(e); lines += line; if (timeApprox) guessedEv.push_back(e); }
+  File f = logFs().open(logPath(curDay), "a");   // one write for all of them
+  logFull = !f || f.print(lines) != lines.length();
   if (f) f.close();
-  if (timeApprox) guessedEv.push_back(e);
-  totalsAdd(e.id, 1, v);
+  logRev++;
+  totalsAdd(e.id, times, v * times);
   lastSeen[e.id] = e.t;
   remindedFor.erase(e.id);
   if (remindAct == i) remindAct = -1;
@@ -299,8 +320,7 @@ void logDefault(int i) { if (i >= 0 && i < (int)acts.size()) logEvent(i, isUnitA
 void logValue(int i, float v) {
   if (i < 0 || i >= (int)acts.size() || v <= 0) return;
   if (isUnitAct(acts[i])) { logEvent(i, v); return; }
-  int n = constrain((int)roundf(v), 1, 50);
-  for (int k = 0; k < n; k++) logEvent(i, 1);
+  logEvent(i, 1, constrain((int)roundf(v), 1, 50));
 }
 bool undoEvent(int i) {
   if (i < 0 || i >= (int)acts.size()) return false;
@@ -319,12 +339,14 @@ bool undoEvent(int i) {
   }
   // nothing today: undo the last one from yesterday, if it was less than 6 hours ago (e.g. 23:50, noticed at 00:10)
   uint32_t lt = lastSeen.count(acts[i].id) ? lastSeen[acts[i].id] : 0;
-  if (!lt || (uint32_t)nowT() - lt > 6 * 3600UL) return false;
+  if (!lt || lt > (uint32_t)nowT() || (uint32_t)nowT() - lt > 6 * 3600UL) return false;
   String yk = dayKey(nowT() - 86400);
   std::vector<Ev> ev; forEachEvent(yk, [&](const Ev& e) { ev.push_back(e); });
   for (int k = (int)ev.size() - 1; k >= 0; --k) {
     if (ev[k].id != acts[i].id) continue;
     totalsAdd(ev[k].id, -1, -ev[k].v);
+    for (size_t g = 0; g < guessedEv.size(); g++)   // made on a guessed time? then it must not come back when the time is fixed
+      if (guessedEv[g].t == ev[k].t && guessedEv[g].id == ev[k].id) { guessedEv.erase(guessedEv.begin() + g); break; }
     ev.erase(ev.begin() + k);
     std::vector<String> lines; for (auto& e : ev) lines.push_back(evLine(e));
     writeDayFile(yk, lines);
@@ -337,7 +359,7 @@ bool undoEvent(int i) {
 bool canUndo(const Act& a, const Sum& s) {   // the [-] button works: something today, or last night's log (< 6 h)
   if (s.count > 0) return true;
   uint32_t lt = lastSeen.count(a.id) ? lastSeen[a.id] : 0;
-  return lt && (uint32_t)nowT() - lt <= 6 * 3600UL;
+  return lt && lt <= (uint32_t)nowT() && (uint32_t)nowT() - lt <= 6 * 3600UL;
 }
 
 // ---------------- สถิติ ----------------
@@ -405,12 +427,17 @@ void fixGuessedLogs(int32_t delta) {
       });
       writeDayFile(d.first, keep);
     }
-    // 2) write them again at the right time (and so the right day)
+    // 2) write them again at the right time (and so the right day), then put those days in time order
+    std::vector<String> touched;
     for (auto& e : guessedEv) {
       Ev r = e; r.t = (uint32_t)((int64_t)e.t + delta); r.ok = true;
-      File f = logFs().open(logPath(dayKey(r.t)), "a");
+      String k = dayKey(r.t);
+      File f = logFs().open(logPath(k), "a");
       if (f) { f.print(evLine(r)); f.close(); }
+      if (std::find(touched.begin(), touched.end(), k) == touched.end()) touched.push_back(k);
     }
+    for (auto& k : touched) sortDayFile(k);
+    logRev++;
     Serial.printf("moved %d logs by %ld s\n", (int)guessedEv.size(), (long)delta);
   }
   guessedEv.clear();

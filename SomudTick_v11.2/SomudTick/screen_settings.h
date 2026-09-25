@@ -16,6 +16,44 @@ void setWifiPage() { setOpenPage(2); }
 bool sdMount();
 void setAboutPage() { sdMount(); setOpenPage(3); }
 extern bool sdOk;
+// About: why the board started last time (a crash or "low power" shows in red)
+bool lastStartBad = false;
+String lastStartWhy() {
+#ifdef SIM
+  return "power on";
+#else
+  lastStartBad = false;
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON: return "power on";
+    case ESP_RST_SW: return "restart";
+    case ESP_RST_EXT: return "RESET button";
+    case ESP_RST_PANIC: lastStartBad = true; return "crash";
+    case ESP_RST_INT_WDT: case ESP_RST_TASK_WDT: case ESP_RST_WDT: lastStartBad = true; return "froze (watchdog)";
+    case ESP_RST_BROWNOUT: lastStartBad = true; return "battery too low";
+    default: return "other";
+  }
+#endif
+}
+uint32_t memLowKB() {   // the least free memory since the start (red in About when it gets low)
+#ifdef SIM
+  return 150;
+#else
+  return ESP.getMinFreeHeap() / 1024;
+#endif
+}
+String memText() {
+#ifdef SIM
+  return "180 KB";
+#else
+  return String(ESP.getFreeHeap() / 1024) + " KB";
+#endif
+}
+String clockModuleText() {
+  if (!rtcFound) return "not found";
+  if (!rtcTimeOk) return "time lost: join Wi-Fi";
+  return "OK";
+}
+extern uint32_t bkAt; extern String bkErr; String backupWhen(); bool backupNow();   // backup.h
 void settingsUI(bool draw, int tx, int ty) {
   const int X = 8, CW = W - 16;
   int y = HDR_H + (setPage ? 40 : 6) - setScroll;
@@ -155,19 +193,26 @@ void settingsUI(bool draw, int tx, int ty) {
       }
       y += 38;
     };
-    line("Time", timeApprox ? String("not set") : hhmm(nowT()) + (timeApprox ? "" : " (synced)"), timeApprox);
+    line("Time", timeApprox ? String("not set") : hhmm(nowT()) + " (" + TIME_SRC_N[timeSrc] + ")", timeApprox);
     if (draw && timeApprox) { txt(FS, fitText(FS, "Open the web page or join Wi-Fi", CW), X, y - 2, SOFT); }
     if (timeApprox) y += 20;
+    line("Clock module", clockModuleText(), rtcFound && !rtcTimeOk);
     line("Battery", batPct() < 0 ? String("USB power") : String(batPct()) + "%  (" + String(batV, 2) + " V)", false);
     uint64_t tb = sdOk ? SD_MMC.totalBytes() : 0, ub = sdOk ? SD_MMC.usedBytes() : 0;
     line("SD card", sdOk ? String((uint32_t)(ub / 1048576)) + " / " + String((uint32_t)(tb / 1048576)) + " MB" : String("no card"), false);
     line("Web page", apOn ? WiFi.softAPIP().toString() : (staOk() ? WiFi.localIP().toString() : String("Wi-Fi off")), false);
+    line("Backup to SD", bkErr.length() ? bkErr : backupWhen(), bkErr.length() > 0);
+    if (draw) btn(X, y, CW, 34, "Back up now", false);
+    else if (!hit && hitR(tx, ty, X, y, CW, 34)) { hit = true; backupNow(); }
+    y += 40;
     line("Log space", logFull ? String("FULL!") : String(logPctCache) + "% used" + (logFsOk ? "" : " (old)"), logFull || logPctCache >= 90);
-    line("Version", "SomudTick v11", false);
+    { String why = lastStartWhy(); line("Last start", why, lastStartBad); }
+    line("Free memory", memText(), memLowKB() < 30);
+    line("Version", "v11.2", false);
     if (draw) btn(X, y, CW, 34, "Update firmware", false);
     else if (!hit && hitR(tx, ty, X, y, CW, 34)) { hit = true; askUpdate = true; }   // asks first (a stray tap used to restart it)
     y += 40;
-    if (draw) txt(FS, fitText(FS, "Restarts ready for the flasher page", CW), X, y - 2, SOFT);
+    if (draw) txt(FS, fitText(FS, "For the web flasher", CW), X, y - 2, SOFT);
     y += 20;
   }
   setMax = max(0, y + setScroll - FTR_Y);

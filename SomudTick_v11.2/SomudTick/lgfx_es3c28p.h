@@ -17,6 +17,9 @@ class LGFX_ES3C28P : public LGFX_Sprite {
  public:
   bool init() { setColorDepth(16); return createSprite(240, 320) != nullptr; }
   void setBrightness(uint8_t) {}
+  bool asleep = false;
+  void sleep() { asleep = true; }
+  void wakeup() { asleep = false; }
   int getTouch(lgfx::touch_point_t*, int = 1) { return 0; }
   int getTouchRaw(lgfx::touch_point_t*, int = 1) { return 0; }
   void calibrateTouch(uint16_t*, uint32_t, uint32_t, uint8_t = 10) {}
