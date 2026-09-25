@@ -1,0 +1,240 @@
+<title>SomudTick Case Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#eef0ec; --surface:#fbfcfa; --ink:#1c2420; --soft:#5d6a63; --line:#d3d9d4;
+  --accent:#d6451b; --accent-ink:#ffffff; --teal:#0d7671; --stage:#e3e7e2; --chip:#e6ebe6;
+  --display:"Chakra Petch","IBM Plex Sans Thai",system-ui,sans-serif;
+  --body:"IBM Plex Sans Thai",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ color-scheme:dark;
+    --bg:#121613; --surface:#1a1f1c; --ink:#e4e9e5; --soft:#9aa7a0; --line:#2c3430;
+    --accent:#f06a3f; --accent-ink:#1a0f0a; --teal:#4fc1b9; --stage:#171c19; --chip:#242b27; }
+}
+:root[data-theme="dark"]{ color-scheme:dark;
+  --bg:#121613; --surface:#1a1f1c; --ink:#e4e9e5; --soft:#9aa7a0; --line:#2c3430;
+  --accent:#f06a3f; --accent-ink:#1a0f0a; --teal:#4fc1b9; --stage:#171c19; --chip:#242b27; }
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.6;margin:0}
+.wrap{max-width:1080px;margin:0 auto;padding-inline:16px;padding-block:20px 40px;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 18px}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(24px,4vw,34px);letter-spacing:.01em;margin:0;text-wrap:balance}
+h1 span{color:var(--accent)}
+.sub{color:var(--soft);margin:0;font-size:14px}
+.dims{font-family:var(--mono);font-size:13px;color:var(--soft)}
+.stagebox{position:relative;background:var(--stage);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+#stage{display:block;width:100%;height:min(66vh,560px);touch-action:none;cursor:grab}
+#stage:active{cursor:grabbing}
+.hud{position:absolute;left:12px;bottom:12px;right:12px;display:flex;justify-content:space-between;gap:10px;pointer-events:none;flex-wrap:wrap}
+.pick{pointer-events:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 12px;max-width:340px;font-size:14px}
+.pick b{font-family:var(--display);font-weight:600}
+.pick .m{font-family:var(--mono);font-size:12.5px;color:var(--soft)}
+.hint{align-self:flex-end;font-size:12.5px;color:var(--soft);background:color-mix(in srgb,var(--surface) 80%,transparent);padding:4px 10px;border-radius:8px}
+.tools{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center}
+.group{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.group .lbl{font-family:var(--display);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--soft);margin-right:4px}
+button.chip{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--chip);color:var(--ink);padding:6px 12px;border-radius:999px;cursor:pointer}
+button.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.chip:focus-visible,input:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.slide{display:flex;align-items:center;gap:8px;font-size:14px}
+.slide input{accent-color:var(--accent);width:140px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+section{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+h2{font-family:var(--display);font-weight:600;font-size:18px;margin:0 0 10px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td{padding:6px 0;border-top:1px solid var(--line);vertical-align:top}
+tr:first-child td{border-top:0}
+td.v{font-family:var(--mono);font-size:12.5px;color:var(--soft);text-align:right;white-space:nowrap;padding-left:10px;font-variant-numeric:tabular-nums}
+.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px;vertical-align:1px}
+.cut{color:var(--accent);font-weight:600}
+.note{font-size:13.5px;color:var(--soft);margin:10px 0 0}
+#err{display:none;padding:20px;color:var(--accent)}
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto} }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>SomudTick <span>Case</span></h1>
+      <p class="sub">กล่องสำหรับ ES3C28P + แบต + จอย + DS3231 + KY-005 ทุกชิ้นวางตามขนาดจริง</p>
+    </div>
+    <div class="dims">กล่องใส 135 × 80 × 30 มม. · แบบพิมพ์ 136 × 81 × 31 มม.</div>
+  </header>
+
+  <div class="stagebox">
+    <canvas id="stage" aria-label="โมเดล 3D ของกล่อง หมุนด้วยนิ้วหรือเมาส์"></canvas>
+    <div id="err">โหลดโมเดลไม่ได้ ลองรีเฟรชหน้านี้อีกครั้ง</div>
+    <div class="hud">
+      <div class="pick" id="pick"><b>แตะชิ้นส่วน</b> เพื่อดูชื่อและขนาด<div class="m">ลากหมุน · สองนิ้วซูม/เลื่อน</div></div>
+      <div class="hint" id="orient">ถือแนวตั้ง</div>
+    </div>
+  </div>
+
+  <div class="tools">
+    <div class="group" role="group" aria-label="มุมมอง">
+      <span class="lbl">มุมมอง</span>
+      <button class="chip" id="v-iso" aria-pressed="true">เอียง</button>
+      <button class="chip" id="v-front" aria-pressed="false">หน้า</button>
+      <button class="chip" id="v-back" aria-pressed="false">หลัง</button>
+      <button class="chip" id="v-side" aria-pressed="false">ข้างซ้าย</button>
+    </div>
+    <div class="group" role="group" aria-label="แสดง">
+      <span class="lbl">แสดง</span>
+      <button class="chip" id="t-front" aria-pressed="true">ฝาหน้า</button>
+      <button class="chip" id="t-back" aria-pressed="true">ฝาหลัง</button>
+      <button class="chip" id="t-wire" aria-pressed="true">สายไฟ</button>
+      <button class="chip" id="t-land" aria-pressed="false">ถือแนวนอน</button>
+    </div>
+    <label class="slide" for="explode">แยกฝา <input id="explode" type="range" min="0" max="40" value="0"></label>
+  </div>
+
+  <div class="cols">
+    <section>
+      <h2>อุปกรณ์ในกล่อง</h2>
+      <table id="parts"></table>
+    </section>
+    <section>
+      <h2>จุดที่ต้องเจาะ</h2>
+      <table>
+        <tr><td><span class="cut">ฝาหน้า</span> หน้าต่างจอ</td><td class="v">49 × 71</td></tr>
+        <tr><td><span class="cut">ฝาหน้า</span> รูจอย</td><td class="v">Ø 26</td></tr>
+        <tr><td><span class="cut">ฝาหน้า</span> น็อต M3 ยึดจอ ×4</td><td class="v">Ø 3.4 · ห่าง 42 × 78</td></tr>
+        <tr><td><span class="cut">ฝาหน้า</span> รูไมค์</td><td class="v">Ø 2</td></tr>
+        <tr><td><span class="cut">ขอบบน</span> USB-C</td><td class="v">12 × 7</td></tr>
+        <tr><td><span class="cut">ขอบขวา</span> หลอด IR</td><td class="v">Ø 5.3</td></tr>
+        <tr><td><span class="cut">ขอบขวา</span> ช่องการ์ด SD</td><td class="v">14 × 4</td></tr>
+        <tr><td><span class="cut">ขอบซ้าย</span> สวิตช์</td><td class="v">13 × 8.5</td></tr>
+        <tr><td><span class="cut">ฝาหลัง</span> รู BOOT / RESET</td><td class="v">Ø 3 ×2</td></tr>
+        <tr><td><span class="cut">ฝาหลัง</span> รูลำโพง 35 รู</td><td class="v">Ø 2</td></tr>
+      </table>
+      <p class="note">ขอบซ้าย/ขวา/บน นับตอนถือแนวตั้ง มองจากหน้าจอ (USB-C อยู่บน จอยอยู่ล่าง)</p>
+    </section>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const GLB_B64 = "__GLB__";
+const PARTS = {
+  front_shell:{n:"ฝาหน้า (พิมพ์ 3D)", d:"136 × 81 × 17", c:0xcfe3ea, glass:true},
+  back_shell:{n:"ฝาหลัง (พิมพ์ 3D)", d:"136 × 81 × 16", c:0xcfe3ea, glass:true},
+  acrylic:{n:"แผ่นอะคริลิกหน้าจอ", d:"60 × 85 × 3", c:0xe8f3f6, glass:true, list:true},
+  glass:{n:"กระจกจอ 2.8\"", d:"49 × 71", c:0x15181c, list:false},
+  pcb:{n:"บอร์ด ES3C28P", d:"50 × 86 · หนารวม 14", c:0x1f2a2a, list:true},
+  brass:{n:"เสาทองเหลือง M3", d:"×4", c:0xc9a13b},
+  port:{n:"USB-C / ช่องการ์ด SD", d:"", c:0xb8bcc0},
+  button:{n:"ปุ่ม BOOT / RESET (หันหลัง)", d:"กดผ่านรูฝาหลัง", c:0xe9e2cf},
+  plug:{n:"ขั้วต่อสาย JST", d:"BAT · SPEAKER · I2C · IO", c:0xf1efe8},
+  battery:{n:"แบต LiPo 103048", d:"48 × 30 × 10 · 1500 mAh", c:0xd8c27a, list:true},
+  speaker:{n:"ลำโพง", d:"40 × 28 × 10", c:0x2b2f33, list:true},
+  speaker_cone:{n:"ลำโพง", d:"40 × 28 × 10", c:0x55595e},
+  joy_board:{n:"จอยสติ๊ก KY-023", d:"26 × 34 · สูง 30", c:0x2d4f9e, list:true},
+  joy_body:{n:"จอยสติ๊ก KY-023", d:"26 × 34 · สูง 30", c:0x2a2a2a},
+  joy_cap:{n:"หัวจอย", d:"โผล่พ้นฝา ~7.5 มม.", c:0x333638},
+  ds3231:{n:"โมดูลนาฬิกา DS3231", d:"38 × 22 · ถ่าน CR2032", c:0x2f6fd0, list:true},
+  ds_coin:{n:"ถ่าน CR2032", d:"ขั้ว + หงายขึ้น", c:0xc7ccd1},
+  ky_board:{n:"KY-005 ตัวยิง IR", d:"ยิงออกขอบขวา (แนวตั้ง)", c:0x222222, list:true},
+  led:{n:"หลอด IR", d:"Ø 5", c:0xeef6ff},
+  switch:{n:"สวิตช์โยก KCD11", d:"ช่อง 13 × 8.5", c:0x303030, list:true},
+  switch_rocker:{n:"สวิตช์โยก KCD11", d:"ช่อง 13 × 8.5", c:0x111111},
+  splice:{n:"จุดบัดกรีรวม 3.3V / GND", d:"หุ้มท่อหด", c:0xd6451b, list:true},
+  wire_i2c:{n:"สาย I2C → DS3231", d:"IO16 SDA · IO15 SCL", c:0x2b7de9, wire:true},
+  wire_joy:{n:"สาย IO2/IO3/IO14 → จอย", d:"VRX · VRY · SW", c:0x1fa463, wire:true},
+  wire_ky:{n:"สาย IO21 → KY-005", d:"วิ่งหลังจอตามขอบบน", c:0xee8a12, wire:true},
+  wire_power:{n:"สาย 3.3V / GND", d:"จากช่อง I2C ไปจุดรวม", c:0xd6451b, wire:true},
+  wire_sw:{n:"สายแบต + ผ่านสวิตช์", d:"ตัดสายแดงของแบต", c:0xc0392b, wire:true},
+};
+(function(){
+  const tbl = document.getElementById("parts");
+  for (const k in PARTS){ const p = PARTS[k]; if(!p.list) continue;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><span class="dot" style="background:#${p.c.toString(16).padStart(6,"0")}"></span>${p.n}</td><td class="v">${p.d}</td>`;
+    tbl.appendChild(tr); }
+})();
+
+const canvas = document.getElementById("stage");
+if (!window.THREE || !THREE.GLTFLoader || !THREE.OrbitControls) { document.getElementById("err").style.display="block"; }
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true, preserveDrawingBuffer:true});
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio||1));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(32, 1, 1, 2000);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.12; controls.minDistance = 90; controls.maxDistance = 700;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a948e, 0.95));
+const key = new THREE.DirectionalLight(0xffffff, 0.75); key.position.set(120, 160, 220); scene.add(key);
+const rim = new THREE.DirectionalLight(0xffffff, 0.35); rim.position.set(-150, -80, -200); scene.add(rim);
+
+const root = new THREE.Group(); scene.add(root);
+const nodes = {}; const pickable = [];
+function b64ToBuf(s){ const bin = atob(s); const u = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u.buffer; }
+new THREE.GLTFLoader().parse(b64ToBuf(GLB_B64), "", (g)=>{
+  g.scene.traverse(o=>{
+    if(!o.isMesh) return;
+    let key = o.name; if(!PARTS[key] && o.parent && PARTS[o.parent.name]) key = o.parent.name;
+    const p = PARTS[key] || {n:key,d:"",c:0x999999};
+    o.material = new THREE.MeshStandardMaterial({color:p.c, roughness:p.glass?0.15:0.55, metalness:(key==="brass"||key==="port")?0.6:0.05,
+      flatShading:true, transparent:!!p.glass, opacity:p.glass?(key==="acrylic"?0.45:0.28):1, depthWrite:!p.glass, side:THREE.DoubleSide});
+    if(p.glass && key!=="acrylic"){
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry, 30), new THREE.LineBasicMaterial({color:0x6f8c96, transparent:true, opacity:0.55}));
+      o.add(edges);
+    }
+    o.userData.key = key; nodes[key] = o; pickable.push(o);
+  });
+  root.add(g.scene);
+  setView("iso"); render();
+}, (e)=>{ document.getElementById("err").style.display="block"; console.error(e); });
+
+function resize(){
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", ()=>{ resize(); render(); });
+
+let land = false;
+const VIEWS = { iso:[140,-115,225], front:[0,0,270], back:[0,0,-270], side:[-270,0,0] };
+function setView(v){
+  const p = VIEWS[v]; camera.position.set(p[0],p[1],p[2]);
+  camera.up.set(0,1,0); controls.target.set(0,0,0); controls.update();
+  for(const k in VIEWS) document.getElementById("v-"+k).setAttribute("aria-pressed", String(k===v));
+  render();
+}
+for (const k in VIEWS) document.getElementById("v-"+k).addEventListener("click", ()=>setView(k));
+
+function toggle(id, fn){ const b = document.getElementById(id);
+  b.addEventListener("click", ()=>{ const on = b.getAttribute("aria-pressed")!=="true"; b.setAttribute("aria-pressed", String(on)); fn(on); render(); }); }
+toggle("t-front", on=>{ if(nodes.front_shell) nodes.front_shell.visible = on; });
+toggle("t-back", on=>{ if(nodes.back_shell) nodes.back_shell.visible = on; });
+toggle("t-wire", on=>{ for(const k in nodes) if(k.startsWith("wire_")) nodes[k].visible = on; });
+toggle("t-land", on=>{ land = on; root.rotation.z = on ? Math.PI/2 : 0;
+  document.getElementById("orient").textContent = on ? "ถือแนวนอน · จอยอยู่ขวา" : "ถือแนวตั้ง · จอยอยู่ล่าง"; });
+document.getElementById("explode").addEventListener("input", e=>{
+  const v = +e.target.value;
+  if(nodes.front_shell) nodes.front_shell.position.z = v;
+  if(nodes.back_shell) nodes.back_shell.position.z = -v;
+  render();
+});
+
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(); let downAt = null;
+canvas.addEventListener("pointerdown", e=>{ downAt = [e.clientX, e.clientY]; });
+canvas.addEventListener("pointerup", e=>{
+  if(!downAt || Math.hypot(e.clientX-downAt[0], e.clientY-downAt[1]) > 6) return;
+  const r = canvas.getBoundingClientRect();
+  ptr.set(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1);
+  ray.setFromCamera(ptr, camera);
+  const hits = ray.intersectObjects(pickable.filter(o=>o.visible && (!o.parent || o.parent.visible)), false)
+    .filter(h=>!(PARTS[h.object.userData.key]||{}).glass || h.object.userData.key==="acrylic");
+  const box = document.getElementById("pick");
+  if(hits.length){ const p = PARTS[hits[0].object.userData.key] || {};
+    box.innerHTML = `<b>${p.n||""}</b><div class="m">${p.d||""}</div>`; }
+});
+
+let raf = 0;
+function render(){ if(raf) return; raf = requestAnimationFrame(()=>{ raf = 0; controls.update(); renderer.render(scene, camera); }); }
+controls.addEventListener("change", render);
+resize();
+</script>
