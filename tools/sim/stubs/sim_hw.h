@@ -116,11 +116,13 @@ class Preferences {
   int8_t getChar(const char* k, int8_t d = 0) { return get(k, d); }
   bool getBool(const char* k, bool d = false) { return get(k, d); }
   uint32_t getUInt(const char* k, uint32_t d = 0) { return get(k, d); }
+  uint16_t getUShort(const char* k, uint16_t d = 0) { return get(k, d); }
   int32_t getInt(const char* k, int32_t d = 0) { return get(k, d); }
   size_t putUChar(const char* k, uint8_t v) { return put(k, v); }
   size_t putChar(const char* k, int8_t v) { return put(k, v); }
   size_t putBool(const char* k, bool v) { return put(k, v); }
   size_t putUInt(const char* k, uint32_t v) { return put(k, v); }
+  size_t putUShort(const char* k, uint16_t v) { return put(k, v); }
   size_t putInt(const char* k, int32_t v) { return put(k, v); }
   String getString(const char* k, const String& d = String()) { auto it = m_.find(k); return it == m_.end() ? d : String(std::string(it->second.begin(), it->second.end())); }
   size_t putString(const char* k, const String& v) { m_[k].assign(v.c_str(), v.c_str() + v.length()); return v.length(); }

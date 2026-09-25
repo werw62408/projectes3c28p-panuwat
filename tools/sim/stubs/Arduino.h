@@ -152,9 +152,10 @@ extern HardwareSerial Serial;
 // ---------------- pins / misc ----------------
 extern int g_simBatMv;
 inline void pinMode(int, int) {}
-inline int digitalRead(int) { return HIGH; }
+extern int g_simAnalog[64], g_simDigital[64];   // pin levels tests can set (joystick: IO2, IO3, IO14)
+inline int digitalRead(int p) { return (p >= 0 && p < 64) ? g_simDigital[p] : HIGH; }
 inline void digitalWrite(int, int) {}
-inline int analogRead(int) { return 2048; }
+inline int analogRead(int p) { return (p >= 0 && p < 64) ? g_simAnalog[p] : 2048; }
 inline uint32_t analogReadMilliVolts(int) { return g_simBatMv; }
 inline void analogReadResolution(int) {}
 inline void rgbLedWrite(int, uint8_t, uint8_t, uint8_t) {}
@@ -162,6 +163,7 @@ extern std::mt19937 g_simRng;
 inline long random(long n) { return n > 0 ? (long)(g_simRng() % n) : 0; }
 inline long random(long a, long b) { return b > a ? a + (long)(g_simRng() % (b - a)) : a; }
 inline uint32_t esp_random() { return g_simRng(); }
+inline void randomSeed(unsigned long v) { g_simRng.seed(v); }
 #define MALLOC_CAP_SPIRAM 1
 #define MALLOC_CAP_8BIT 2
 inline void* heap_caps_malloc(size_t n, int) { return malloc(n); }

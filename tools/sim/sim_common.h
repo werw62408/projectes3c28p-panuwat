@@ -19,6 +19,9 @@ MDNSClass MDNS;
 bool g_simOffline = false;
 std::string g_simLogsRoot;
 std::vector<SimBle> g_simBle;
+int g_simAnalog[64], g_simDigital[64];
+static bool g_simPinsInit = [] { for (int i = 0; i < 64; i++) { g_simAnalog[i] = 2048; g_simDigital[i] = HIGH; } return true; }();
+bool g_simTouch = false; int g_simTouchX = 0, g_simTouchY = 0;   // a finger on the screen
 bool g_simRtcOn = false;           // a DS3231 clock module on the I2C wires
 uint8_t g_simRtc[19] = {0};        // its registers
 
