@@ -36,6 +36,7 @@ using std::min; using std::max;
 extern uint64_t g_simMs;       // millis()
 extern int64_t g_simEpoch;     // wall clock at g_simMs == 0
 inline uint32_t millis() { return (uint32_t)g_simMs; }
+inline uint32_t micros() { return (uint32_t)(g_simMs * 1000); }
 inline void delay(uint32_t ms) { g_simMs += ms; }
 inline void yield() {}
 inline time_t sim_time(time_t* t) { time_t v = (time_t)(g_simEpoch + (int64_t)(g_simMs / 1000)); if (t) *t = v; return v; }
@@ -90,6 +91,7 @@ class String {
   void replace(const String& a, const String& b) { if (a.s_.empty()) return; size_t p = 0; while ((p = s_.find(a.s_, p)) != std::string::npos) { s_.replace(p, a.s_.size(), b.s_); p += b.s_.size(); } }
   void remove(unsigned i) { if (i < s_.size()) s_.erase(i); }
   void remove(unsigned i, unsigned n) { if (i < s_.size()) s_.erase(i, n); }
+  int compareTo(const String& o) const { return s_.compare(o.s_); }
   bool startsWith(const String& p) const { return s_.compare(0, p.s_.size(), p.s_) == 0; }
   bool endsWith(const String& p) const { return s_.size() >= p.s_.size() && s_.compare(s_.size() - p.s_.size(), p.s_.size(), p.s_) == 0; }
   bool equals(const String& o) const { return s_ == o.s_; }

@@ -249,11 +249,12 @@ class HTTPClient {
 
 // ---------------- I2S audio ----------------
 enum { I2S_MODE_STD, I2S_DATA_BIT_WIDTH_16BIT = 16, I2S_SLOT_MODE_MONO = 1 };
+extern std::vector<int16_t> g_simI2S;   // every sample written to the sound chip (tests)
 class I2SClass {
  public:
   void setPins(int, int, int, int, int) {}
   bool begin(int, int, int, int) { return false; }
-  size_t write(const uint8_t*, size_t n) { return n; }
+  size_t write(const uint8_t* d, size_t n) { const int16_t* s = (const int16_t*)d; g_simI2S.insert(g_simI2S.end(), s, s + n / 2); return n; }   // tests read the samples
 };
 
 // ---------------- IR remote ----------------
@@ -303,6 +304,6 @@ class BLEDevice {
   static int& deinits() { static int n = 0; return n; }
   static bool getInitialized() { return inited(); }
   static void init(const char*) { inited() = true; }
-  static void deinit(bool) { inited() = false; deinits()++; }
+  static void deinit(bool) { if (!inited()) return; inited() = false; deinits()++; }   // (like the real one: nothing if not on)
   static BLEScan* getScan() { static BLEScan s; return &s; }
 };
