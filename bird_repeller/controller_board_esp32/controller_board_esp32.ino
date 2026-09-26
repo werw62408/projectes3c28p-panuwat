@@ -1,9 +1,21 @@
 /* ==========================================================================
-   บอร์ดควบคุมโหลด  ESP32  —  เฟิร์มแวร์ v3
+   บอร์ดควบคุมโหลด  ESP32  —  เฟิร์มแวร์ v7
    โครงงาน: เครื่องไล่นกอัตโนมัติ
 
    หน้าที่: รับคำสั่งจาก Raspberry Pi ผ่าน USB Serial แล้วสั่งงานอุปกรณ์
             พร้อมรายงานสถานะกลับ และตัดโหลดเองเมื่อเกิดเหตุผิดปกติ
+
+   เปลี่ยนจาก v6 (รุ่นนี้ — เน้นความปลอดภัยของปั๊มและมอเตอร์):
+     - สั่ง PUMP ซ้ำตอนปั๊มเปิดอยู่จะถูกปฏิเสธ (เดิมยืดเวลาได้ไม่รู้จบ)
+     - เพิ่มโควตาเวลาปั๊มต่อ 10 นาที กันปั๊มเดินแห้งตอนยังไม่มีเซนเซอร์น้ำ
+     - รอบไล่เช็กก่อนว่าปั๊มเปิดได้จริง ถ้าไม่ได้จะตอบ ERR พร้อมเหตุผล
+     - เซนเซอร์น้ำอ่านไม่ได้ติดกันหลายรอบ = ล็อกปั๊มไว้ก่อน (fail-safe)
+     - ห้ามสั่งมอเตอร์ใหม่ระหว่างหมุน / MOT STOP ชะลอก่อนหยุด กันสเต็ปหลุด
+     - เพิ่ม MOT ZERO ตั้งจุดกลาง และรายงาน POSOK ว่าตำแหน่งเชื่อถือได้ไหม
+     - บอกสาเหตุการรีบูต (เช่น ไฟตก) ให้ Pi รู้ว่าตำแหน่งมอเตอร์อาจเพี้ยน
+     - วัดแบตไม่ทำตอนมอเตอร์หมุน (เดิมหน่วงลูป 32 ms ทำให้มอเตอร์กระตุก)
+     - บรรทัดคำสั่งยาวเกินจะถูกทิ้งทั้งบรรทัด ไม่เอาครึ่งบรรทัดไปทำงาน
+     - ค่า VCAL จำไว้ในแฟลช รีบูตแล้วไม่หาย
 
    เปลี่ยนจาก v4:
      - รีเลย์กลับมาใช้ขาแบบ OUTPUT ธรรมดา และสั่งงานด้วย HIGH
@@ -28,7 +40,10 @@
    Arduino IDE: Board = ESP32 Dev Module / ไม่ต้องลงไลบรารีเพิ่ม
    ========================================================================== */
 
-#define FW_ID "BIRDCTRL v5"
+#define FW_ID "BIRDCTRL v7"
+
+#include <Preferences.h>
+#include <esp_system.h>
 
 /* ==========================================================================
    0. สวิตช์เปิดปิดอุปกรณ์   <<<<<  แก้ตรงนี้ตอนทยอยต่ออุปกรณ์
@@ -99,6 +114,12 @@ const unsigned long AUTO_DISABLE_MS = 3000;      // นิ่งกี่ ms แ
 const unsigned long PUMP_MAX_MS  = 8000;   // เพดานเวลาเปิดปั๊มต่อครั้ง
 const unsigned long PUMP_MIN_GAP = 3000;   // ต้องพักกี่ ms ก่อนเปิดซ้ำ
 
+// โควตาปั๊ม: ใน 10 นาทีเปิดรวมกันได้ไม่เกินกี่ ms
+// ตอนยังไม่มีเซนเซอร์น้ำ นี่คือด่านเดียวที่กันปั๊มเดินแห้งนาน ๆ
+const unsigned long PUMP_DUTY_WINDOW_MS = 600000;
+const unsigned long PUMP_DUTY_MAX_MS    = 60000;
+const unsigned long PUMP_MIN_RUN_MS     = 300;   // เหลือโควตาน้อยกว่านี้ = ไม่เปิด
+
 const unsigned long REPEL_PUMP_MS  = 4000; // รอบไล่: เปิดปั๊มกี่ ms
 const int           REPEL_SWEEP    = 300;  // รอบไล่: กวาดข้างละกี่สเต็ป
 
@@ -115,6 +136,7 @@ const int WATER_EMPTY_PCT = 5;    // ต่ำกว่านี้ = ล็อ�
 
 const unsigned long WATER_READ_EVERY_MS = 2000;   // อ่านทุกกี่ ms
 const unsigned long ECHO_TIMEOUT_US     = 15000;  // ~2.5 เมตร พอเหลือเฟือ
+const int WATER_FAIL_LIMIT = 3;   // อ่านไม่ได้ติดกันกี่รอบ ถือว่าเซนเซอร์เสีย แล้วล็อกปั๊ม
 
 /* ==========================================================================
    5. ค่าตั้งของแบตเตอรี่
@@ -149,15 +171,22 @@ long  stepsTotal = 0;
 unsigned long nextStepUs = 0;
 unsigned long lastMoveEndMs = 0;
 bool  enaOn = false;
+bool  posKnown = false;        // false = ยังไม่เคยตั้งจุดกลาง (MOT ZERO) หลังบูต
+                               // posSteps = 0 แค่แปลว่า "ตรงที่แกนอยู่ตอนเปิดเครื่อง"
 
 bool  pumpOn = false;
+unsigned long pumpOnAtMs = 0;
 unsigned long pumpOffAtMs = 0;
 unsigned long pumpLastOffMs = 0;
+unsigned long dutyWindowStartMs = 0;
+unsigned long dutyUsedMs = 0;  // เวลาปั๊มที่ใช้ไปแล้วในหน้าต่าง 10 นาทีนี้
 
 float waterCm     = -1.0;
 int   waterPct    = -1;
 bool  waterLow    = false;
 bool  waterEmpty  = false;
+bool  waterFault  = false;     // เซนเซอร์อ่านไม่ได้ติดกัน -> ถือว่าน้ำหมดไว้ก่อน
+int   waterFailCount = 0;
 unsigned long lastWaterMs = 0;
 
 float vbat = 0.0;
@@ -174,9 +203,16 @@ unsigned long bootMs = 0;
 
 enum RepelStep { RP_IDLE, RP_SWEEP_R, RP_SWEEP_L, RP_HOME };
 RepelStep repelStep = RP_IDLE;
+
+// ต้องประกาศก่อนฟังก์ชันแรก เพราะ Arduino IDE สร้าง prototype ไว้ด้านบนให้เอง
+enum PumpResult { PUMP_OK, PUMP_NONE, PUMP_EMPTY, PUMP_GAP, PUMP_BUSY, PUMP_DUTY };
 unsigned long repelEndMs = 0;
 
 String rxBuf = "";
+bool   rxOverflow = false;      // บรรทัดนี้ยาวเกิน ทิ้งทั้งบรรทัดเมื่อเจอขึ้นบรรทัดใหม่
+
+Preferences prefs;
+const char* resetReasonText = "UNKNOWN";
 
 /* ==========================================================================
    8. ตัวช่วยระดับล่าง
@@ -199,27 +235,67 @@ bool pirRaw() {
 /* ==========================================================================
    9. ปั๊มน้ำ  (มีด่านกันเดินแห้ง)
    ========================================================================== */
-bool pumpSet(bool on, unsigned long durMs = 0) {
-  if (on) {
-    if (!HAS_PUMP) return false;
-    if (waterEmpty) return false;                         // น้ำหมด ห้ามเปิดเด็ดขาด
-    if (millis() - pumpLastOffMs < PUMP_MIN_GAP && !pumpOn) return false;
-    if (durMs == 0 || durMs > PUMP_MAX_MS) durMs = PUMP_MAX_MS;
-    pumpOn = true;
-    pumpOffAtMs = millis() + durMs;
-    relayWrite(PIN_PUMP, true);
-  } else {
-    if (pumpOn) pumpLastOffMs = millis();
-    pumpOn = false;
-    relayWrite(PIN_PUMP, false);
+const char* pumpErrText(PumpResult r) {
+  switch (r) {
+    case PUMP_NONE:  return "ERR NO PUMP";
+    case PUMP_EMPTY: return "ERR WATER EMPTY";
+    case PUMP_GAP:   return "ERR PUMP GAP";
+    case PUMP_BUSY:  return "ERR PUMP BUSY";
+    case PUMP_DUTY:  return "ERR PUMP DUTY";
+    default:         return "OK";
   }
-  return true;
+}
+
+void dutyRoll() {
+  if (millis() - dutyWindowStartMs >= PUMP_DUTY_WINDOW_MS) {
+    dutyWindowStartMs = millis();
+    dutyUsedMs = 0;
+  }
+}
+
+unsigned long dutyLeftMs() {
+  dutyRoll();
+  unsigned long used = dutyUsedMs + (pumpOn ? millis() - pumpOnAtMs : 0);
+  return used >= PUMP_DUTY_MAX_MS ? 0 : PUMP_DUTY_MAX_MS - used;
+}
+
+// เช็กอย่างเดียวว่าเปิดปั๊มได้ไหม ไม่ได้เปิดจริง
+PumpResult pumpCheck() {
+  if (!HAS_PUMP) return PUMP_NONE;
+  if (waterEmpty) return PUMP_EMPTY;                      // น้ำหมด ห้ามเปิดเด็ดขาด
+  if (pumpOn) return PUMP_BUSY;                           // ห้ามยืดเวลาด้วยการสั่งซ้ำ
+  if (millis() - pumpLastOffMs < PUMP_MIN_GAP) return PUMP_GAP;
+  if (dutyLeftMs() < PUMP_MIN_RUN_MS) return PUMP_DUTY;
+  return PUMP_OK;
+}
+
+PumpResult pumpStart(unsigned long durMs) {
+  PumpResult r = pumpCheck();
+  if (r != PUMP_OK) return r;
+  if (durMs == 0 || durMs > PUMP_MAX_MS) durMs = PUMP_MAX_MS;
+  unsigned long left = dutyLeftMs();
+  if (durMs > left) durMs = left;                         // ตัดให้พอดีโควตาที่เหลือ
+  pumpOn = true;
+  pumpOnAtMs = millis();
+  pumpOffAtMs = millis() + durMs;
+  relayWrite(PIN_PUMP, true);
+  return PUMP_OK;
+}
+
+void pumpStop() {
+  if (pumpOn) {
+    pumpLastOffMs = millis();
+    dutyRoll();
+    dutyUsedMs += millis() - pumpOnAtMs;
+  }
+  pumpOn = false;
+  relayWrite(PIN_PUMP, false);
 }
 
 void servicePump() {
-  if (pumpOn && (long)(millis() - pumpOffAtMs) >= 0) pumpSet(false);
+  if (pumpOn && (long)(millis() - pumpOffAtMs) >= 0) pumpStop();
   if (pumpOn && waterEmpty) {                             // น้ำหมดกลางคัน
-    pumpSet(false);
+    pumpStop();
     Serial.println("EVT PUMP CUT WATER");
   }
 }
@@ -241,6 +317,19 @@ void stopMove() {
   moving = false;
   stepsDone = stepsTotal = 0;
   lastMoveEndMs = millis();
+}
+
+// หยุดแบบชะลอ: ลดความเร็วตามแรมป์จนช้าสุดแล้วค่อยหยุด ตำแหน่งจึงไม่หลุด
+// (เดิม MOT STOP หยุดทันทีจากความเร็วสูงสุด แกนไหลเลยได้แต่ตัวนับไม่รู้)
+void softStop() {
+  if (!moving) return;
+  long remain = stepsTotal - stepsDone;
+  long ramp = min((long)RAMP_STEPS, stepsTotal / 2);
+  long phase = min(stepsDone, remain);
+  long k = min(phase, ramp);                // ต้องใช้อีกกี่สเต็ปถึงจะช้าสุด
+  if (k <= 1) { stopMove(); return; }
+  stepsTotal = stepsDone + k;
+  targetStep = posSteps + (dirPositive ? k : -k);
 }
 
 void startMoveTo(long target) {
@@ -291,14 +380,18 @@ void serviceMotor() {
 void repelAbort() {
   repelStep = RP_IDLE;
   stopMove();
-  pumpSet(false);
+  pumpStop();
 }
 
-void repelStart() {
-  if (waterEmpty) { Serial.println("EVT REPEL SKIP WATER"); return; }
+// คืน PUMP_OK ถ้าเริ่มรอบไล่ได้ ไม่งั้นคืนเหตุผลที่ปั๊มเปิดไม่ได้
+// เช็กก่อนเริ่ม จะได้ไม่กวาดหัวฉีดไปมาโดยไม่มีน้ำออก
+PumpResult repelStart() {
+  PumpResult r = pumpCheck();
+  if (r != PUMP_OK) return r;
   startMoveTo(0);                       // กลับจุดกลางก่อนเสมอ กันตำแหน่งเพี้ยน
   repelStep = RP_HOME;
   repelEndMs = millis() + REPEL_PUMP_MS;
+  return PUMP_OK;
 }
 
 void serviceRepel() {
@@ -307,15 +400,23 @@ void serviceRepel() {
   bool timeUp = (long)(millis() - repelEndMs) >= 0;
 
   if (repelStep == RP_HOME && !moving) {
-    pumpSet(true, REPEL_PUMP_MS);
+    PumpResult r = pumpStart(REPEL_PUMP_MS);
+    if (r != PUMP_OK) {                 // เช่นน้ำหมดหรือโควตาหมดระหว่างกลับจุดกลาง
+      repelAbort();
+      Serial.printf("EVT REPEL FAIL %s\n", pumpErrText(r) + 4);
+      return;
+    }
     repelEndMs = millis() + REPEL_PUMP_MS;
     startMoveTo(REPEL_SWEEP);
     repelStep = RP_SWEEP_R;
     return;
   }
 
+  // ปั๊มดับก่อนเวลา (น้ำหมด/โควตาหมด) ก็ไม่ต้องกวาดต่อให้เปลืองไฟ
+  if (!pumpOn) timeUp = true;
+
   if (timeUp && !moving) {              // หมดเวลาพ่น -> เก็บงาน
-    pumpSet(false);
+    pumpStop();
     startMoveTo(0);
     repelStep = RP_IDLE;
     Serial.println("EVT REPEL DONE");
@@ -356,7 +457,21 @@ void serviceWater() {
     if (d > 1.0 && d < 400.0) s[n++] = d;
     delay(12);                           // HC-SR04 ต้องพักระหว่างยิง
   }
-  if (n < 3) return;                     // อ่านไม่ได้ เก็บค่าเดิมไว้ก่อน
+  if (n < 3) {                           // อ่านไม่ได้
+    // ครั้งเดียวอาจเป็นคลื่นน้ำ แต่ถ้าติดกันหลายรอบ แปลว่าสายหลุดหรือเซนเซอร์เสีย
+    // ต้องล็อกปั๊มไว้ก่อน ไม่งั้นค่าเก่าค้างอยู่แล้วปั๊มเดินแห้งได้โดยไม่มีใครรู้
+    if (++waterFailCount >= WATER_FAIL_LIMIT && !waterFault) {
+      waterFault = true;
+      waterEmpty = true;
+      Serial.println("EVT WATER FAULT");
+    }
+    return;
+  }
+  waterFailCount = 0;
+  if (waterFault) {
+    waterFault = false;
+    Serial.println("EVT WATER SENSOR OK");
+  }
 
   for (int i = 0; i < n - 1; i++)
     for (int j = i + 1; j < n; j++)
@@ -385,6 +500,7 @@ void serviceWater() {
    ========================================================================== */
 void serviceBattery() {
   if (!HAS_VBAT_SENSE) return;
+  if (moving) return;                    // อ่าน ADC 16 ครั้งใช้ ~32 ms มอเตอร์จะกระตุก
   static unsigned long last = 0;
   if (millis() - last < 3000) return;
   last = millis();
@@ -431,7 +547,7 @@ void servicePir() {
   if (!PIR_ENABLED) return;
   bool v = pirRaw();
   unsigned long now = millis();
-  if (v && !pirPrev && now > pirBlockUntil) {
+  if (v && !pirPrev && (long)(now - pirBlockUntil) > 0) {   // เทียบแบบนี้ไม่พังตอน millis() วนรอบ
     pirBlockUntil = now + PIR_LOCKOUT_MS;
     Serial.println("EVT PIR");
   }
@@ -467,6 +583,10 @@ void sendStat() {
   Serial.print(" WCM=");     Serial.print(waterCm, 1);
   Serial.print(" WLOW=");    Serial.print(waterLow ? 1 : 0);
   Serial.print(" WEMPTY=");  Serial.print(waterEmpty ? 1 : 0);
+  Serial.print(" WFAULT=");  Serial.print(waterFault ? 1 : 0);
+  Serial.print(" PDUTY=");   Serial.print(dutyLeftMs());
+  Serial.print(" POSOK=");   Serial.print(posKnown ? 1 : 0);
+  Serial.print(" RST=");     Serial.print(resetReasonText);
   Serial.print(" VBAT=");    Serial.print(vbat, 2);
   Serial.print(" CAM=");     Serial.print(camOnline ? 1 : 0);
   Serial.print(" READY=");   Serial.print(systemReady() ? 1 : 0);
@@ -488,7 +608,7 @@ void handleLine(String line) {
   if (up == "STAT") { sendStat(); return; }
   if (up == "HELP") {
     Serial.println("OK CMDS PING STAT ABORT REPEL MOT L|R <n> MOT HOME MOT STOP "
-                   "PUMP <ms> WATER CAM 0|1 VCAL <v>");
+                   "MOT ZERO PUMP <ms> WATER CAM 0|1 VCAL <v>");
     return;
   }
 
@@ -500,7 +620,10 @@ void handleLine(String line) {
   }
 
   if (up.startsWith("CAM")) {          // Pi แจ้งสถานะกล้อง: CAM 1 / CAM 0
-    camOnline = (up.indexOf('1') > 0);
+    String arg = up.substring(3);
+    arg.trim();
+    if (arg != "0" && arg != "1") { Serial.println("ERR ARG"); return; }
+    camOnline = (arg == "1");
     Serial.printf("OK CAM %d\n", camOnline ? 1 : 0);
     return;
   }
@@ -516,26 +639,27 @@ void handleLine(String line) {
     float real = up.substring(4).toFloat();
     if (real > 5.0 && real < 20.0 && vbat > 1.0) {
       VBAT_TRIM = VBAT_TRIM * (real / vbat);
+      prefs.putFloat("vtrim", VBAT_TRIM);   // จำไว้ในแฟลช รีบูตแล้วไม่หาย
       Serial.printf("OK VCAL TRIM=%.4f\n", VBAT_TRIM);
     } else Serial.println("ERR VCAL RANGE");
     return;
   }
 
   if (up == "REPEL") {
-    if (repelStep != RP_IDLE) { Serial.println("ERR BUSY"); return; }
-    if (waterEmpty)           { Serial.println("ERR WATER EMPTY"); return; }
-    repelStart();
+    if (repelStep != RP_IDLE || moving) { Serial.println("ERR BUSY"); return; }
+    PumpResult r = repelStart();
+    if (r != PUMP_OK) { Serial.println(pumpErrText(r)); return; }
     Serial.println("OK REPEL");
     return;
   }
 
   if (up.startsWith("PUMP")) {
     if (repelStep != RP_IDLE) { Serial.println("ERR BUSY"); return; }
-    if (waterEmpty)           { Serial.println("ERR WATER EMPTY"); return; }
     long ms = up.substring(4).toInt();
     if (ms <= 0) { Serial.println("ERR ARG"); return; }
-    if (!pumpSet(true, (unsigned long)ms)) { Serial.println("ERR PUMP GAP"); return; }
-    Serial.printf("OK PUMP %ld\n", min(ms, (long)PUMP_MAX_MS));
+    PumpResult r = pumpStart((unsigned long)ms);
+    if (r != PUMP_OK) { Serial.println(pumpErrText(r)); return; }
+    Serial.printf("OK PUMP %lu\n", pumpOffAtMs - pumpOnAtMs);   // เวลาจริงหลังตัดตามเพดาน/โควตา
     return;
   }
 
@@ -544,9 +668,20 @@ void handleLine(String line) {
     String rest = up.substring(3);
     rest.trim();
 
-    if (rest == "STOP") { stopMove(); Serial.println("OK STOP"); return; }
+    if (rest == "STOP") { softStop(); Serial.println("OK STOP"); return; }
+
+    // คำสั่งหมุนใหม่ระหว่างที่แกนยังหมุนอยู่ = กลับทิศทันทีจากความเร็วสูง
+    // สเต็ปหลุดแล้วตำแหน่งเพี้ยน จึงให้รอหมุนเสร็จ (หรือสั่ง MOT STOP ก่อน)
+    if (moving) { Serial.println("ERR MOVING"); return; }
+
+    if (rest == "ZERO") {              // ผู้ใช้จัดหัวฉีดตรงกลางด้วยมือแล้ว สั่งจำจุดนี้
+      posSteps = 0;
+      targetStep = 0;
+      posKnown = true;
+      Serial.println("OK ZERO");
+      return;
+    }
     if (rest == "HOME") {
-      stopMove();
       if (posSteps == 0) { Serial.println("OK HOME"); return; }
       startMoveTo(0);
       Serial.println("OK HOME");
@@ -601,13 +736,30 @@ void setup() {
 
   if (HAS_VBAT_SENSE) analogSetPinAttenuation(PIN_VBAT, ADC_11db);
 
+  prefs.begin("birdctrl", false);
+  VBAT_TRIM = prefs.getFloat("vtrim", 1.0f);
+
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:  resetReasonText = "POWERON";  break;
+    case ESP_RST_BROWNOUT: resetReasonText = "BROWNOUT"; break;   // ไฟตก เช่นตอนปั๊มเริ่มเดิน
+    case ESP_RST_PANIC:    resetReasonText = "PANIC";    break;
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT:      resetReasonText = "WDT";      break;
+    case ESP_RST_SW:       resetReasonText = "SW";       break;
+    case ESP_RST_EXT:      resetReasonText = "EXT";      break;
+    default:               resetReasonText = "OTHER";    break;
+  }
+
   bootMs = millis();
   lastHostMs = millis();
+  dutyWindowStartMs = millis();
   rxBuf.reserve(64);
 
-  Serial.println("OK READY");
-  Serial.printf("OK FW %s\n", FW_ID);
-  Serial.printf("OK HW MOTOR=%d PUMP=%d WATER=%d LAMP=%d VBAT=%d PIR=%d\n",
+  // ข้อความตอนบูตขึ้นต้นด้วย EVT ไม่ใช่ OK
+  // ไม่งั้น Pi อาจเข้าใจผิดว่าเป็นคำตอบของคำสั่งที่ส่งค้างไว้ตอนบอร์ดรีเซ็ต
+  Serial.printf("EVT BOOT %s RST=%s\n", FW_ID, resetReasonText);
+  Serial.printf("EVT HW MOTOR=%d PUMP=%d WATER=%d LAMP=%d VBAT=%d PIR=%d\n",
                 HAS_MOTOR, HAS_PUMP, HAS_WATER_SENSOR,
                 HAS_STATUS_LAMP, HAS_VBAT_SENSE, HAS_PIR);
 }
@@ -616,9 +768,14 @@ void loop() {
   while (Serial.available()) {
     char c = (char)Serial.read();
     if (c == '\n' || c == '\r') {
-      if (rxBuf.length()) { handleLine(rxBuf); rxBuf = ""; }
+      if (rxOverflow) Serial.println("ERR TOOLONG");
+      else if (rxBuf.length()) handleLine(rxBuf);
+      rxBuf = "";
+      rxOverflow = false;
     } else if (rxBuf.length() < 60) {
       rxBuf += c;
+    } else {
+      rxOverflow = true;             // ยาวเกิน ทิ้งทั้งบรรทัด ไม่เอาครึ่งคำสั่งไปทำงาน
     }
   }
 
