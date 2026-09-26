@@ -107,6 +107,9 @@ extern SDMMCFS SD_MMC;
 // ---------------- Preferences (kept in memory) ----------------
 class Preferences {
   std::map<std::string, std::vector<uint8_t>> m_;
+ public:
+  bool clear() { m_.clear(); return true; }
+ private:
   template <typename T> T get(const char* k, T d) { auto it = m_.find(k); if (it == m_.end() || it->second.size() != sizeof(T)) return d; T v; memcpy(&v, it->second.data(), sizeof v); return v; }
   template <typename T> size_t put(const char* k, T v) { m_[k].assign((uint8_t*)&v, (uint8_t*)&v + sizeof v); return sizeof v; }
  public:
@@ -296,7 +299,10 @@ class BLEScan {
 };
 class BLEDevice {
  public:
-  static bool getInitialized() { return true; }
-  static void init(const char*) {}
+  static bool& inited() { static bool b = false; return b; }
+  static int& deinits() { static int n = 0; return n; }
+  static bool getInitialized() { return inited(); }
+  static void init(const char*) { inited() = true; }
+  static void deinit(bool) { inited() = false; deinits()++; }
   static BLEScan* getScan() { static BLEScan s; return &s; }
 };

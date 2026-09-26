@@ -168,5 +168,8 @@ inline void randomSeed(unsigned long v) { g_simRng.seed(v); }
 #define MALLOC_CAP_8BIT 2
 inline void* heap_caps_malloc(size_t n, int) { return malloc(n); }
 typedef void* TaskHandle_t;
-inline int xTaskCreatePinnedToCore(void (*fn)(void*), const char*, int, void* arg, int, TaskHandle_t* h, int) { if (h) *h = nullptr; fn(arg); return 1; }   // simulator: runs the job at once
+#define pdPASS 1
+#define pdFAIL 0
+extern bool g_simTaskFail;   // tests: the next task cannot be made (no memory)
+inline int xTaskCreatePinnedToCore(void (*fn)(void*), const char*, int, void* arg, int, TaskHandle_t* h, int) { if (h) *h = nullptr; if (g_simTaskFail) { g_simTaskFail = false; return pdFAIL; } fn(arg); return pdPASS; }   // simulator: runs the job at once
 inline void vTaskDelete(void*) {}
