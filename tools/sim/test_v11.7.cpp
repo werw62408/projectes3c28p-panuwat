@@ -141,6 +141,11 @@ int main() {
     printf("G11 open / mash / exit 5 times: memory freed each time=%zu of 5, back on the list=%d %s\n", freeCnt, scr == S_GBLIST, R(freeCnt == 5 && scr == S_GBLIST)); }
 
   // ================= Deck =================
+#ifdef DECK_NEON
+#define DECK_BOTTOM H           // v11.7.2+: no bottom bar
+#else
+#define DECK_BOTTOM FTR_Y
+#endif
   auto keyTap = [&](int i) { int x, y, w, h; deckKeyRect(i % DECK_PER_PAGE, x, y, w, h); if (deckPage != i / DECK_PER_PAGE) ftap(W - 38, HDR_H + 48); ftap(x + w / 2, y + h / 2); };
   auto downs = [&](size_t from) { int d = 0; for (size_t i = from; i < g_simDeck.size(); i++) if (g_simDeck[i].down) d++; return d; };
   auto ups = [&](size_t from) { int u = 0; for (size_t i = from; i < g_simDeck.size(); i++) if (!g_simDeck[i].down) u++; return u; };
@@ -175,8 +180,13 @@ int main() {
   { size_t n0 = g_simDeck.size(); pw = P_OFF; lowPower = true; keyTap(0); bool w1 = pw == P_ON; pw = P_OFF; press(); bool w2 = pw == P_ON;
     printf("D8 screen off: tap wakes=%d, press wakes=%d, nothing sent=%d %s\n", w1, w2, g_simDeck.size() == n0, R(w1 && w2 && g_simDeck.size() == n0)); }
   // D9 leave Deck by a bottom tab: Bluetooth off again (memory back for news)
+#ifdef DECK_NEON   // v11.7.2+: no bottom bar on Deck, it is left by Exit (top left)
+  { ftap(30, HDR_H + 17); run(100);
+    printf("D9 left Deck by Exit: on Apps=%d, Bluetooth off=%d %s\n", scr == S_APPS, !deckBleOn && !BLEDevice::getInitialized(), R(scr == S_APPS && !deckBleOn)); }
+#else
   { int x0[N_TABS + 1]; footerTabs(x0); ftap((x0[0] + x0[1]) / 2, FTR_Y + 10); run(100);
     printf("D9 left Deck by the Log tab: on Log=%d, Bluetooth off=%d %s\n", scr == S_HOME, !deckBleOn && !BLEDevice::getInitialized(), R(scr == S_HOME && !deckBleOn)); }
+#endif
   // D10 the phone web page: save keys, bad input is refused or cleaned, empty = defaults, kept after a restart
   { server.args["plain"] = R"([{"label":"My mute","kind":1,"mod":5,"key":16},{"label":"This label is far too long","kind":9,"key":153},{"label":"T","kind":3,"text":"hi"}])";
     apiDeckPost(); bool ok1 = server.lastCode == 200 && deckKeys[0].label == "My mute" && deckKeys[0].mod == 5 && deckKeys[1].label.length() == 16 && deckKeys[1].kind == DK_NONE && deckKeys[2].kind == DK_TEXT && deckKeys[5].kind == DK_NONE;
@@ -194,7 +204,7 @@ int main() {
     printf("D11 60 fast taps: %d keys sent, every one let go=%d; cable out: nothing sent + note=%d %s\n", downs(n0), allUp, noSend, R(downs(n0) >= 55 && allUp && noSend)); }
   // D12 wide screen: 4 x 3 keys fit
   { rot = 1; applyRotation(); deckPage = 0; dirty = true; run(100); int x, y, w, h; deckKeyRect(11, x, y, w, h); shot("t117_deck_wide");
-    printf("D12 wide screen: last key ends at x=%d y=%d (screen %dx%d, tabs at %d) %s\n", x + w, y + h, W, H, FTR_Y, R(x + w <= W && y + h <= FTR_Y)); rot = 0; applyRotation(); goScreen(S_HOME); dirty = true; run(100); }
+    printf("D12 wide screen: last key ends at x=%d y=%d (screen %dx%d, tabs at %d) %s\n", x + w, y + h, W, H, FTR_Y, R(x + w <= W && y + h <= DECK_BOTTOM)); rot = 0; applyRotation(); goScreen(S_HOME); dirty = true; run(100); }
 
   return 0;
 }

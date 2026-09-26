@@ -1,0 +1,4 @@
+2048.gb - a free Game Boy game by Sanqui (github.com/Sanqui/2048-gb), zlib license (see 2048_LICENSE.txt).
+This is an ALTERED build: the source was changed only so it assembles with rgbds 0.9
+(old "EQU" / "MACRO" / "HOME" syntax updated) and the DMA routine uses "ldh" so it keeps its 10-byte size.
+The game itself is not changed. Put 2048.gb in the /roms folder of the SD card, then Apps > Games > Game Boy.
