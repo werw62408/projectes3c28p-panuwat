@@ -31,6 +31,15 @@ Read `CLAUDE.md` at the project root first. It has the language rules (Thai to t
   - a real sequence of pushes and presses
   - the screen-off (pocket) case
   - both screen directions when layout changed
+- Add extreme cases too (the owner asked for them every time; see the list in CLAUDE.md):
+  - long uptime (set `g_simMs` near 24.8 and 49.7 days)
+  - time jumps
+  - full storage, SD card pulled
+  - Wi-Fi dropping mid-download
+  - rapid taps, touch + stick together
+  - no stick connected
+  - rotation mid-game
+  - empty first start and huge data
 - For network data (news, weather), retry the download inside the test. The live internet sometimes fails.
 - If the phone web page changed, run `node tools/web/test_video.js SomudTick_v<new>/SomudTick/webpage.h`, or write a similar Playwright check.
 - Screenshots:
