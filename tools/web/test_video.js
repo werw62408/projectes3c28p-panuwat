@@ -17,6 +17,11 @@ const scenarios = {
     {const oa=EventTarget.prototype.addEventListener;let k=0;EventTarget.prototype.addEventListener=function(t,f,o){if(t==='seeked'&&this instanceof HTMLMediaElement){if(++k%15==0)return;}return oa.call(this,t,f,o)}}`,
   noframes: `HTMLMediaElement.prototype.play=function(){return Promise.reject(new Error('NotAllowed'))};
     {const oa=EventTarget.prototype.addEventListener;EventTarget.prototype.addEventListener=function(t,f,o){if(t==='seeked'&&this instanceof HTMLMediaElement)return;return oa.call(this,t,f,o)}}`,
+  // v11.6: a model of iPhone Safari (owner: iOS 18.5, no clip ever converted): a clip player that is not on the
+  // page never gives a picture (readyState stays at "metadata only") and is not allowed to play
+  ios: `{const rs=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'readyState');
+    Object.defineProperty(HTMLMediaElement.prototype,'readyState',{get(){const r=rs.get.call(this);return this.isConnected?r:Math.min(r,1)}});
+    const op=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){return this.isConnected?op.call(this):Promise.reject(new Error('NotAllowed'))};}`,
 };
 (async () => {
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
