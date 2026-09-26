@@ -85,7 +85,7 @@ int main() {
   auto openRom = [&](const char* name) { for (size_t i = 0; i < gbRoms.size(); i++) if (gbRoms[i].name == name) { int top = gbListTop(); ftap(W / 2, top + (int)i * GB_ROW_H + 18); return; } };
   // G2 bad files: a message, no crash, still on the list
   { openRom("color_only"); bool m1 = gbMsg.indexOf("Color") >= 0 && scr == S_GBLIST;
-    openRom("tiny"); bool m2 = gbMsg.indexOf("small") >= 0 && scr == S_GBLIST;
+    openRom("tiny"); bool m2 = gbMsg.indexOf("Not a Game Boy") >= 0 && scr == S_GBLIST;
     dirty = true; render(); savePng(spr, "t117_gb_badfile", W, H);
     printf("G2 bad games: Color-only says so=%d, too small says so=%d, still on the list %s\n", m1, m2, R(m1 && m2)); }
   // G3 the CPU test game: runs at the right speed and passes every test (a free test program for Game Boy emulators)
@@ -105,7 +105,7 @@ int main() {
     int changes = 0; uint32_t prev = h1;
     const int dirs[8][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}, {1, 0}, {0, 1}, {-1, 0}, {0, 1}};
     for (auto& d : dirs) { push(d[0], d[1], 150); run(600); lastTouchMs = millis(); uint32_t h = fbHash(); if (h != prev) changes++; prev = h; }
-    shotLcd("t117_gb_2048");
+    shotLcd("t117_gb_2048"); gbDrawChrome(); savePng(spr, "t117_gb_2048_full", W, H);
     printf("G5 2048 by stick only: press starts=%d, %d of 8 pushes moved the tiles %s\n", h1 != h0, changes, R(h1 != h0 && changes >= 5));
     // G6 top bar [Exit] saves the game's RAM (2048 keeps its best score in battery RAM)
     bool hadRam = gbRamSize > 0; ftap(W - 10, 10); bool left = scr == S_GBLIST;
@@ -126,7 +126,7 @@ int main() {
   { rot = 1; applyRotation(); openRom("2048"); run(1500); lastTouchMs = millis();
     GbKey k[4]; gbKeys(k); bool sides = k[0].x == 0 && k[2].x == W - 40 && gbX0() == 40;
     uint32_t h0 = fbHash(); g_simTouch = true; g_simTouchX = k[3].x + 20; g_simTouchY = k[3].y + 40; run(200); g_simTouch = false; run(1500); bool aWorks = fbHash() != h0;
-    gbChromeDirty = true; run(50); shotLcd("t117_gb_wide");
+    gbDrawChrome(); savePng(spr, "t117_gb_wide", W, H);   // (the simulator screen does not turn: the picture is taken from the drawing)
     printf("G9 wide screen: picture at x=%d with buttons at the sides=%d, touch A starts the game=%d %s\n", gbX0(), sides, aWorks, R(sides && aWorks));
     ftap(W - 10, 10); rot = 0; applyRotation(); run(100); }
   // G10 extreme: the SD card is pulled out while playing (the game is in memory): it plays on, leaving can't save but doesn't crash
@@ -139,6 +139,62 @@ int main() {
   { gbListOpen(); run(100); size_t freeCnt = 0;
     for (int k = 0; k < 5; k++) { openRom("2048"); for (int j = 0; j < 20; j++) { push(j % 2 ? 1 : -1, 0, 40); press(30); } ftap(W - 10, 10); if (!gbCore && !gbRom && !gbFb) freeCnt++; }
     printf("G11 open / mash / exit 5 times: memory freed each time=%zu of 5, back on the list=%d %s\n", freeCnt, scr == S_GBLIST, R(freeCnt == 5 && scr == S_GBLIST)); }
+
+  // ================= Deck =================
+  auto keyTap = [&](int i) { int x, y, w, h; deckKeyRect(i % DECK_PER_PAGE, x, y, w, h); if (deckPage != i / DECK_PER_PAGE) ftap(W - 38, HDR_H + 48); ftap(x + w / 2, y + h / 2); };
+  auto downs = [&](size_t from) { int d = 0; for (size_t i = from; i < g_simDeck.size(); i++) if (g_simDeck[i].down) d++; return d; };
+  auto ups = [&](size_t from) { int u = 0; for (size_t i = from; i < g_simDeck.size(); i++) if (!g_simDeck[i].down) u++; return u; };
+  // D1 Apps > Deck
+  { goScreen(S_APPS); dirty = true; run(100); int x, y, w, h; appTileRect(4, x, y, w, h); ftap(x + w / 2, y + h / 2); run(100);
+    shot("t117_deck");
+    printf("D1 Apps > Deck: opened=%d, USB mode, status \"%s\" %s\n", scr == S_DECK, deckStatus().c_str(), R(scr == S_DECK && deckVia == DV_USB && deckReady())); }
+  // D2 media key over USB: press and let go
+  { size_t n0 = g_simDeck.size(); keyTap(0); bool ok = g_simDeck.size() == n0 + 2 && g_simDeck[n0].via == 'U' && g_simDeck[n0].media == 0xCD && g_simDeck[n0].down && !g_simDeck[n0 + 1].down;
+    printf("D2 tap Play/Pause: USB media key 0xCD down + up %s\n", R(ok)); }
+  // D3 page 2, Copy = Ctrl+C
+  { size_t n0 = g_simDeck.size(); keyTap(12); bool ok = g_simDeck.size() == n0 + 2 && g_simDeck[n0].mod == DM_CTRL && g_simDeck[n0].key == 0x06 && g_simDeck[n0 + 1].key == 0;
+    shot("t117_deck_page2");
+    printf("D3 page 2, tap Copy: Ctrl + C then released=%d, page shown %d/2 %s\n", ok, deckPage + 1, R(ok && deckPage == 1)); }
+  // D4 a text key types each letter (Shift for capitals and "!")
+  { size_t n0 = g_simDeck.size(); keyTap(23); int typed = downs(n0); int shifted = 0; for (size_t i = n0; i < g_simDeck.size(); i++) if (g_simDeck[i].down && g_simDeck[i].mod == DM_SHIFT) shifted++;
+    printf("D4 tap Hello: %d keys typed for \"%s\" (%d with Shift: H, S, T, !) %s\n", typed, deckKeys[23].text.c_str(), shifted, R(typed == (int)deckKeys[23].text.length() && shifted == 4)); }
+  // D5 joystick only: move the ring to a key and press
+  { deckPage = 0; dirty = true; run(100); size_t n0 = g_simDeck.size(); navShow = false;
+    push(0, 1); push(0, 1); push(0, 1); press();
+    printf("D5 joystick: 3 pushes + press sent a key=%d %s\n", downs(n0) == 1, R(downs(n0) == 1)); }
+  // D6 Bluetooth: not paired -> nothing sent + a note; paired -> sent over Bluetooth
+  { ftap(W - 38, HDR_H + 17); bool bt = deckVia == DV_BT && deckBleOn;
+    size_t n0 = g_simDeck.size(); keyTap(1); bool none = g_simDeck.size() == n0 && deckNote.indexOf("Not paired") >= 0;
+    shot("t117_deck_bt_notpaired");
+    deckBleLinked = true; keyTap(1); bool sent = g_simDeck.size() == n0 + 2 && g_simDeck[n0].via == 'B' && g_simDeck[n0].media == 0xB5;
+    printf("D6 Bluetooth: switched=%d, not paired: nothing sent + note=%d, paired: Next sent by Bluetooth=%d %s\n", bt, none, sent, R(bt && none && sent)); }
+  // D7 a Bluetooth scan while Deck uses Bluetooth: refused, Deck stays connected
+  { btScan(); bool refused = !btBusy; btDone = true; btCollect(); bool still = BLEDevice::getInitialized() && deckBleOn;
+    printf("D7 Bluetooth scan during Deck: refused=%d, Deck still on=%d %s\n", refused, still, R(refused && still)); btDone = false; }
+  // D8 pocket: screen off in Deck: a tap / a press only wakes, nothing is sent
+  { size_t n0 = g_simDeck.size(); pw = P_OFF; lowPower = true; keyTap(0); bool w1 = pw == P_ON; pw = P_OFF; press(); bool w2 = pw == P_ON;
+    printf("D8 screen off: tap wakes=%d, press wakes=%d, nothing sent=%d %s\n", w1, w2, g_simDeck.size() == n0, R(w1 && w2 && g_simDeck.size() == n0)); }
+  // D9 leave Deck by a bottom tab: Bluetooth off again (memory back for news)
+  { int x0[N_TABS + 1]; footerTabs(x0); ftap((x0[0] + x0[1]) / 2, FTR_Y + 10); run(100);
+    printf("D9 left Deck by the Log tab: on Log=%d, Bluetooth off=%d %s\n", scr == S_HOME, !deckBleOn && !BLEDevice::getInitialized(), R(scr == S_HOME && !deckBleOn)); }
+  // D10 the phone web page: save keys, bad input is refused or cleaned, empty = defaults, kept after a restart
+  { server.args["plain"] = R"([{"label":"My mute","kind":1,"mod":5,"key":16},{"label":"This label is far too long","kind":9,"key":153},{"label":"T","kind":3,"text":"hi"}])";
+    apiDeckPost(); bool ok1 = server.lastCode == 200 && deckKeys[0].label == "My mute" && deckKeys[0].mod == 5 && deckKeys[1].label.length() == 16 && deckKeys[1].kind == DK_NONE && deckKeys[2].kind == DK_TEXT && deckKeys[5].kind == DK_NONE;
+    deckDefaults(); deckLoad(); bool kept = deckKeys[0].label == "My mute";
+    server.args["plain"] = "{broken"; apiDeckPost(); bool bad1 = server.lastCode == 400 && deckKeys[0].label == "My mute";
+    std::string many = "["; for (int i = 0; i < 30; i++) many += std::string(i ? "," : "") + "{\"label\":\"x\",\"kind\":1,\"key\":4}"; many += "]";
+    server.args["plain"] = many; apiDeckPost(); bool bad2 = server.lastCode == 400;
+    server.args["plain"] = "[]"; apiDeckPost(); bool reset = deckKeys[0].label == "Play Pause";
+    printf("D10 web page: saved + cleaned=%d, kept after restart=%d, broken JSON refused=%d, 30 keys refused=%d, [] = defaults=%d %s\n", ok1, kept, bad1, bad2, reset, R(ok1 && kept && bad1 && bad2 && reset)); }
+  // D11 extreme: 60 fast taps -> 60 keys, every key let go (nothing stuck); cable pulled -> a note, nothing sent
+  { deckOpen(); deckVia = DV_USB; deckStartVia(); run(100); size_t n0 = g_simDeck.size();
+    for (int k = 0; k < 60; k++) keyTap(k % 12 == 11 ? 3 : k % 12);
+    bool allUp = downs(n0) == ups(n0);
+    g_simUsbHost = false; size_t n1 = g_simDeck.size(); keyTap(0); bool noSend = g_simDeck.size() == n1 && deckNote.indexOf("USB") >= 0; g_simUsbHost = true;
+    printf("D11 60 fast taps: %d keys sent, every one let go=%d; cable out: nothing sent + note=%d %s\n", downs(n0), allUp, noSend, R(downs(n0) >= 55 && allUp && noSend)); }
+  // D12 wide screen: 4 x 3 keys fit
+  { rot = 1; applyRotation(); deckPage = 0; dirty = true; run(100); int x, y, w, h; deckKeyRect(11, x, y, w, h); shot("t117_deck_wide");
+    printf("D12 wide screen: last key ends at x=%d y=%d (screen %dx%d, tabs at %d) %s\n", x + w, y + h, W, H, FTR_Y, R(x + w <= W && y + h <= FTR_Y)); rot = 0; applyRotation(); goScreen(S_HOME); dirty = true; run(100); }
 
   return 0;
 }

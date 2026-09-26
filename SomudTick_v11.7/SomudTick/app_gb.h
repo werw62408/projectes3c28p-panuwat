@@ -52,7 +52,7 @@ void gbListOpen() { scr = S_GBLIST; gbListScroll = 0; gbListLoad(); dirty = true
 const int GB_ROW_H = 44;
 int gbListTop() { return HDR_H + 36 + (gbMsg.length() ? 40 : 0); }
 void drawGbList() {
-  drawAppTitle("Game Boy", gbRoms.size() ? String(gbRoms.size()) + " games" : String(""));
+  drawAppTitle("Game Boy", "", false);
   if (gbMsg.length()) {
     spr.fillRoundRect(6, HDR_H + 36, W - 12, 36, 8, C(0xFCE3E0));
     txt(FS, fitText(FS, gbMsg, W - 24), 14, HDR_H + 54, 0xB02020, D_ML);
@@ -142,24 +142,24 @@ void gbLeave() {   // save, free the memory, back to the list
 void gbStart(const GbRom& r) {
   gbMsg = "";
   gbFree();
-  if (r.size < 0x8000 || r.size > 4UL * 1048576) { gbMsg = r.size < 0x8000 ? "Not a Game Boy game (too small)." : "Too big (more than 4 MB)."; dirty = true; return; }
+  if (r.size < 0x8000 || r.size > 4UL * 1048576) { gbMsg = r.size < 0x8000 ? "Not a Game Boy game." : "Too big (over 4 MB)."; dirty = true; return; }
   gbRom = (uint8_t*)heap_caps_malloc(r.size, MALLOC_CAP_SPIRAM);
   gbCore = (struct gb_s*)malloc(sizeof(struct gb_s));
   gbFb = (uint16_t*)heap_caps_malloc(GB_DW * GB_DH * 2, MALLOC_CAP_SPIRAM);
-  if (!gbRom || !gbCore || !gbFb) { gbFree(); gbMsg = "Not enough memory. Restart the board."; dirty = true; return; }
+  if (!gbRom || !gbCore || !gbFb) { gbFree(); gbMsg = "Not enough memory: restart."; dirty = true; return; }
   File f = SD_MMC.open(r.path, "r");
   size_t got = f ? f.read(gbRom, r.size) : 0;
   if (f) f.close();
-  if (got != r.size) { gbFree(); gbMsg = "Can't read the game from the card."; dirty = true; return; }
+  if (got != r.size) { gbFree(); gbMsg = "Can't read it from the card."; dirty = true; return; }
   gbRomSize = r.size;
-  if (gbRom[0x143] == 0xC0) { gbFree(); gbMsg = "Game Boy Color only: can't play it."; dirty = true; return; }
+  if (gbRom[0x143] == 0xC0) { gbFree(); gbMsg = "Game Boy Color only: can't play."; dirty = true; return; }
   gbErr = -1;
-  if (gb_init(gbCore, gbRomRead, gbRamRead, gbRamWrite, gbError, nullptr) != GB_INIT_NO_ERROR) { gbFree(); gbMsg = "This game type is not supported."; dirty = true; return; }
+  if (gb_init(gbCore, gbRomRead, gbRamRead, gbRamWrite, gbError, nullptr) != GB_INIT_NO_ERROR) { gbFree(); gbMsg = "This game type can't play."; dirty = true; return; }
   size_t rs = 0; gb_get_save_size_s(gbCore, &rs);
   gbRamSize = rs;
   if (gbRamSize) {
     gbRam = (uint8_t*)heap_caps_malloc(gbRamSize, MALLOC_CAP_SPIRAM);
-    if (!gbRam) { gbFree(); gbMsg = "Not enough memory. Restart the board."; dirty = true; return; }
+    if (!gbRam) { gbFree(); gbMsg = "Not enough memory: restart."; dirty = true; return; }
     memset(gbRam, 0xFF, gbRamSize);
   }
   gbName = r.name;
@@ -189,15 +189,15 @@ int gbKeys(GbKey* k) {   // the touch buttons
   } else {       // tall: a row under the picture
     int y = GB_TOP + GB_DH + 4, h = H - y - 4, w = (W - 20) / 4;
     k[0] = {4, y, w, h, JOYPAD_B, "B"}; k[1] = {8 + w, y, w, h, JOYPAD_A, "A"};
-    k[2] = {12 + 2 * w, y, w, h, JOYPAD_SELECT, "SELECT"}; k[3] = {16 + 3 * w, y, w, h, JOYPAD_START, "START"};
+    k[2] = {12 + 2 * w, y, w, h, JOYPAD_SELECT, "Select"}; k[3] = {16 + 3 * w, y, w, h, JOYPAD_START, "Start"};
   }
   return 4;
 }
 void gbDrawChrome() {   // everything but the picture (the picture comes from gbFb), plus the pause menu
   spr.fillScreen(C(0x10141C));
   spr.fillRect(0, 0, W, GB_TOP, C(0x000000));
-  spr.setFont(FB); spr.setTextColor(C(0xFFFFFF)); spr.setTextDatum(D_ML);
   int bx = gameBarButtons(GB_TOP, gbState == GB_PLAY);
+  spr.setFont(FB); spr.setTextColor(C(0xFFFFFF)); spr.setTextDatum(D_ML);   // (after the buttons: they change the text settings)
   spr.drawString(fitText(FB, gbName, bx - 12), 6, GB_TOP / 2);
   GbKey k[4]; int n = gbKeys(k);
   for (int i = 0; i < n; i++) {
@@ -285,7 +285,7 @@ void gbLoop() {
   }
   lcd.endWrite();
   if ((int32_t)(micros() - gbNextUs) > 100000) { gbNextUs = micros(); gbSlowFrames++; }   // far behind: start counting again
-  if (gbErr >= 0) { gbMsg = "The game stopped (emulator error " + String(gbErr) + ")."; gbLeave(); return; }
+  if (gbErr >= 0) { gbMsg = "The game stopped (error " + String(gbErr) + ")."; gbLeave(); return; }
   if (gbRamDirty && now - gbRamSavedMs > 60000) gbSaveRam();   // the game's save, at most once a minute
 }
 String gbSub() { return "Game Boy games"; }

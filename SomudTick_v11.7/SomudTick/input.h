@@ -71,7 +71,8 @@ void onTap(int x, int y) {
         if (i == 0) filesOpen();
         else if (i == 1) { scr = S_AC; dirty = true; }
         else if (i == 2) { scr = S_GAMES; dirty = true; }
-        else netOpen();
+        else if (i == 3) netOpen();
+        else deckOpen();
       }
       break;
     case S_GAMES:
@@ -90,6 +91,7 @@ void onTap(int x, int y) {
     case S_BT: btTap(x, y); break;
     case S_GARDEN: gardenTap(x, y); break;
     case S_GBLIST: gbListTap(x, y); break;
+    case S_DECK: deckTap(x, y); break;
     case S_USB: usbTap(x, y); break;
     case S_SET:
       if (askUpdate) {

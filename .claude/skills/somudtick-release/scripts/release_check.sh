@@ -23,8 +23,8 @@ ok "folder SomudTick_v$V/SomudTick"
 PREV=$(ls -d "$ROOT"/SomudTick_v*/ 2>/dev/null | sed 's|.*/SomudTick_v||; s|/$||' | sort -V | awk -v v="$V" '$0==v{print p; exit} {p=$0}')
 
 # 2. version on the About page
-if grep -q "line(\"Version\", \"v$V\"" "$SK/screen_settings.h"; then ok "About page shows v$V"
-else fail "About page version is $(grep -o 'line("Version", "v[0-9.]*"' "$SK/screen_settings.h" | grep -o 'v[0-9.]*') (should be v$V)"; fi
+if grep -q "line(\"Version\", \"v$V\"" "$SK/screen_settings.h" || grep -Eq "#define FW_VERSION +\"v$V\"" "$SK/SomudTick.ino"; then ok "About page shows v$V"
+else fail "About page version is not v$V (screen_settings.h line(\"Version\"...) or FW_VERSION in SomudTick.ino)"; fi
 
 # 3. README: title + "what's new" of this version at the top, with checks
 R="$SK/README.md"
@@ -64,6 +64,9 @@ if [ -f "$B" ] && [ -n "$PREV" ] && [ -f "$ROOT/SomudTick_v$PREV/SomudTick/Somud
   b=$(dd if="$ROOT/SomudTick_v$PREV/SomudTick/SomudTick_merged.bin" bs=1 skip=$((0x8000)) count=3072 2>/dev/null | md5sum)
   [ "$a" = "$b" ] && ok "partition table same as v$PREV (logs stay)" || fail "PARTITION TABLE CHANGED from v$PREV: flashing loses the logs unless planned"
   size=$(stat -c %s "$B"); [ "$size" -lt 8000000 ] && ok "bin is not padded ($size bytes, flash at 0x0)" || fail "bin is $size bytes: padded to 16 MB would overwrite the logs"
+  if [ -f "$SK/SomudTick_app.bin" ]; then
+    cmp -s <(dd if="$B" bs=1 skip=$((0x10000)) 2>/dev/null | head -c $(stat -c %s "$SK/SomudTick_app.bin")) "$SK/SomudTick_app.bin" && ok "SomudTick_app.bin = the program part of the merged bin (flash at 0x10000)" || fail "SomudTick_app.bin does not match the merged bin"
+  fi
 else warn "partition check skipped (no bin, or no previous version found)"; fi
 
 # 7. preview pictures

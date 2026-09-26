@@ -70,6 +70,7 @@ void render() {
     case S_GARDEN: drawGarden(); break;
     case S_USB: drawUsb(); break;
     case S_GBLIST: drawGbList(); break;
+    case S_DECK: drawDeck(); break;
     default: break;
   }
   if (!(scr == S_SUDOKU && land())) drawHeader();   // wide Sudoku uses the full height

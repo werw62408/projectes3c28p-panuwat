@@ -5,12 +5,12 @@
 // ---------------- Apps menu ----------------
 // 4 big tiles. "Games" opens a second page with 4 games.
 enum AppIcon { IC_FILES, IC_AC, IC_GAMES, IC_NET, IC_SWIM, IC_SUDOKU, IC_SAND, IC_GARDEN, IC_MAZE, IC_BLOCKS, IC_GB, IC_DECK };
-const int N_APPS = 4;
-const char* APP_NAMES[N_APPS] = {"Files", "AC Remote", "Games", "Internet"};
-const char* APP_SUBS[N_APPS] = {"Photos, clips", "Air con", "7 games", "Weather, news"};
-const AppIcon APP_ICONS[N_APPS] = {IC_FILES, IC_AC, IC_GAMES, IC_NET};
-void appTileRect(int i, int& x, int& y, int& w, int& h) {
-  int cols = 2, rows = 2, gap = 6;
+const int N_APPS = 5;
+const char* APP_NAMES[N_APPS] = {"Files", "AC Remote", "Games", "Internet", "Deck"};
+const char* APP_SUBS[N_APPS] = {"Photos, clips", "Air con", "7 games", "Weather, news", "Shortcut keys"};
+const AppIcon APP_ICONS[N_APPS] = {IC_FILES, IC_AC, IC_GAMES, IC_NET, IC_DECK};
+void appTileRect(int i, int& x, int& y, int& w, int& h) {   // v11.7: 5 apps, tall 2 x 3, wide 3 x 2
+  int cols = land() ? 3 : 2, rows = (N_APPS + cols - 1) / cols, gap = 6;
   w = (W - 12 - gap * (cols - 1)) / cols; h = (CONT_H - 12 - gap * (rows - 1)) / rows;
   x = 6 + (i % cols) * (w + gap); y = HDR_H + 6 + (i / cols) * (h + gap);
 }
@@ -57,6 +57,9 @@ void drawAppIcon(int ic, int cx, int cy, uint32_t c) {
       spr.fillRect(cx - 7, cy + 5, 6, 2, C(c)); spr.fillRect(cx - 5, cy + 3, 2, 6, C(c));
       spr.fillCircle(cx + 4, cy + 7, 2, C(c)); spr.fillCircle(cx + 7, cy + 4, 2, C(c));
       break; }
+    case IC_DECK:   // 3 x 2 keys
+      for (int k = 0; k < 6; k++) spr.fillRoundRect(cx - 16 + (k % 3) * 11, cy - 12 + (k / 3) * 13, 9, 11, 2, C(c));
+      break;
     case IC_BLOCKS:  // falling blocks
       for (int k = 0; k < 3; k++) spr.fillRect(cx - 15 + k * 10, cy + 4, 9, 9, C(c));
       spr.fillRect(cx - 5, cy - 6, 9, 9, C(c));

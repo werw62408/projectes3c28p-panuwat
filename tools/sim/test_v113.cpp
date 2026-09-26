@@ -138,10 +138,15 @@ int main() {
   { mazeOpen(); run(100); savePng(spr, "t113_maze_ready", W, H);
     press(); bool playing = mzState == MZ_PLAY;
     stickRaw(2048 + 1500, 2048 + 900); run(700); stickRaw(2048, 2048); savePng(spr, "t113_maze_play", W, H);
-    g_simDigital[JOY_SW] = LOW; run(1500); g_simDigital[JOY_SW] = HIGH; run(80); bool paused = mzState == MZ_PAUSE;
+    g_simDigital[JOY_SW] = LOW; run(1500); g_simDigital[JOY_SW] = HIGH; run(80);
+#ifdef FW_VERSION   // v11.5+: holding the press leaves the game (the same in every game)
+    printf("M4 start by press=%d, hold 1 s = back to Games=%d (v11.5+) %s\n", playing, scr == S_GAMES, R(playing && scr == S_GAMES)); }
+#else
+    bool paused = mzState == MZ_PAUSE;
     savePng(spr, "t113_maze_pause", W, H);
     push(0, 1); push(0, 1); press();   // Back to Games
     printf("M4 start by press=%d, hold 1 s = pause=%d, menu Back = Games=%d %s\n", playing, paused, scr == S_GAMES, R(playing && paused && scr == S_GAMES)); }
+#endif
   { mzLevel = 3; mzBuild(); mzTimeMs = 23400; mzBX = mzCellX(mzGoalC); mzBY = mzCellY(mzGoalR); mzWin(); scr = S_MAZE; mazeDraw(); savePng(spr, "t113_maze_win", W, H);
     printf("M5 level done saves the best time and opens the next level: best %u, max level %d %s\n", mzBest(3), mzMaxLevel, R(mzBest(3) == 234 && mzMaxLevel >= 4)); }
 
@@ -175,9 +180,13 @@ int main() {
     for (int i = 0; i < 6; i++) { blX = (i * 3) % 7; blHardDrop(); if (blState == BL_CLEAR) blFinishClear(); if (blState != BL_PLAY) break; }
     blocksDraw(); savePng(spr, "t113_blocks_play", W, H);
     g_simDigital[JOY_SW] = LOW; run(1500); g_simDigital[JOY_SW] = HIGH; run(80);
+#ifdef FW_VERSION   // v11.5+: holding the press leaves the game
+    printf("B7 hold 1 s = back to Games=%d (v11.5+) %s\n", scr == S_GAMES, R(scr == S_GAMES)); }
+#else
     bool paused = blState == BL_PAUSE; savePng(spr, "t113_blocks_pause", W, H);
     push(0, 1); push(0, 1); press();
     printf("B7 hold 1 s = pause=%d, menu Back = Games=%d %s\n", paused, scr == S_GAMES, R(paused && scr == S_GAMES)); }
+#endif
 
   // pictures: Games menu, ring on the Log page, wide screen
   { scr = S_GAMES; navShow = false; dirty = true; render(); savePng(spr, "t113_games_tall", W, H);

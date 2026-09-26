@@ -192,9 +192,10 @@ int btScroll = 0, btMax = 0;
 bool btScanned = false;
 volatile bool btBusy = false, btDone = false;   // the scan runs in the background (5 s); the screen keeps working
 uint32_t btStartMs = 0;
+extern bool deckBleOn;   // app_deck.h: Deck uses Bluetooth as a keyboard
 void btScanDone(BLEScanResults) { btDone = true; }
 void btScan() {
-  if (btBusy) return;
+  if (btBusy || deckBleOn) return;   // (Deck keeps Bluetooth while it is open)
   if (!BLEDevice::getInitialized()) BLEDevice::init("SomudTick");
   BLEScan* sc = BLEDevice::getScan();
   sc->setActiveScan(true);
@@ -216,7 +217,7 @@ void btCollect() {   // from loop() (v11.7; was only from drawBt(): leaving the 
   sc->clearResults();
   // v11.5: give the Bluetooth memory back (about 90 KB). It stayed taken until a restart, and then the news could
   // not be loaded any more (HTTPS needs that memory). The next Scan starts Bluetooth again.
-  BLEDevice::deinit(false);
+  if (!deckBleOn) BLEDevice::deinit(false);
   std::sort(bdevs.begin(), bdevs.end(), [](const BDev& a, const BDev& b) {
     if (a.name.length() != 0 && b.name.length() == 0) return true;
     if (a.name.length() == 0 && b.name.length() != 0) return false;

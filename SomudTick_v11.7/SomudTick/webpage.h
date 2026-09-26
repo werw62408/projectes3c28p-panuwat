@@ -62,7 +62,7 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 const fmt=v=>Math.abs(v-Math.round(v))<0.05?String(Math.round(v)):v.toFixed(1);
 const DOW=['อา','จ','อ','พ','พฤ','ศ','ส'];
 let S=null,tab='today',range=7,ACTS=null,timeSent=false;
-const TABS=[['today','วันนี้'],['stats','สถิติ'],['heat','ช่วงเวลา'],['acts','กิจกรรม'],['media','รูป/คลิป'],['set','ตั้งค่า']];
+const TABS=[['today','วันนี้'],['stats','สถิติ'],['heat','ช่วงเวลา'],['acts','กิจกรรม'],['media','รูป/คลิป'],['deck','Deck'],['set','ตั้งค่า']];
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),1400)}
 // PIN: the board asks for it (401), only on the home Wi-Fi (not on the board's own Wi-Fi). The phone keeps it in a cookie
 // and in localStorage, so it is asked only once.
@@ -91,7 +91,7 @@ async function refresh(){
   if(tab=='today')renderToday();
 }
 $('#place').onclick=async()=>{S=await api('/api/place',{p:S.place=='U'?'H':'U'});refresh()};
-function render(){({today:renderToday,stats:renderStats,heat:renderHeat,acts:renderActs,media:renderMedia,set:renderSet})[tab]()}
+function render(){({today:renderToday,stats:renderStats,heat:renderHeat,acts:renderActs,media:renderMedia,deck:renderDeck,set:renderSet})[tab]()}
 function cls(a){let c='card act';if(a.state==2)c+=' good';if(a.state==3)c+=' limit';if(a.state==4)c+=' over';if(a.overdue)c+=' od';return c}
 function renderToday(){
   if(!S)return;
@@ -169,6 +169,32 @@ function mv(i,d){const j=i+d;if(j<0||j>=ACTS.length)return;[ACTS[i],ACTS[j]]=[AC
 function del(i){if(confirm('ลบ "'+ACTS[i].name+'"? (ประวัติเดิมยังอยู่ในไฟล์ CSV)')){ACTS.splice(i,1);renderActs()}}
 function addAct(){if(ACTS.length>=12)return toast('ครบ 12 กิจกรรมแล้ว');const cs=['#2F8F82','#3E6B99','#A9822B','#B5586F','#6B7F3E','#7A6C9E','#C0612B','#2B7BC0'];ACTS.push({id:'',name:'กิจกรรมใหม่',unit:'',color:cs[ACTS.length%cs.length],step:1,goal:0,type:0,remind:0});renderActs()}
 async function saveActs(){try{ACTS=await api('/api/acts',ACTS,true);toast('บันทึกแล้ว');S=null;await refresh();renderActs()}catch(e){toast('บันทึกไม่สำเร็จ')}}
+// ---------- Deck: the shortcut keys on the board (v11.7) ----------
+let DECK=null;
+const DK_KEYS=(()=>{const a=[];for(let i=0;i<26;i++)a.push([4+i,String.fromCharCode(65+i)]);for(let i=1;i<=9;i++)a.push([0x1D+i,String(i)]);a.push([0x27,'0']);
+  [[0x28,'Enter'],[0x29,'Esc'],[0x2A,'Backspace'],[0x2B,'Tab'],[0x2C,'Space'],[0x4F,'→'],[0x50,'←'],[0x51,'↓'],[0x52,'↑'],[0x4A,'Home'],[0x4D,'End'],[0x4B,'Page Up'],[0x4E,'Page Down'],[0x4C,'Delete'],[0x46,'Print Screen']].forEach(x=>a.push(x));
+  for(let i=1;i<=12;i++)a.push([0x39+i,'F'+i]);return a})();
+const DK_MEDIA=[[0xCD,'เล่น/หยุด'],[0xB5,'เพลงถัดไป'],[0xB6,'เพลงก่อน'],[0xE9,'เสียงดังขึ้น (ถ่ายรูปใน iPhone)'],[0xEA,'เสียงเบาลง'],[0xE2,'ปิดเสียง'],[0xB7,'หยุด'],[0x6F,'ความสว่างจอ +'],[0x70,'ความสว่างจอ -']];
+const DK_MODS=[[1,'Ctrl'],[2,'Shift'],[4,'Alt'],[8,'Win/Cmd']];
+async function renderDeck(){
+  if(!DECK)DECK=await api('/api/deck');
+  const opt=(list,v)=>list.map(([k,l])=>`<option value="${k}" ${v==k?'selected':''}>${esc(l)}</option>`).join('');
+  $('#main').innerHTML=`<div class="sec">ปุ่มลัดบนบอร์ด (Apps > Deck) 24 ปุ่ม 2 หน้า</div>
+    <div class="card"><p class="muted" style="margin:0">บอร์ดจะเป็นคีย์บอร์ด: เสียบสาย USB กับคอม หรือจับคู่ Bluetooth ชื่อ "SomudTick Deck" กับมือถือ/คอม (เลือกที่ปุ่ม USB/BT บนจอบอร์ด) ข้อความพิมพ์ได้เฉพาะภาษาอังกฤษ</p></div>`+
+    DECK.map((k,i)=>`<div class="card" data-d="${i}" style="margin-top:8px">
+      <div style="display:flex;gap:6px;align-items:center"><b style="min-width:52px">${i<12?'หน้า 1':'หน้า 2'} #${i%12+1}</b><input data-k="label" maxlength="16" value="${esc(k.label)}" placeholder="ชื่อบนปุ่ม">
+      <select data-k="kind">${opt([[0,'ว่าง'],[1,'ปุ่มลัด'],[2,'ปุ่มเพลง/เสียง'],[3,'พิมพ์ข้อความ']],k.kind)}</select></div>
+      <div class="row" style="flex-wrap:wrap;${k.kind==1?'':'display:none'}">${DK_MODS.map(([b,l])=>`<label class="muted" style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-mod="${b}" style="width:auto" ${k.mod&b?'checked':''}>${l}</label>`).join('')}<select data-k="key" style="width:auto">${opt(DK_KEYS,k.key)}</select></div>
+      <div class="row" style="${k.kind==2?'':'display:none'}"><select data-k="media">${opt(DK_MEDIA,k.media)}</select></div>
+      <div class="row" style="${k.kind==3?'':'display:none'}"><input data-k="text" maxlength="60" value="${esc(k.text)}" placeholder="ข้อความ (อังกฤษ)"></div></div>`).join('')+
+    `<div class="tools" style="margin-top:10px"><button class="btn" onclick="deckReset()">กลับเป็นค่าเริ่มต้น</button><button class="btn dark" onclick="saveDeck()">บันทึกลงบอร์ด</button></div>`;
+  document.querySelectorAll('[data-d]').forEach(c=>{const i=+c.dataset.d;
+    c.querySelectorAll('[data-k]').forEach(el=>el.onchange=el.oninput=()=>{const k=el.dataset.k;DECK[i][k]=['kind','key','media'].includes(k)?+el.value:el.value;
+      if(k=='kind'){if(DECK[i].kind==1&&!DECK[i].key)DECK[i].key=4;if(DECK[i].kind==2&&!DECK[i].media)DECK[i].media=0xCD;renderDeck()}});
+    c.querySelectorAll('[data-mod]').forEach(el=>el.onchange=()=>{const b=+el.dataset.mod;DECK[i].mod=el.checked?DECK[i].mod|b:DECK[i].mod&~b})});
+}
+async function saveDeck(){try{DECK=await api('/api/deck',DECK,true);toast('บันทึกแล้ว');renderDeck()}catch(e){toast('บันทึกไม่สำเร็จ')}}
+function deckReset(){if(!confirm('กลับเป็นปุ่มเริ่มต้นทั้ง 24 ปุ่ม?'))return;DECK=DECK.map(()=>({label:'',kind:0,mod:0,key:0,media:0,text:''}));api('/api/deck',[],true).then(d=>{DECK=d;renderDeck();toast('กลับเป็นค่าเริ่มต้นแล้ว')}).catch(()=>toast('ไม่สำเร็จ'))}
 async function renderSet(){
   const w=await api('/api/wifi');
   $('#main').innerHTML=`<div class="sec">รหัส Wi-Fi ของตัวบอร์ด (SomudTick)</div><div class="card">

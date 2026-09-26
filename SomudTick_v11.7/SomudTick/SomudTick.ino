@@ -178,6 +178,7 @@ enum JoyEv : uint8_t; JoyEv navWaitEvent();
 #include "app_maze.h"
 #include "app_blocks.h"
 #include "app_gb.h"
+#include "app_deck.h"
 #include "ui_main.h"
 #include "input.h"
 #include "web_api.h"
@@ -279,6 +280,7 @@ void setup() {
   offIdx = min(3, (int)prefs.getUChar("offT", 1));
   apPass = prefs.getString("appass", AP_PASS); if (apPass.length() < 8) apPass = AP_PASS;
   acLoad();
+  deckLoad();
   backupLoad();
   joyNavOn = prefs.getBool("joyNav", true);
   joyDetect();   // a stick plugged in? (without one nothing is read: a free pin only gives noise)
@@ -314,6 +316,7 @@ void loop() {
   if (scr == S_USB) usbTick();
   netPoll();   // a background download finished?
   btCollect(); // a Bluetooth scan finished (also when its page is closed): list it, give the memory back
+  if (deckBleOn && scr != S_DECK) deckBleStop();   // left Deck (also by the bottom tabs): Bluetooth off again
   rtcTask();   // new real time came in -> write it to the clock module
   { static uint32_t anim = 0;   // "Loading..." / "Scanning..." dots
     if (((scr == S_NET && netBusy) || (scr == S_BT && btBusy)) && pw == P_ON && millis() - anim > 350) { anim = millis(); dirty = true; } }

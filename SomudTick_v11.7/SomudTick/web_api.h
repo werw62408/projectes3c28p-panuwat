@@ -47,6 +47,16 @@ void apiActsPost() {
   dirty = true;
   apiActsGet();
 }
+// Deck keys (v11.7)
+void apiDeckGet() { JsonDocument d; deckToJson(d.to<JsonArray>()); sendJson(d); }
+void apiDeckPost() {
+  JsonDocument d;
+  if (deserializeJson(d, server.arg("plain")) || !d.is<JsonArray>()) { server.send(400, "text/plain", "invalid"); return; }
+  if (d.as<JsonArrayConst>().size() == 0) deckDefaults();   // an empty list = back to the default keys
+  else if (!deckFromJson(d.as<JsonArrayConst>())) { server.send(400, "text/plain", "invalid"); return; }
+  deckSave(); if (scr == S_DECK) dirty = true;
+  apiDeckGet();
+}
 void apiStats() {
   int days = constrain(server.arg("days").toInt(), 1, 90);
   computeStats(days, true);
@@ -304,6 +314,8 @@ void setupWeb() {
   server.on("/api/undo", HTTP_POST, guard(apiUndo));
   server.on("/api/acts", HTTP_GET, guard(apiActsGet));
   server.on("/api/acts", HTTP_POST, guard(apiActsPost));
+  server.on("/api/deck", HTTP_GET, guard(apiDeckGet));
+  server.on("/api/deck", HTTP_POST, guard(apiDeckPost));
   server.on("/api/stats", HTTP_GET, guard(apiStats));
   server.on("/api/time", HTTP_POST, guard(apiTime));
   server.on("/api/place", HTTP_POST, guard(apiPlace));

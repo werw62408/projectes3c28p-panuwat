@@ -16,6 +16,7 @@
 USBMSC usbMsc;
 #endif
 
+bool usbStarted = false;   // USB.begin() was called (USB drive or Deck): the USB device can't change until a restart (v11.7)
 volatile bool usbEjected = false;
 volatile uint32_t usbBytes = 0, usbLastIoMs = 0;
 uint32_t usbEjectMs = 0;
@@ -81,7 +82,7 @@ void usbDriveStart() {
   usbMsc.onStartStop(usbStartStop);
   usbMsc.mediaPresent(true);
   usbMsc.begin(SD_MMC.numSectors(), SD_MMC.sectorSize());
-  USB.begin();
+  USB.begin(); usbStarted = true;
 #endif
   scr = S_USB; dirty = true;
 }
