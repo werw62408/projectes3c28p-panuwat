@@ -2,9 +2,32 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v5-usb
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6
+ ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7
 --------------------------------------------------------------------------
- เปลี่ยนจาก v5 (รุ่นนี้):
+ เปลี่ยนจาก v5-usb (รุ่นนี้):
+   การตรวจจับ (แก้อาการ "ติดบ้างไม่ติดบ้าง")
+   - เปิด ROI แล้วจะตัดภาพเฉพาะกรอบก่อนส่งเข้า YOLO นกจึงตัวใหญ่ขึ้นในสายตาโมเดล
+     (ทดสอบกับภาพจากกล้องจริง: ภาพเต็มไม่เจอนก -> ตัดกรอบแล้วเจอ 0.69)
+   - เพิ่มคอนทราสต์ด้วย CLAHE ก่อนตรวจ ช่วยตอนภาพสว่างจ้าจนนกเป็นเงาดำ
+     (ภาพเดียวกัน 0.42 -> 0.64)
+   - ถ่ายรัวหลายเฟรมต่อรอบ เจอนกเฟรมไหนก็นับ คะแนนที่แกว่งตามท่านกจึงพลาดน้อยลง
+   - ทิ้งเฟรมที่ภาพเสีย (ลายเส้นจาก USB) แล้วใช้เฟรมถัดไปแทน
+   - ยืนยันแบบ "เจอ 2 ใน 3 รอบล่าสุด" แทน "ต้องเจอติดกัน"
+   ความปลอดภัย
+   - ปุ่มสั่งงานบนหน้าเว็บกันการยิงคำสั่งข้ามเว็บ (CSRF) และตั้ง PIN ได้ (env BIRD_PIN)
+   - จำกัดจำนวนครั้งที่ไล่อัตโนมัติต่อชั่วโมง กันน้ำหมดเพราะโมเดลเห็นผิดซ้ำ ๆ
+   - รู้ตัวเมื่อบอร์ด ESP32 รีบูต (เช่นไฟตก) แล้วแจ้งสถานะกล้องให้ใหม่ ไฟส้มไม่ดับค้าง
+     และเตือนบนหน้าเว็บว่าตำแหน่งมอเตอร์อาจเพี้ยน
+   - ข้อความตอนบอร์ดบูตไม่ถูกนับเป็นคำตอบของคำสั่งอีกต่อไป
+   - ถ่ายภาพรอจนมอเตอร์หยุดจริง (เดิมอาจใช้สถานะเก่าได้ถึง 3 วินาที)
+   ความเสถียร
+   - ภาพสดไม่ทิ้งเธรดค้างตอนกล้องหลุด และจำกัดจำนวนผู้ชมพร้อมกัน
+   - นับจำนวนภาพชุดข้อมูลในหน่วยความจำ ไม่ไล่อ่านโฟลเดอร์ทุกวินาที
+   - โหมดทดสอบไม่เขียนทับ roi.json ของจริงอีกต่อไป
+   - ใช้ไฟล์วิดีโอแทนเว็บแคมได้ (BIRD_CAM=/path/clip.mp4) ไว้ทดสอบกับคลิปที่อัดไว้
+
+ เปลี่ยนจาก v5:
    - เปลี่ยนกล้องจาก ESP32-S3-CAM (Wi-Fi) เป็นเว็บแคม USB เสียบ Pi ตรง
      ไม่ต้องรอ heartbeat / IP ของกล้องอีกต่อไป
    - มีเธรดอ่านเว็บแคมตลอดเวลา ภาพที่ใช้ตรวจจับจึงเป็นเฟรมล่าสุดเสมอ
@@ -27,6 +50,7 @@
 """
 
 import csv
+import hmac
 import json
 import logging
 import os
@@ -34,8 +58,6 @@ import queue
 import shutil
 import threading
 import time
-import urllib.error
-import urllib.request
 from collections import deque
 from datetime import datetime
 
@@ -68,6 +90,7 @@ HISTORY_KEEP = 60
 
 # ---------- เว็บแคม USB ----------
 # ใช้ชื่อจาก /dev/v4l/by-id เพราะเลข /dev/videoX สลับได้ตอนรีบูต
+# ใส่เป็นไฟล์วิดีโอก็ได้ (เช่น BIRD_CAM=~/clip.mp4) จะเล่นวนแทนเว็บแคม ไว้ทดสอบกับคลิปที่อัดไว้
 CAM_DEVICE = os.environ.get(
     "BIRD_CAM",
     "/dev/v4l/by-id/usb-Jieli_Technology_USB_Composite_Device-video-index0")
@@ -80,10 +103,23 @@ CAM_OFFLINE_AFTER = 3.0     # ไม่มีเฟรมใหม่เกิ�
 CAM_WAIT_STILL_S = 5.0      # ก่อนถ่าย รอแกนหมุนหยุดนานสุดกี่วินาที
 STREAM_WIDTH = 960          # ย่อภาพสดก่อนส่งให้มือถือ ลดภาระฮอตสปอต
 STREAM_MAX_FPS = 10
+STREAM_MAX_CLIENTS = 3      # เปิดภาพสดพร้อมกันได้กี่เครื่อง แต่ละเครื่องกิน CPU แย่งกับ YOLO
+
+# ---------- ปรับภาพก่อนตรวจจับ ----------
+# ภาพจากหน้างานจริงสว่างจ้า นกเลยเป็นเงาดำ CLAHE ดึงรายละเอียดส่วนมืดกลับมา
+DETECT_CLAHE = True
+# เปิด ROI แล้วตัดภาพเฉพาะกรอบ (+ขอบเผื่อ) ก่อนส่งเข้าโมเดล นกจะตัวใหญ่ขึ้น
+ROI_CROP = True
+ROI_CROP_MARGIN = 0.10      # เผื่อขอบกี่ส่วนของขนาดกรอบ นกเกาะคร่อมขอบจะได้ไม่โดนตัดครึ่ง
+# ถ่ายรัวหลายเฟรมต่อรอบ เจอนกเฟรมไหนก็นับ (เจอแล้วหยุดทันที ไม่เปลือง CPU)
+BURST_FRAMES = 3
+BURST_GAP_S = 0.25
+# เฟรมเสีย: ต่างจากเฟรมก่อนหน้าและเฟรมถัดไปมาก แต่สองเฟรมนั้นเหมือนกัน
+CORRUPT_DIFF_FRAC = 0.35    # สัดส่วนพิกเซลที่เปลี่ยนแรง ถึงจะถือว่า "ต่างมาก"
 
 # ---------- ลูปตรวจจับอัตโนมัติ (อยู่บน Pi ไม่ใช่บนเบราว์เซอร์แล้ว) ----------
 AUTO_DETECT_DEFAULT = True  # เปิดลูปตรวจจับตั้งแต่สตาร์ทไหม
-AUTO_INTERVAL_S = 10        # ตรวจทุกกี่วินาที
+AUTO_INTERVAL_S = 5         # ตรวจทุกกี่วินาที (เดิม 10 นกที่แวะแป๊บเดียวหลุดบ่อย)
 
 # ---------- PIR ----------
 # PIR ใช้งานได้แล้ว: เจอความเคลื่อนไหวเมื่อไหร่ สั่งตรวจจับทันที ไม่ต้องรอรอบ 10 วิ
@@ -110,8 +146,10 @@ DATASET_MIN_FREE_MB = 1024      # พื้นที่ว่างเหลื�
 # ---------- การยืนยันก่อนสั่งไล่ ----------
 # โมเดล COCO ที่ยังไม่ได้เทรนเองมีโอกาสเห็นผิด การบังคับให้เจอติดกันหลายเฟรม
 # ช่วยตัดพวกที่โผล่มาเฟรมเดียวแล้วหายไปได้มาก
-CONFIRM_FRAMES = 2          # ต้องเจอนกติดกันกี่ครั้งถึงจะสั่งไล่ (1 = ไม่ต้องยืนยัน)
-CONFIRM_WINDOW_S = 30       # ถ้าห่างกันเกินนี้ ให้เริ่มนับใหม่
+# ใช้แบบ "เจอ CONFIRM_FRAMES ครั้ง ใน CONFIRM_OF รอบล่าสุด" พลาดไปรอบเดียวไม่ต้องนับใหม่
+CONFIRM_FRAMES = 2          # ต้องเจอนกกี่รอบถึงจะสั่งไล่ (1 = ไม่ต้องยืนยัน)
+CONFIRM_OF = 3              # ดูย้อนหลังกี่รอบ
+CONFIRM_WINDOW_S = 30       # รอบที่เก่ากว่านี้ไม่นับ
 
 # ---------- ชุดขับไล่ ----------
 SERIAL_PORT = os.environ.get("BIRD_SERIAL", "auto")
@@ -122,9 +160,16 @@ HW_LINK_LOST = 10.0
 
 AUTO_REPEL_DEFAULT = True
 REPEL_COOLDOWN_S = 10
+REPEL_MAX_PER_HOUR = 20     # ไล่อัตโนมัติได้กี่ครั้งต่อชั่วโมง (กดปุ่มเองไม่นับ)
 MOTOR_STEP_MAX = 400
 PUMP_MS_MAX = 8000
 STEPS_PER_REV = 1600
+
+# ---------- ความปลอดภัยหน้าเว็บ ----------
+# ตั้ง PIN แล้วปุ่มสั่งงานทุกปุ่มต้องใส่ PIN ก่อน (ดูภาพ/สถานะได้ไม่ต้องใส่)
+#   BIRD_PIN=4821 python3 raspberry_pi_server.py
+# ถ้าใช้ฮอตสปอตที่มีคนอื่นต่ออยู่ด้วย ควรตั้งไว้ ไม่งั้นใครก็สั่งปั๊ม/มอเตอร์ได้
+WEB_PIN = os.environ.get("BIRD_PIN", "")
 
 # ============================ โหมดทดสอบ ============================
 # True  = โชว์กรอบอย่างเดียว: ROI เริ่มแบบปิด, ไม่ต้องยืนยันหลายเฟรม,
@@ -136,6 +181,7 @@ TEST_MODE = True
 if TEST_MODE:
     CONF_THRESHOLD = 0.25       # ต่ำลงนิดนึง จะได้เห็นว่าโมเดลเห็นอะไรบ้าง
     CONFIRM_FRAMES = 1          # เจอครั้งเดียวก็นับ ไม่ต้องรอยืนยัน
+    CONFIRM_OF = 1
     AUTO_REPEL_DEFAULT = False  # ไม่สั่งปั๊ม/มอเตอร์เอง แค่ตีกรอบโชว์
                                 # (อยากลองไล่จริงก็เปิดได้จากหน้าเว็บ)
 
@@ -147,6 +193,9 @@ _KNOWN_USB = {
     (0x0403, 0x6001),   # FT232
 }
 
+# บรรทัดที่บอร์ดส่งตอนบูต (เฟิร์มแวร์รุ่นเก่าขึ้นต้นด้วย OK) ห้ามนับเป็นคำตอบของคำสั่ง
+_BOOT_LINES = ("OK READY", "OK FW ", "OK HW ")
+
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(HIST_DIR, exist_ok=True)
 
@@ -156,7 +205,7 @@ app = Flask(__name__)
 class _QuietPoll(logging.Filter):
     def filter(self, record):
         msg = record.getMessage()
-        return "/register" not in msg and "/api/state" not in msg
+        return "/api/state" not in msg
 
 
 logging.getLogger("werkzeug").addFilter(_QuietPoll())
@@ -240,6 +289,9 @@ def load_roi():
 
 
 def save_roi():
+    if TEST_MODE:
+        # โหมดทดสอบไม่เขียนทับ roi.json ของจริง ปิดโหมดทดสอบแล้วค่าเดิมยังอยู่ครบ
+        return
     try:
         with open(ROI_FILE, "w", encoding="utf-8") as f:
             json.dump(ROI, f)
@@ -290,26 +342,50 @@ def prune_history_files():
 
 
 # ============================ DETECTION ============================
+_clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+
+
+def enhance(image_bgr):
+    """เพิ่มคอนทราสต์เฉพาะความสว่าง (สีไม่เพี้ยน) ให้นกที่เป็นเงาดำเห็นรายละเอียดขึ้น"""
+    lab = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2LAB)
+    lab[:, :, 0] = _clahe.apply(lab[:, :, 0])
+    return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+
 def detect_and_draw(image_bgr):
     """รัน YOLO เฉพาะคลาสนก กรองด้วย ROI แล้ววาดกรอบลงภาพ
 
-    คืน (จำนวนนกที่นับ, ความมั่นใจสูงสุด, เวลาที่ใช้เป็น ms)
+    คืน (จำนวนนกที่นับ, ความมั่นใจสูงสุด, เวลาที่ใช้เป็น ms, ความมั่นใจสูงสุดของกรอบที่ต่ำกว่าเกณฑ์)
     """
     if _model is None:
         return 0, 0.0, 0, 0.0
 
     h, w = image_bgr.shape[:2]
+    roi = dict(ROI)
 
     # กรอบ ROI เป็นพิกเซล
-    rx1 = int(ROI["x1"] * w)
-    ry1 = int(ROI["y1"] * h)
-    rx2 = int(ROI["x2"] * w)
-    ry2 = int(ROI["y2"] * h)
+    rx1 = int(roi["x1"] * w)
+    ry1 = int(roi["y1"] * h)
+    rx2 = int(roi["x2"] * w)
+    ry2 = int(roi["y2"] * h)
+
+    # ตัดภาพเฉพาะ ROI (+ขอบเผื่อ) ก่อนส่งเข้าโมเดล
+    # โมเดลย่อภาพให้เหลือ IMG_SIZE เสมอ ภาพที่เล็กลงจึงถูกขยาย นกตัวใหญ่ขึ้นในสายตาโมเดล
+    ox, oy, crop = 0, 0, image_bgr
+    if roi["enabled"] and ROI_CROP:
+        mx = int((rx2 - rx1) * ROI_CROP_MARGIN)
+        my = int((ry2 - ry1) * ROI_CROP_MARGIN)
+        cx1, cy1 = max(0, rx1 - mx), max(0, ry1 - my)
+        cx2, cy2 = min(w, rx2 + mx), min(h, ry2 + my)
+        if (cx2 - cx1) * (cy2 - cy1) < 0.8 * w * h:       # กรอบเกือบเต็มภาพ ตัดไปก็ไม่ได้อะไร
+            ox, oy, crop = cx1, cy1, image_bgr[cy1:cy2, cx1:cx2]
+
+    model_input = enhance(crop) if DETECT_CLAHE else crop
 
     t0 = time.perf_counter()
     with _model_lock:
         results = _model.predict(
-            image_bgr,
+            model_input,
             imgsz=IMG_SIZE,
             conf=min(CONF_THRESHOLD, DATASET_LOWCONF) if DATASET_ENABLED else CONF_THRESHOLD,
             classes=[BIRD_CLASS_ID],
@@ -327,6 +403,7 @@ def detect_and_draw(image_bgr):
             continue
         for b in boxes:
             x1, y1, x2, y2 = (int(v) for v in b.xyxy[0].tolist())
+            x1, x2, y1, y2 = x1 + ox, x2 + ox, y1 + oy, y2 + oy   # กลับเป็นพิกัดภาพเต็ม
             conf = float(b.conf[0])
 
             # กรอบที่ต่ำกว่าเกณฑ์: ไม่นับ ไม่วาด แต่จำไว้ให้ระบบเก็บชุดข้อมูล
@@ -338,7 +415,7 @@ def detect_and_draw(image_bgr):
             # เพราะนกที่เกาะคร่อมขอบกรอบก็ยังควรนับ
             cx = (x1 + x2) // 2
             cy = (y1 + y2) // 2
-            inside = (not ROI["enabled"]) or (rx1 <= cx <= rx2 and ry1 <= cy <= ry2)
+            inside = (not roi["enabled"]) or (rx1 <= cx <= rx2 and ry1 <= cy <= ry2)
 
             if inside:
                 count += 1
@@ -353,7 +430,7 @@ def detect_and_draw(image_bgr):
             cv2.putText(image_bgr, label, (x1, max(18, y1 - 6)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
-    if ROI["enabled"]:
+    if roi["enabled"]:
         cv2.rectangle(image_bgr, (rx1, ry1), (rx2, ry2), (0, 160, 255), 2)
         cv2.putText(image_bgr, "ROI", (rx1 + 4, ry1 + 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 160, 255), 2)
@@ -380,12 +457,19 @@ class Controller:
             "moving": False, "repel": False, "pir": False,
             "water_pct": -1, "water_cm": -1.0,
             "water_low": False, "water_empty": False,
+            "water_fault": False, "pump_duty_left": None,
+            "pos_ok": None, "reset_reason": "", "ready": False,
             "vbat": 0.0,
         }
         self.last_error = ""
         self.auto_repel = AUTO_REPEL_DEFAULT
         self.last_repel_at = 0.0
         self.repel_count = 0
+        self._auto_repels = deque()          # เวลาที่ไล่อัตโนมัติ ใช้นับโควตาต่อชั่วโมง
+        self._rounds = deque(maxlen=CONFIRM_OF)   # ผลตรวจรอบล่าสุด (เวลา, เจอนกไหม)
+        self.resync = threading.Event()      # บอร์ดรีบูต/ขาดการติดต่อ -> ต้องแจ้งสถานะกล้องใหม่
+        self.board_boots = 0
+        self.motion_until = 0.0              # เพิ่งสั่งหมุน ให้ถือว่ายังหมุนอยู่จนกว่า STAT จะยืนยัน
 
     # ---------- การเชื่อมต่อ ----------
     def _find_port(self):
@@ -476,7 +560,7 @@ class Controller:
                 continue
             self.last_rx = time.time()
 
-            if line.startswith("EVT"):
+            if line.startswith("EVT") or line.startswith(_BOOT_LINES):
                 self._on_event(line)
             elif line.startswith("OK") or line.startswith("ERR"):
                 if line.startswith("OK POS="):
@@ -538,9 +622,14 @@ class Controller:
             except queue.Empty:
                 return False, "บอร์ดไม่ตอบ"
 
-        if not cmd.strip().upper().startswith("STAT"):
+        up = cmd.strip().upper()
+        ok = not line.startswith("ERR")
+        if ok and (up == "REPEL" or (up.startswith("MOT") and up not in ("MOT STOP", "MOT ZERO"))):
+            # STAT รอบถัดไปอาจยังไม่ทันบอกว่ากำลังหมุน กันไม่ให้ถ่ายภาพตอนแกนยังหมุน
+            self.motion_until = time.time() + 1.0
+        if not up.startswith("STAT"):
             self._wake.set()
-        return (not line.startswith("ERR")), line
+        return ok, line
 
     def _parse_stat(self, line):
         vals = {}
@@ -561,15 +650,40 @@ class Controller:
                 self.hw["water_low"] = vals.get("WLOW") == "1"
                 self.hw["water_empty"] = vals.get("WEMPTY") == "1"
                 self.hw["vbat"] = round(float(vals.get("VBAT", 0.0)), 2)
+                self.hw["ready"] = vals.get("READY") == "1"
+                # ค่าที่มีเฉพาะเฟิร์มแวร์ v7 ขึ้นไป (รุ่นเก่าไม่มี = None)
+                self.hw["water_fault"] = vals.get("WFAULT") == "1"
+                self.hw["pump_duty_left"] = int(vals["PDUTY"]) if "PDUTY" in vals else None
+                self.hw["pos_ok"] = (vals["POSOK"] == "1") if "POSOK" in vals else None
+                self.hw["reset_reason"] = vals.get("RST", "")
             except ValueError:
                 pass
 
     def _on_event(self, line):
         print(f"[CTRL] {line}", flush=True)
-        if line.startswith("EVT SAFE"):
-            self.last_error = "บอร์ดตัดโหลดเองเพราะขาดการติดต่อกับ Pi"
+        if line.startswith("EVT BOOT") or line.startswith("OK READY"):
+            # บอร์ดรีบูต: สถานะกล้องบนบอร์ดหาย (ไฟส้มจะดับค้าง) และตำแหน่งมอเตอร์อาจเพี้ยน
+            self.board_boots += 1
+            self.resync.set()
+            if "RST=" in line:
+                reason = line.split("RST=", 1)[1].split()[0]
+                with self._hw_lock:
+                    self.hw["reset_reason"] = reason
+                if reason in ("BROWNOUT", "PANIC", "WDT"):
+                    self.last_error = f"บอร์ดควบคุมรีบูตเอง ({reason}) ตำแหน่งมอเตอร์อาจเพี้ยน"
+        elif line.startswith("EVT SAFE"):
+            self.last_error = SAFE_MSG
+            self.resync.set()
         elif line.startswith("EVT LINK OK"):
+            if self.last_error == SAFE_MSG:       # ล้างเฉพาะข้อความเรื่องขาดการติดต่อ
+                self.last_error = ""
+            self.resync.set()           # บอร์ดล้างสถานะกล้องตอนขาดการติดต่อ ต้องบอกใหม่
+        elif line.startswith("EVT WATER FAULT"):
+            self.last_error = "เซนเซอร์ระดับน้ำอ่านไม่ได้ ล็อกปั๊มไว้ก่อน (เช็กสาย HC-SR04)"
+        elif line.startswith("EVT WATER SENSOR OK"):
             self.last_error = ""
+        elif line.startswith("EVT REPEL FAIL"):
+            self.last_error = "รอบไล่ถูกยกเลิก: " + line[len("EVT REPEL FAIL"):].strip()
         elif line.startswith("EVT WATER EMPTY"):
             self.last_error = "น้ำหมด ปั๊มถูกล็อกไว้"
         elif line.startswith("EVT WATER OK"):
@@ -590,30 +704,36 @@ class Controller:
             "auto_repel": self.auto_repel,
             "cooldown_left": round(left, 1) if left > 0 else 0,
             "repel_count": self.repel_count,
+            "repel_hour_left": REPEL_MAX_PER_HOUR - self._repels_last_hour(now),
             "steps_per_rev": STEPS_PER_REV,
+            "busy": hw["moving"] or hw["repel"] or now < self.motion_until,
         })
         return hw
+
+    def _repels_last_hour(self, now):
+        while self._auto_repels and now - self._auto_repels[0] > 3600:
+            self._auto_repels.popleft()
+        return len(self._auto_repels)
+
+    def confirm_hits(self):
+        """นับรอบที่เจอนก ในหน้าต่างยืนยันล่าสุด"""
+        now = time.time()
+        return sum(1 for t, hit in self._rounds if hit and now - t <= CONFIRM_WINDOW_S)
 
     # ---------- ตรรกะไล่อัตโนมัติ ----------
     def maybe_auto_repel(self, bird_count):
         """เรียกหลังตรวจจับเสร็จ คืนข้อความเหตุผลเพื่อบันทึกลง log"""
+        now = time.time()
+        self._rounds.append((now, bird_count > 0))
+        hits = self.confirm_hits()
+        with _state_lock:
+            STATE["confirm_streak"] = hits
         if bird_count <= 0:
-            with _state_lock:
-                STATE["confirm_streak"] = 0
             return "ไม่เจอนก"
 
-        # นับเฟรมที่เจอติดกัน
-        now = time.time()
-        with _state_lock:
-            last = STATE.get("_last_hit_at", 0.0)
-            if now - last > CONFIRM_WINDOW_S:
-                STATE["confirm_streak"] = 0
-            STATE["confirm_streak"] += 1
-            STATE["_last_hit_at"] = now
-            streak = STATE["confirm_streak"]
-
-        if streak < CONFIRM_FRAMES:
-            return f"รอยืนยัน {streak}/{CONFIRM_FRAMES}"
+        # เจอ CONFIRM_FRAMES ครั้ง ใน CONFIRM_OF รอบล่าสุด (พลาดรอบเดียวไม่ต้องเริ่มนับใหม่)
+        if hits < CONFIRM_FRAMES:
+            return f"รอยืนยัน {hits}/{CONFIRM_FRAMES}"
         if not self.auto_repel:
             return "ปิดโหมดอัตโนมัติอยู่"
         if not self.linked:
@@ -625,17 +745,22 @@ class Controller:
                 return "กำลังทำงานอยู่"
         if now - self.last_repel_at < REPEL_COOLDOWN_S:
             return "อยู่ในช่วงพัก"
+        if self._repels_last_hour(now) >= REPEL_MAX_PER_HOUR:
+            return f"ครบโควตาไล่ {REPEL_MAX_PER_HOUR} ครั้ง/ชม. แล้ว"
 
         ok, line = self.send("REPEL", timeout=5.0)
         if ok:
             self.last_repel_at = now
             self.repel_count += 1
+            self._auto_repels.append(now)
+            self._rounds.clear()                 # ไล่แล้วเริ่มนับใหม่
             with _state_lock:
-                STATE["confirm_streak"] = 0      # ไล่แล้วเริ่มนับใหม่
+                STATE["confirm_streak"] = 0
             return "สั่งไล่แล้ว"
         return f"สั่งไล่ไม่สำเร็จ: {line}"
 
 
+SAFE_MSG = "บอร์ดตัดโหลดเองเพราะขาดการติดต่อกับ Pi"
 CTRL = Controller()
 
 
@@ -655,11 +780,20 @@ class Webcam:
         self.fps = 0.0
         self.size = (0, 0)
         self.device = None
+        self.is_file = False
+        self._prev_small = None      # เฟรมก่อนหน้า (ย่อแล้ว) ไว้เทียบหาเฟรมเสีย
+        self._small = None
+        self.corrupt_count = 0
         self.last_error = "ยังไม่ได้เปิดกล้อง"
 
     def _open(self):
-        dev = CAM_DEVICE if os.path.exists(CAM_DEVICE) else CAM_DEVICE_FALLBACK
-        cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
+        dev = os.path.expanduser(CAM_DEVICE)
+        self.is_file = os.path.isfile(dev)            # ไฟล์วิดีโอ (โหมดทดสอบกับคลิป)
+        if self.is_file:
+            cap = cv2.VideoCapture(dev)
+        else:
+            dev = dev if os.path.exists(dev) else CAM_DEVICE_FALLBACK
+            cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
         if not cap.isOpened():
             cap.release()
             self.last_error = f"เปิดเว็บแคม {dev} ไม่ได้ (เสียบสาย USB อยู่ไหม)"
@@ -691,6 +825,11 @@ class Webcam:
                     continue
                 fails = 0
             ok, frame = self._cap.read()
+            if self.is_file:
+                if not ok:                          # คลิปจบ เล่นวนใหม่
+                    self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    continue
+                time.sleep(1.0 / CAM_FPS)           # ไฟล์อ่านได้เร็วมาก หน่วงให้เหมือนกล้องจริง
             if not ok or frame is None:
                 fails += 1
                 if fails >= 20:
@@ -706,7 +845,9 @@ class Webcam:
             now = time.monotonic()
             dt = max(now - last, 1e-3)
             last = now
+            small = _small_gray(frame)
             with self._cond:
+                self._prev_small, self._small = self._small, small
                 self._frame = frame
                 self._t = time.time()
                 self._seq += 1
@@ -721,15 +862,38 @@ class Webcam:
             return self._frame is not None and (time.time() - self._t) < CAM_OFFLINE_AFTER
 
     def frame_after(self, t0, timeout):
-        """รอจนได้เฟรมที่ถ่ายหลังเวลา t0 คืนสำเนาภาพ หรือ None ถ้าหมดเวลา"""
+        """รอจนได้เฟรมที่ถ่ายหลังเวลา t0 คืน (สำเนาภาพ, ภาพย่อ, ภาพย่อของเฟรมก่อนหน้า)
+        หรือ (None, None, None) ถ้าหมดเวลา"""
         deadline = time.time() + timeout
         with self._cond:
             while self._frame is None or self._t <= t0:
                 left = deadline - time.time()
                 if left <= 0:
-                    return None
+                    return None, None, None
                 self._cond.wait(left)
-            return self._frame.copy()
+            return self._frame.copy(), self._small, self._prev_small
+
+    def good_frame_after(self, t0, timeout):
+        """เหมือน frame_after แต่ข้ามเฟรมเสีย (ภาพลายจากการส่งผ่าน USB ผิดพลาด)
+
+        เฟรมเสียคือเฟรมที่ต่างจากทั้งเฟรมก่อนหน้าและเฟรมถัดไปมาก ขณะที่สองเฟรมนั้นเหมือนกัน
+        ถ้าแค่มีอะไรขยับจริง (คนเดินผ่าน/แสงเปลี่ยน) เฟรมถัดไปก็จะยังต่างจากเฟรมก่อนหน้าด้วย
+        """
+        deadline = time.time() + timeout
+        frame, small, prev = self.frame_after(t0, timeout)
+        if frame is None or prev is None or _diff_frac(small, prev) < CORRUPT_DIFF_FRAC:
+            return frame
+        # ต่างจากเฟรมก่อนหน้ามาก ดูเฟรมถัดไปเพื่อแยกว่าภาพเสียหรือฉากเปลี่ยนจริง
+        with self._cond:
+            t_frame = self._t
+        nxt, nsmall, _ = self.frame_after(t_frame, max(0.2, deadline - time.time()))
+        if nxt is None:
+            return frame
+        if _diff_frac(nsmall, prev) < CORRUPT_DIFF_FRAC <= _diff_frac(nsmall, small):
+            self.corrupt_count += 1
+            print(f"[Cam] ทิ้งเฟรมเสีย (รวม {self.corrupt_count} เฟรม)", flush=True)
+            return nxt
+        return frame
 
     def next_frame(self, last_seq, timeout=2.0):
         """ใช้กับสตรีม รอเฟรมถัดไป คืน (ภาพ, seq)"""
@@ -740,6 +904,21 @@ class Webcam:
                 return None, last_seq
             return self._frame, self._seq
 
+    def last_frame(self):
+        with self._cond:
+            return self._frame
+
+
+def _small_gray(frame):
+    g = cv2.cvtColor(cv2.resize(frame, (160, 120), interpolation=cv2.INTER_AREA),
+                     cv2.COLOR_BGR2GRAY)
+    return cv2.GaussianBlur(g, (5, 5), 0)
+
+
+def _diff_frac(a, b):
+    """สัดส่วนพิกเซลที่ต่างกันแรง ระหว่างภาพย่อสองภาพ"""
+    return float((cv2.absdiff(a, b) > 40).mean())
+
 
 CAM = Webcam()
 
@@ -748,23 +927,23 @@ def camera_online():
     return CAM.online()
 
 
-def fetch_capture():
-    """ถ่ายภาพนิ่งหนึ่งใบจากเว็บแคม คืน (bytes JPEG, ข้อความผิดพลาด)
-
-    รอให้แกนหมุนหยุดก่อน แล้วเอาเฟรมที่ถ่ายหลังจากนั้นเท่านั้น
-    ภาพจะได้ไม่เบลอและไม่ใช่มุมเก่าก่อนหมุน
-    """
+def wait_still():
+    """รอให้แกนหมุนหยุดจริงก่อนถ่าย ภาพจะได้ไม่เบลอและไม่ใช่มุมเก่าก่อนหมุน"""
     t_wait = time.time()
-    while CTRL.snapshot().get("moving") and time.time() - t_wait < CAM_WAIT_STILL_S:
+    while CTRL.snapshot().get("busy") and time.time() - t_wait < CAM_WAIT_STILL_S:
+        CTRL._wake.set()                       # ขอ STAT ใหม่ทันที ไม่ต้องรอรอบ 3 วินาที
         time.sleep(0.1)
 
-    frame = CAM.frame_after(time.time(), CAM_FETCH_TIMEOUT)
+
+def capture_frame():
+    """ถ่ายภาพนิ่งหนึ่งใบจากเว็บแคม คืน (ภาพ BGR, ข้อความผิดพลาด)
+
+    เอาเฟรมที่ถ่ายหลังจากเรียกเท่านั้น และข้ามเฟรมเสีย
+    """
+    frame = CAM.good_frame_after(time.time(), CAM_FETCH_TIMEOUT)
     if frame is None:
         return None, CAM.last_error or "ไม่ได้รับภาพจากเว็บแคม"
-    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
-    if not ok:
-        return None, "เข้ารหัสภาพไม่สำเร็จ"
-    return buf.tobytes(), ""
+    return frame, ""
 
 
 # ============================ DATASET ============================
@@ -821,6 +1000,7 @@ def dataset_maybe_save(raw, source, count, max_conf, weak_max, hw):
         ts = datetime.now()
         name = f"{ts.strftime('%Y%m%d_%H%M%S_%f')[:-3]}_{reason}_{count}.jpg"
         atomic_write_jpeg(os.path.join(DATASET_DIR, name), raw, quality=92)
+        _dataset_count(reason)
 
         new_file = not os.path.exists(DATASET_LOG)
         with open(DATASET_LOG, "a", newline="", encoding="utf-8") as f:
@@ -833,17 +1013,36 @@ def dataset_maybe_save(raw, source, count, max_conf, weak_max, hw):
                         "" if motion is None else round(motion, 4), hw.get("deg", "")])
 
 
+_ds_counts = None
+
+
+def _dataset_count(reason):
+    """นับเพิ่มในหน่วยความจำ (เรียกภายใต้ _ds_lock)"""
+    if _ds_counts is not None:
+        _ds_counts["total"] += 1
+        _ds_counts[reason] = _ds_counts.get(reason, 0) + 1
+
+
 def dataset_stats():
-    try:
-        files = [f for f in os.listdir(DATASET_DIR) if f.endswith(".jpg")]
-    except FileNotFoundError:
-        return {"total": 0}
-    out = {"total": len(files)}
-    for f in files:
-        parts = f.rsplit("_", 2)
-        if len(parts) == 3:
-            out[parts[1]] = out.get(parts[1], 0) + 1
-    return out
+    """จำนวนภาพชุดข้อมูลแยกตามเหตุผล
+
+    อ่านโฟลเดอร์แค่ครั้งแรกครั้งเดียว หลังจากนั้นนับเพิ่มเอง
+    (เดิม listdir ทุกวินาทีต่อผู้ชมหนึ่งคน พอมีหลายหมื่นไฟล์บน SD การ์ดจะช้ามาก)
+    """
+    global _ds_counts
+    with _ds_lock:
+        if _ds_counts is None:
+            try:
+                files = [f for f in os.listdir(DATASET_DIR) if f.endswith(".jpg")]
+            except FileNotFoundError:
+                files = []
+            out = {"total": len(files)}
+            for f in files:
+                parts = f.rsplit("_", 2)
+                if len(parts) == 3:
+                    out[parts[1]] = out.get(parts[1], 0) + 1
+            _ds_counts = out
+        return dict(_ds_counts)
 
 
 # ============================ WORKER ============================
@@ -863,39 +1062,53 @@ def request_detection(source="manual"):
 
 
 def _process(source, requested_at):
-    t_fetch = time.perf_counter()
-    data, err = fetch_capture()
-    shutter_ms = int((time.perf_counter() - t_fetch) * 1000)
+    wait_still()
 
-    if data is None:
+    # ถ่ายรัวหลายเฟรม เจอนกเฟรมไหนก็ใช้เฟรมนั้น (คะแนนนกตัวเดิมแกว่งมากตามท่าทาง
+    # ภาพเดียวต่อรอบจึงพลาดบ่อย) เจอแล้วหยุดทันที ไม่เสีย CPU เพิ่มตอนมีนก
+    best = None
+    err = ""
+    shutter_ms = 0
+    infer_total = 0
+    detect_total = 0
+    for i in range(max(1, BURST_FRAMES)):
+        if i:
+            time.sleep(BURST_GAP_S)
+        t_shot = time.perf_counter()
+        frame, err = capture_frame()
+        if i == 0:
+            shutter_ms = int((time.perf_counter() - t_shot) * 1000)
+        if frame is None:
+            break
+        if i == 0:
+            _write_preview(frame)
+            with _state_lock:
+                STATE["processing"] = True
+        raw = frame.copy()                     # เก็บภาพดิบไว้ก่อนโดนวาดกรอบทับ
+        t_det = time.perf_counter()
+        count, max_conf, infer_ms, weak_max = detect_and_draw(frame)
+        detect_total += int((time.perf_counter() - t_det) * 1000)
+        infer_total += infer_ms
+        cand = (count, max_conf, weak_max, frame, raw)
+        if best is None or (count, max_conf, weak_max) > best[:3]:
+            best = cand
+        if count > 0:
+            break
+
+    if best is None:
         with _state_lock:
             STATE["status"] = err
+            STATE["processing"] = False
         print(f"[Cam] {err}", flush=True)
         return
 
-    # เก็บภาพดิบไว้ก่อน หน้าเว็บจะได้เห็นทันทีไม่ต้องรอ YOLO
-    try:
-        atomic_write_bytes(PREVIEW_PATH, data)
-        with _state_lock:
-            STATE["preview_seq"] += 1
-    except OSError:
-        pass
-
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-    if img is None:
-        with _state_lock:
-            STATE["status"] = "ถอดรหัสภาพไม่สำเร็จ"
-        return
+    count, max_conf, weak_max, img, raw = best
+    infer_ms = infer_total
+    detect_ms = detect_total
+    ok, buf = cv2.imencode(".jpg", raw, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    data = buf.tobytes() if ok else b""
 
     h, w = img.shape[:2]
-
-    with _state_lock:
-        STATE["processing"] = True
-
-    t_det = time.perf_counter()
-    raw = img.copy()                       # เก็บภาพดิบไว้ก่อนโดนวาดกรอบทับ
-    count, max_conf, infer_ms, weak_max = detect_and_draw(img)
-    detect_ms = int((time.perf_counter() - t_det) * 1000)
 
     repel_note = CTRL.maybe_auto_repel(count)
     hw = CTRL.snapshot()
@@ -934,6 +1147,7 @@ def _process(source, requested_at):
         if count > 0:
             STATE["total_detections"] += 1
         STATE["status"] = (f"พบนก {count} ตัว — {repel_note}" if count
+                           else f"ไม่พบนก (ตรวจ {BURST_FRAMES} เฟรม)" if BURST_FRAMES > 1
                            else "ไม่พบนก")
 
     append_log([ts.strftime("%Y-%m-%d %H:%M:%S"), source, count,
@@ -946,6 +1160,18 @@ def _process(source, requested_at):
             dataset_maybe_save(raw, source, count, max_conf, weak_max, hw)
         except Exception as e:                                  # noqa: BLE001
             print(f"[Dataset] บันทึกไม่สำเร็จ: {e}", flush=True)
+
+
+def _write_preview(frame):
+    """เก็บภาพดิบไว้ก่อน หน้าเว็บจะได้เห็นทันทีไม่ต้องรอ YOLO"""
+    try:
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        if ok:
+            atomic_write_bytes(PREVIEW_PATH, buf.tobytes())
+            with _state_lock:
+                STATE["preview_seq"] += 1
+    except OSError:
+        pass
 
 
 def _worker():
@@ -962,17 +1188,27 @@ def _worker():
 
 
 def _ready_loop():
-    """คอยแจ้ง ESP32 ว่ากล้องออนไลน์ไหม เพื่อให้มันตัดสินใจจุดไฟส้ม"""
+    """คอยแจ้ง ESP32 ว่ากล้องออนไลน์ไหม เพื่อให้มันตัดสินใจจุดไฟส้ม
+
+    ส่งใหม่เมื่อ: สถานะกล้องเปลี่ยน / บอร์ดรีบูตหรือเพิ่งกลับมาติดต่อได้ / ทุก 30 วินาทีกันพลาด
+    (เดิมส่งเฉพาะตอนเปลี่ยน บอร์ดรีบูตแล้วลืมสถานะกล้อง ไฟส้มเลยดับค้าง)
+    """
     last_sent = None
+    last_sent_at = 0.0
     while True:
         try:
             on = camera_online()
-            if on != last_sent and CTRL.linked:
+            if CTRL.resync.is_set():
+                CTRL.resync.clear()
+                last_sent = None
+            if (on != last_sent or time.time() - last_sent_at > 30) and CTRL.linked:
                 ok, _ = CTRL.send(f"CAM {1 if on else 0}", timeout=3.0)
                 if ok:
+                    if on != last_sent:
+                        print(f"[Ready] แจ้งบอร์ดว่ากล้อง{'ออนไลน์' if on else 'หลุด'}",
+                              flush=True)
                     last_sent = on
-                    print(f"[Ready] แจ้งบอร์ดว่ากล้อง{'ออนไลน์' if on else 'หลุด'}",
-                          flush=True)
+                    last_sent_at = time.time()
             elif not CTRL.linked:
                 last_sent = None          # ต่อใหม่เมื่อไหร่ให้ส่งซ้ำ
         except Exception as e:                                  # noqa: BLE001
@@ -992,12 +1228,22 @@ def _auto_loop():
 
 
 # ============================ API ============================
-@app.route("/register", methods=["POST"])
-def api_register():
-    """(เหลือไว้เผื่อกล้อง ESP ตัวเก่ายังส่ง heartbeat มา ตอนนี้ไม่ได้ใช้แล้ว)"""
-    data = request.get_json(silent=True) or {}
-    ip = data.get("ip") or request.remote_addr
-    return jsonify(ok=True, ignored=True, ip=ip)
+@app.before_request
+def guard_commands():
+    """ด่านกันคำสั่งที่ไม่ได้มาจากหน้าเว็บนี้
+
+    ทุกคำสั่ง (POST) ต้องเป็น JSON และมี header X-Bird-UI
+    เว็บอื่นที่เปิดอยู่ในมือถือจึงยิงฟอร์มมาสั่งปั๊ม/มอเตอร์ไม่ได้ (เบราว์เซอร์ไม่ยอมให้
+    เว็บอื่นใส่ header เองโดยไม่ถามเซิร์ฟเวอร์ก่อน และเซิร์ฟเวอร์นี้ไม่อนุญาต)
+    ถ้าตั้ง BIRD_PIN ไว้ ต้องส่ง PIN ให้ถูกด้วย
+    """
+    if request.method != "POST":
+        return None
+    if request.headers.get("X-Bird-UI") != "1" or not request.is_json:
+        return jsonify(ok=False, msg="คำสั่งไม่ได้มาจากหน้าเว็บของระบบ"), 403
+    if WEB_PIN and not hmac.compare_digest(request.headers.get("X-Bird-Pin", ""), WEB_PIN):
+        return jsonify(ok=False, need_pin=True, msg="PIN ไม่ถูกต้อง"), 401
+    return None
 
 
 @app.route("/api/capture", methods=["POST"])
@@ -1020,6 +1266,11 @@ def api_state():
     s["model"] = _model_name
     s["auto_interval"] = AUTO_INTERVAL_S
     s["confirm_frames"] = CONFIRM_FRAMES
+    s["confirm_of"] = CONFIRM_OF
+    s["burst_frames"] = BURST_FRAMES
+    s["corrupt_frames"] = CAM.corrupt_count
+    s["test_mode"] = TEST_MODE
+    s["pin_required"] = bool(WEB_PIN)
     s["roi"] = dict(ROI)
     s["hw"] = CTRL.snapshot()
     s["history"] = list(HISTORY)[:12]
@@ -1066,6 +1317,8 @@ def api_motor():
     action = str(data.get("action", "")).lower()
     if action == "home":
         ok, line = CTRL.send("MOT HOME")
+    elif action == "zero":
+        ok, line = CTRL.send("MOT ZERO")
     elif action == "stop":
         ok, line = CTRL.send("MOT STOP")
     elif action in ("left", "right"):
@@ -1113,29 +1366,43 @@ def api_water():
     return jsonify(ok=ok, msg=line)
 
 
+_stream_slots = threading.BoundedSemaphore(STREAM_MAX_CLIENTS)
+
+
 @app.route("/stream")
 def api_stream():
     """ภาพสดจากเว็บแคม (MJPEG) เปิดดูได้ทั้งในหน้าเว็บและเบราว์เซอร์ตรง ๆ"""
+    if not _stream_slots.acquire(blocking=False):
+        return f"เปิดภาพสดพร้อมกันได้ไม่เกิน {STREAM_MAX_CLIENTS} เครื่อง", 503
+
     def gen():
         seq = -1
         min_gap = 1.0 / STREAM_MAX_FPS
         last_sent = 0.0
-        while True:
-            frame, seq_new = CAM.next_frame(seq)
-            if frame is None:
-                continue
-            seq = seq_new
-            now = time.time()
-            if now - last_sent < min_gap:
-                continue
-            last_sent = now
-            h, w = frame.shape[:2]
-            if w > STREAM_WIDTH:
-                frame = cv2.resize(frame, (STREAM_WIDTH, int(h * STREAM_WIDTH / w)))
-            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-            if ok:
-                yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
-                       + buf.tobytes() + b"\r\n")
+        try:
+            while True:
+                frame, seq_new = CAM.next_frame(seq)
+                now = time.time()
+                if frame is None:
+                    # กล้องหลุด: ส่งภาพเดิมซ้ำทุก 2 วินาที
+                    # ถ้าไม่ส่งอะไรเลย เธรดจะไม่รู้ว่าผู้ชมปิดหน้าไปแล้ว และค้างอยู่ตลอดไป
+                    frame = CAM.last_frame()
+                    if frame is None or now - last_sent < 2.0:
+                        continue
+                else:
+                    seq = seq_new
+                    if now - last_sent < min_gap:
+                        continue
+                last_sent = now
+                h, w = frame.shape[:2]
+                if w > STREAM_WIDTH:
+                    frame = cv2.resize(frame, (STREAM_WIDTH, int(h * STREAM_WIDTH / w)))
+                ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                if ok:
+                    yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+                           + buf.tobytes() + b"\r\n")
+        finally:
+            _stream_slots.release()
 
     return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
@@ -1232,11 +1499,16 @@ HTML_PAGE = r"""<!DOCTYPE html>
   @media(max-width:760px){.two{grid-template-columns:1fr}}
   .bar{height:8px;background:#151a23;border-radius:99px;overflow:hidden;margin-top:6px}
   .bar i{display:block;height:100%;background:var(--ok)}
+  .warns{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+  .warn{border-radius:10px;padding:10px 12px;font-size:14px;line-height:1.45}
+  .warn.w{background:rgba(255,176,32,.12);border:1px solid rgba(255,176,32,.45);color:#ffd48a}
+  .warn.b{background:rgba(255,93,93,.12);border:1px solid rgba(255,93,93,.5);color:#ffb3b3}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>🦅 ระบบเฝ้าระวังและไล่นกอัตโนมัติ</h1>
+  <div class="warns" id="warns"></div>
 
   <div class="two">
     <!-- ---------- ภาพผลตรวจจับ ---------- -->
@@ -1257,7 +1529,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <div style="font-size:13px;color:var(--muted);margin-bottom:8px">
         ภาพสดจากกล้อง <span class="pill" id="pillCam">-</span>
       </div>
-      <img class="shot" id="live" alt="ภาพสด">
+      <img class="shot" id="live" alt="ภาพสด" style="display:none">
       <div class="row">
         <button id="btnLive">▶ เปิดภาพสด</button>
         <span style="font-size:12px;color:var(--muted)" id="camip"></span>
@@ -1277,6 +1549,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <div class="stat"><div class="k">ครั้งที่เจอนก</div><div class="v" id="det">0</div></div>
       <div class="stat"><div class="k">ครั้งที่ไล่</div><div class="v" id="rep">0</div></div>
       <div class="stat"><div class="k">ภาพชุดข้อมูล</div><div class="v" id="ds">-</div></div>
+      <div class="stat"><div class="k">ยืนยันก่อนไล่</div><div class="v" id="cfm">-</div></div>
     </div>
   </div>
 
@@ -1292,6 +1565,8 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <div class="stat"><div class="k">มุมมอเตอร์</div><div class="v" id="deg">-</div></div>
       <div class="stat"><div class="k">บอร์ดควบคุม</div><div class="v" id="brd">-</div></div>
       <div class="stat"><div class="k">ความพร้อม</div><div class="v" id="rdy">-</div></div>
+      <div class="stat"><div class="k">โควตาปั๊ม (10 นาที)</div><div class="v" id="duty">-</div></div>
+      <div class="stat"><div class="k">ไล่อัตโนมัติได้อีก (ชม.นี้)</div><div class="v" id="rph">-</div></div>
     </div>
   </div>
 
@@ -1308,6 +1583,8 @@ HTML_PAGE = r"""<!DOCTYPE html>
       </select>
       <button id="mR">▶</button>
       <button id="mH">◆ กลับจุดกลาง</button>
+      <button id="mS">■ หยุดหมุน</button>
+      <button id="mZ">⌖ ตั้งตรงนี้เป็นจุดกลาง</button>
     </div>
     <div class="row">
       <button id="bPump">💧 ปั๊มน้ำ 3 วินาที</button>
@@ -1350,14 +1627,56 @@ HTML_PAGE = r"""<!DOCTYPE html>
 const $ = id => document.getElementById(id);
 let lastFrame = -1, lastPrev = -1, liveOn = false, camIP = null;
 
-function setMsg(t){ $('msg').textContent = t; }
+let msgHoldUntil = 0;
+// ข้อความตอบกลับจากปุ่ม ค้างไว้ 4 วินาที ไม่ให้สถานะตรวจจับทับทันที
+function setMsg(t, hold){ $('msg').textContent = thaiMsg(t); if(hold !== false) msgHoldUntil = Date.now() + 4000; }
 
-async function post(url, body){
+function getPin(){ try{ return localStorage.getItem('birdPin') || ''; }catch(e){ return ''; } }
+function setPin(p){ try{ localStorage.setItem('birdPin', p); }catch(e){} }
+
+// ทุกคำสั่งส่ง header X-Bird-UI (กันเว็บอื่นยิงคำสั่งแทน) และ PIN ถ้าเซิร์ฟเวอร์ตั้งไว้
+async function post(url, body, retried){
   try{
-    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
-                               body: JSON.stringify(body||{})});
-    return await r.json();
+    const r = await fetch(url, {method:'POST',
+      headers:{'Content-Type':'application/json', 'X-Bird-UI':'1', 'X-Bird-Pin': getPin()},
+      body: JSON.stringify(body||{})});
+    const j = await r.json();
+    if(r.status === 401 && j.need_pin && !retried){
+      const p = prompt('ใส่ PIN เพื่อสั่งงานเครื่อง');
+      if(p === null) return {ok:false, msg:'ยกเลิก'};
+      setPin(p.trim());
+      return post(url, body, true);
+    }
+    return j;
   }catch(e){ setMsg('ติดต่อเซิร์ฟเวอร์ไม่ได้'); return {ok:false}; }
+}
+
+async function run(url, body){
+  const r = await post(url, body);
+  setMsg(r.msg || (r.ok ? 'ทำแล้ว' : 'สั่งไม่สำเร็จ'));
+  return r;
+}
+
+// แปลคำตอบ ERR จากบอร์ดเป็นภาษาคน
+const ERR_TH = {
+  'ERR MOVING':'มอเตอร์ยังหมุนอยู่ รอให้หยุดก่อน (หรือกดหยุดหมุน)',
+  'ERR BUSY':'เครื่องกำลังทำงานอยู่',
+  'ERR PUMP GAP':'ปั๊มเพิ่งทำงาน ต้องพักอีกสักครู่',
+  'ERR PUMP BUSY':'ปั๊มเปิดอยู่แล้ว',
+  'ERR PUMP DUTY':'ใช้ปั๊มครบโควตา 10 นาทีแล้ว รอสักพัก',
+  'ERR WATER EMPTY':'น้ำหมด (หรือเซนเซอร์น้ำเสีย) ปั๊มถูกล็อก',
+  'ERR NO WATER SENSOR':'ยังไม่ได้ต่อเซนเซอร์ระดับน้ำ',
+};
+function thaiMsg(m){ return (m && ERR_TH[m.trim()]) || m || ''; }
+
+function warnBox(list){
+  $('warns').innerHTML = '';
+  for(const [cls, text] of list){
+    const d = document.createElement('div');
+    d.className = 'warn ' + cls;
+    d.textContent = text;
+    $('warns').appendChild(d);
+  }
 }
 
 function pill(el, ok, textOk, textNo, warn){
@@ -1384,21 +1703,45 @@ async function tick(){
   $('tot').textContent = s.total_frames;
   $('det').textContent = s.total_detections;
   $('rep').textContent = s.hw.repel_count;
+  $('cfm').textContent = s.confirm_streak + '/' + s.confirm_frames +
+                         (s.confirm_of > 1 ? ' (ใน ' + s.confirm_of + ' รอบ)' : '');
+  $('duty').textContent = s.hw.pump_duty_left == null ? '-'
+                        : (s.hw.pump_duty_left / 1000).toFixed(0) + ' วิ';
+  $('rph').textContent = s.hw.repel_hour_left + ' ครั้ง';
+
+  // ---- แถบเตือน ----
+  const w = [];
+  if(s.test_mode) w.push(['w', 'โหมดทดสอบเปิดอยู่: ไม่ไล่นกเอง ไม่ต้องยืนยันหลายเฟรม และเกณฑ์คะแนนต่ำกว่าปกติ ' +
+                               'ก่อนใช้งานจริงให้แก้ TEST_MODE = False']);
+  if(s.hw.link && s.hw.error) w.push(['b', s.hw.error]);
+  if(s.hw.link && ['BROWNOUT','PANIC','WDT'].includes(s.hw.reset_reason) && !s.hw.error)
+    w.push(['b', 'บอร์ดควบคุมรีบูตเองครั้งล่าสุด (' + s.hw.reset_reason + ') ' +
+                 (s.hw.reset_reason === 'BROWNOUT' ? 'มักเกิดจากไฟตกตอนปั๊ม/มอเตอร์เริ่มทำงาน ' : '') +
+                 'ตำแหน่งมอเตอร์อาจเพี้ยน']);
+  if(!s.hw.link) w.push(['b', 'ไม่ได้เชื่อมต่อบอร์ดควบคุม' + (s.hw.error ? ' — ' + s.hw.error : '')]);
+  if(s.hw.link && s.hw.pos_ok === false)
+    w.push(['w', 'ยังไม่ได้ตั้งจุดกลางมอเตอร์หลังเปิดเครื่อง ถ้าหัวฉีดไม่ได้อยู่ตรงกลาง ' +
+                 'ให้หมุนจนตรงกลางแล้วกด "ตั้งตรงนี้เป็นจุดกลาง" ไม่งั้นระยะ ±90° จะคลาดไป']);
+  if(s.hw.link && s.hw.water_fault) w.push(['b', 'เซนเซอร์ระดับน้ำอ่านไม่ได้ ปั๊มถูกล็อกไว้ก่อน']);
+  if(s.hw.link && s.hw.pump_duty_left === 0) w.push(['w', 'ใช้ปั๊มครบโควตา 10 นาทีแล้ว ปั๊มจะกลับมาใช้ได้เอง']);
+  if(s.hw.repel_hour_left <= 0) w.push(['w', 'ไล่อัตโนมัติครบโควตาชั่วโมงนี้แล้ว (กันน้ำหมดเพราะโมเดลเห็นผิดซ้ำ ๆ)']);
+  if(!s.cam_online) w.push(['b', 'กล้องออฟไลน์ — เช็กสาย USB ของเว็บแคม']);
+  warnBox(w);
 
   // ---- สถานะเครื่อง ----
-  const w = s.hw.water_pct;
-  if(w < 0){ $('wat').textContent = 'ไม่มีเซนเซอร์'; $('watBar').style.width = '0%'; }
+  const wp = s.hw.water_pct;
+  if(wp < 0){ $('wat').textContent = 'ไม่มีเซนเซอร์'; $('watBar').style.width = '0%'; }
   else{
-    $('wat').textContent = w + '%';
-    $('watBar').style.width = w + '%';
+    $('wat').textContent = wp + '%';
+    $('watBar').style.width = wp + '%';
     $('watBar').style.background = s.hw.water_empty ? 'var(--bad)'
                                 : (s.hw.water_low ? 'var(--warn)' : 'var(--ok)');
   }
   $('vb').textContent  = s.hw.vbat > 2 ? s.hw.vbat.toFixed(2) + ' V' : '-';
-  $('deg').textContent = s.hw.deg + '°';
+  $('deg').textContent = s.hw.deg + '°' + (s.hw.pos_ok === false ? ' ?' : '');
   $('brd').textContent = s.hw.link ? 'เชื่อมต่อแล้ว' : 'ไม่ได้เชื่อมต่อ';
   $('brd').style.color = s.hw.link ? 'var(--ok)' : 'var(--bad)';
-  const ready = s.hw.link && s.cam_online;
+  const ready = s.hw.link && s.hw.ready;          // อ่านจากบอร์ดจริง = ตรงกับไฟส้มจริง
   $('rdy').textContent = ready ? 'พร้อม (ไฟส้มติด)' : 'กำลังเตรียม';
   $('rdy').style.color = ready ? 'var(--warn)' : 'var(--muted)';
 
@@ -1422,7 +1765,8 @@ async function tick(){
   if(s.frame_seq !== lastFrame){ lastFrame = s.frame_seq;
     $('shot').src = '/image?t=' + Date.now(); }
 
-  if(s.status) setMsg(s.status + (s.processing ? ' (กำลังประมวลผล...)' : ''));
+  if(s.status && Date.now() - msgHoldUntil > 0)
+    setMsg(s.status + (s.processing ? ' (กำลังประมวลผล...)' : ''), false);
 
   // ---- ROI ----
   if(document.activeElement.tagName !== 'INPUT'){
@@ -1439,7 +1783,7 @@ async function tick(){
 
 // ---------- ปุ่ม ----------
 $('btnShot').onclick = async () => {
-  setMsg('กำลังดึงภาพจากกล้อง...');
+  setMsg('กำลังดึงภาพจากกล้อง...', false);
   const r = await post('/api/capture');
   if(!r.ok) setMsg(r.msg || 'สั่งไม่สำเร็จ');
 };
@@ -1447,8 +1791,12 @@ $('autoDet').onchange = e => post('/api/auto_detect', {on: e.target.checked});
 $('autoRep').onchange = e => post('/api/auto_repel', {on: e.target.checked});
 $('btnLog').onclick = () => location.href = '/log';
 
+$('live').onerror = () => {
+  if(liveOn) setMsg('เปิดภาพสดไม่ได้ (อาจมีคนเปิดดูพร้อมกันเกินจำนวนที่ตั้งไว้)');
+};
 $('btnLive').onclick = () => {
   liveOn = !liveOn;
+  $('live').style.display = liveOn ? 'block' : 'none';
   if(liveOn){
     $('live').src = '/stream?t=' + Date.now();
     $('btnLive').textContent = '⏸ ปิดภาพสด';
@@ -1462,13 +1810,18 @@ $('btnLive').onclick = () => {
 };
 
 const steps = () => parseInt($('steps').value, 10);
-$('mL').onclick = () => post('/api/motor', {action:'left',  steps: steps()});
-$('mR').onclick = () => post('/api/motor', {action:'right', steps: steps()});
-$('mH').onclick = () => post('/api/motor', {action:'home'});
-$('bPump').onclick  = async()=>{ const r=await post('/api/pump',{ms:3000});  setMsg(r.msg||''); };
-$('bRepel').onclick = async()=>{ const r=await post('/api/repel');           setMsg(r.msg||''); };
-$('bWater').onclick = async()=>{ const r=await post('/api/water');           setMsg(r.msg||''); };
-$('bAbort').onclick = async()=>{ const r=await post('/api/abort');           setMsg(r.msg||''); };
+$('mL').onclick = () => run('/api/motor', {action:'left',  steps: steps()});
+$('mR').onclick = () => run('/api/motor', {action:'right', steps: steps()});
+$('mH').onclick = () => run('/api/motor', {action:'home'});
+$('mS').onclick = () => run('/api/motor', {action:'stop'});
+$('mZ').onclick = () => {
+  if(confirm('หัวฉีดอยู่ตรงกลางจริงแล้วใช่ไหม? ระบบจะถือว่าตำแหน่งนี้คือ 0°'))
+    run('/api/motor', {action:'zero'});
+};
+$('bPump').onclick  = () => run('/api/pump', {ms:3000});
+$('bRepel').onclick = () => run('/api/repel');
+$('bWater').onclick = () => run('/api/water');
+$('bAbort').onclick = () => run('/api/abort');
 
 $('roiOn').onchange = e => post('/api/roi', {enabled: e.target.checked});
 $('roiSave').onclick = async () => {
@@ -1489,6 +1842,8 @@ setInterval(tick, 1000);
 # ============================ MAIN ============================
 def main():
     load_roi()
+    if os.path.isfile(os.path.expanduser(CAM_DEVICE)):
+        print(f"[Cam] ใช้ไฟล์วิดีโอแทนเว็บแคม: {CAM_DEVICE}", flush=True)
     print("[Boot] กำลังโหลดโมเดล...", flush=True)
     load_model()
 
@@ -1498,19 +1853,25 @@ def main():
     threading.Thread(target=_auto_loop, daemon=True).start()
     threading.Thread(target=_ready_loop, daemon=True).start()
 
-    print(f"[Web] เปิดที่ http://0.0.0.0:5000", flush=True)
+    print(f"[Web] เปิดที่ http://0.0.0.0:{os.environ.get('BIRD_PORT', '5000')}", flush=True)
     if TEST_MODE:
         print("[Mode] *** โหมดทดสอบ: ปิด ROI / ไม่ยืนยันเฟรม / ไม่ไล่เอง / "
               f"conf={CONF_THRESHOLD} ***", flush=True)
-    print(f"[Auto] ตรวจจับทุก {AUTO_INTERVAL_S} วินาที "
-          f"(ยืนยัน {CONFIRM_FRAMES} เฟรมก่อนสั่งไล่)", flush=True)
+    print(f"[Auto] ตรวจจับทุก {AUTO_INTERVAL_S} วินาที รอบละ {BURST_FRAMES} เฟรม "
+          f"(เจอ {CONFIRM_FRAMES} ใน {CONFIRM_OF} รอบก่อนสั่งไล่)", flush=True)
+    print(f"[Detect] CLAHE={'เปิด' if DETECT_CLAHE else 'ปิด'}  "
+          f"ตัดภาพตาม ROI={'เปิด' if ROI_CROP else 'ปิด'}", flush=True)
+    if not WEB_PIN:
+        print("[Web] ยังไม่ได้ตั้ง PIN — ใครอยู่ Wi-Fi เดียวกันสั่งปั๊ม/มอเตอร์ได้ "
+              "(ตั้งด้วย BIRD_PIN=xxxx)", flush=True)
     if DATASET_ENABLED:
         print(f"[Dataset] เก็บภาพดิบสำหรับเทรนที่ {DATASET_DIR}", flush=True)
     if not PIR_TRIGGER_ENABLED:
         print("[PIR] ปิดการทริกด้วย PIR อยู่ "
               "(แก้ PIR_TRIGGER_ENABLED = True เมื่อเซนเซอร์พร้อม)", flush=True)
 
-    app.run(host="0.0.0.0", port=5000, threaded=True, debug=False)
+    app.run(host="0.0.0.0", port=int(os.environ.get("BIRD_PORT", "5000")),
+            threaded=True, debug=False)
 
 
 if __name__ == "__main__":
