@@ -41,7 +41,7 @@ else fail "README.md missing"; fi
 # 4. simulator test file for this version + all tests
 [ -f "$ROOT/tools/sim/test_v$V.cpp" ] && ok "tools/sim/test_v$V.cpp exists" || fail "tools/sim/test_v$V.cpp missing (every version adds its tests)"
 if out=$("$ROOT/tools/sim/run_tests.sh" "$SK" 2>&1); then
-  ok "simulator: $(echo "$out" | grep -c PASS) checks passed, ALL TESTS PASSED"
+  ok "simulator: $(echo "$out" | grep -c " PASS$") checks passed, ALL TESTS PASSED"
 else
   fail "simulator tests failed:"; echo "$out" | grep -E "FAIL|BUILD FAILED" | sed 's/^/        /'
 fi
