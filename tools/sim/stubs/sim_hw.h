@@ -294,9 +294,11 @@ class BLEScan {
   BLEScanResults* getResults() { return &r_; }
   void clearResults() {}
 };
+extern bool g_simBleOn; extern int g_simBleDeinits;   // tests: is the BLE stack holding its memory?
 class BLEDevice {
  public:
-  static bool getInitialized() { return true; }
-  static void init(const char*) {}
+  static bool getInitialized() { return g_simBleOn; }
+  static void init(const char*) { g_simBleOn = true; }
+  static void deinit(bool = false) { g_simBleOn = false; g_simBleDeinits++; }
   static BLEScan* getScan() { static BLEScan s; return &s; }
 };
