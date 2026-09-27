@@ -65,6 +65,6 @@ int main() {
     printf("5  clip converter: player on the page=%d, played at the tap=%d (full test: tools/web/test_video.js, scenario ios) %s\n", onPage, unlock, R(onPage && unlock)); }
 
   // ---------- 6 version ----------
-  { printf("6  version %s %s\n", FW_VERSION, R(!strcmp(FW_VERSION, "v11.6"))); }
+  { printf("6  version %s %s\n", FW_VERSION, R(atof(FW_VERSION + 1) >= 11.6f)); }   // (this version or a newer one)
   return 0;
 }

@@ -150,7 +150,13 @@ int main() {
   { offIdx = 3; lastTouchMs = millis();
     mazeOpen(); run(100); press(); run(300); hold(); bool mz = scr == S_GAMES;
     blocksOpen(); run(100); press(); run(300); hold(); bool bl = scr == S_GAMES;
+    
+#ifdef HAS_ANTS
+    antOpen(); dirty = true; loop(); hold(); bool gd = scr == S_GAMES;   // v11.8: Ants took the Garden's place
+#else
     gardenOpen(); dirty = true; loop(); hold(); bool gd = scr == S_GAMES;
+#endif
+
     mazeOpen(); run(100); press(); run(200); mazeTapAt(W - 80, 10); bool mp = mzState == MZ_PAUSE && scr == S_MAZE;
     dirty = true; mazeDraw(); savePng(spr, "t115_maze_pause_btn", W, H); mazeLeave();
     blocksOpen(); run(100); press(); run(200); blTapAt(W - 80, 10); bool bp = blState == BL_PAUSE && scr == S_BLOCKS;
