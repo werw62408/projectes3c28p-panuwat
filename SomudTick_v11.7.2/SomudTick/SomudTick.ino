@@ -145,7 +145,7 @@ void powerTask();
 void remindBeep();
 void kbdOpen(const String& title, const String& start, void (*done)(const String&));
 // joystick control (nav.h): every button drawn is written down so the stick can move between them
-enum NavKind : uint8_t { NK_BTN, NK_BACK, NK_FOOTER };
+enum NavKind : uint8_t { NK_BTN, NK_BACK, NK_FOOTER, NK_OVER };   // NK_OVER: drawn over other buttons (the reminder bar), found by its middle
 #define NAV_RING_C 0xFF8C00   // the joystick ring colour (orange)
 void navAdd(int x, int y, int w, int h, uint8_t kind = 0, int hx = -1, int hy = -1);
 void navModal(int backX, int backY);

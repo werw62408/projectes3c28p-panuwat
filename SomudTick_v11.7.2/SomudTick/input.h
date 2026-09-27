@@ -15,6 +15,12 @@ void refreshStatsIfVisible() {
 void onTap(int x, int y) {
   if (scr == S_GAME) { gameTap(x, y); return; }
   if (remindBarShown && y >= remindBarY && y < remindBarY + 30) {
+    if (remindBarIsDone) return;   // "Water +1 saved": nothing to do
+    if (!remindBarIsNotice && x >= remindPlusX - 4) {   // v11.7.2: [+1] on the bar: log now, stay on this page
+      int i = remindAct; remindDoneAct = i; remindDoneMs = millis();
+      logDefault(i);   // (clears the reminder)
+      remindAct = -1; dirty = true; return;
+    }
     if (!remindBarIsNotice) { remindAct = -1; kpAct = -1; goScreen(S_HOME); return; }   // reminder bar: go to Log
     int n = logNotice();   // notice on Log: time -> Settings > Wi-Fi, space -> About
     goScreen(S_SET); setOpenPage(n == 3 ? 2 : 3); if (n != 3) setAboutPage();

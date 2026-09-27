@@ -118,14 +118,15 @@ int navPick(const NavT& from, int dir, int only) {
     if (only == 2 && navInArea(t)) continue;
     int tcx = t.vx + t.vw / 2, tcy = t.vy + t.vh / 2;
     long along, side; bool overlap;
+    bool over = t.kind == NK_OVER;   // a bar over other buttons: it can't be "past the edge", so only its middle counts
     if (dir == 1 || dir == 2) {
       along = dir == 1 ? fcx - tcx : tcx - fcx;
-      if (dir == 1 ? t.vx + t.vw > from.vx + 2 : t.vx < from.vx + from.vw - 2) continue;   // must be past the edge
+      if (!over && (dir == 1 ? t.vx + t.vw > from.vx + 2 : t.vx < from.vx + from.vw - 2)) continue;   // must be past the edge
       overlap = t.vy < from.vy + from.vh && t.vy + t.vh > from.vy;
       side = overlap ? 0 : labs(tcy - fcy);
     } else {
       along = dir == 3 ? fcy - tcy : tcy - fcy;
-      if (dir == 3 ? t.vy + t.vh > from.vy + 2 : t.vy < from.vy + from.vh - 2) continue;
+      if (!over && (dir == 3 ? t.vy + t.vh > from.vy + 2 : t.vy < from.vy + from.vh - 2)) continue;
       overlap = t.vx < from.vx + from.vw && t.vx + t.vw > from.vx;
       side = overlap ? 0 : labs(tcx - fcx);
     }

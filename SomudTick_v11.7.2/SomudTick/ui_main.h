@@ -18,6 +18,11 @@ void drawAskUpdate() {   // Settings > About > Update firmware: ask first
 // reminder: a dark bar just above the tabs, "Time for Water  >". Tap it = go to Log.
 bool remindBarShown = false; int remindBarY = 0;
 bool remindBarIsNotice = false;   // the bar on screen is a Log notice (not a reminder): a tap opens where to fix it
+// v11.7.2: the reminder bar has its own [+1] button (logs at once, you stay on the page). After it: "Water +1" for a moment.
+int remindPlusX = 0;              // left edge of the [+1] button in the bar
+int remindDoneAct = -1; uint32_t remindDoneMs = 0; bool remindBarIsDone = false;
+const uint32_t REMIND_DONE_MS = 1500;
+String remindPlusLabel(int i) { return "+" + fmtNum(isUnitAct(acts[i]) ? acts[i].step : 1); }   // the same as the tile's [+]
 // Log page only: important notices in the same place (tap = go where you can fix it)
 int logNotice() {   // 0 none, 1 cannot save (full), 2 almost full, 3 time not set
   if (logFull) return 1;
@@ -39,15 +44,31 @@ void drawLogNotice() {
 void drawRemindBar() {
   remindBarShown = false; remindBarIsNotice = false;
   drawLogNotice();
+  remindBarIsDone = false;
+  if (remindDoneAct >= 0 && remindDoneAct < (int)acts.size() && millis() - remindDoneMs < REMIND_DONE_MS && scr != S_HOME && scr != S_KEYPAD && scr != S_KBD && scr != S_SUDOKU && scr != S_USB) {
+    remindBarY = scr == S_DECK ? H - 38 : FTR_Y - 34;   // "Water +1": the log was saved (a tap here does nothing)
+    uint32_t bg = scr == S_DECK ? DN_CYAN : INK, fg = scr == S_DECK ? DN_BG : ONINK;
+    spr.fillRoundRect(6, remindBarY, W - 12, 30, 10, C(bg));
+    spr.fillCircle(20, remindBarY + 15, 5, C(acts[remindDoneAct].color));
+    txt(FB, fitText(FB, acts[remindDoneAct].name + " " + remindPlusLabel(remindDoneAct) + "  saved", W - 50), 32, remindBarY + 15, fg, D_ML);
+    remindBarShown = true; remindBarIsDone = true; dirty = true;   // (redrawn until it goes away)
+    return;
+  }
   if (remindAct < 0 || remindAct >= (int)acts.size() || scr == S_KEYPAD || scr == S_KBD || scr == S_SUDOKU || scr == S_USB) return;
   if (scr == S_HOME) return;   // on Log you see the tile already
   remindBarY = scr == S_DECK ? H - 38 : FTR_Y - 34;   // Deck has no bottom bar
   uint32_t bg = scr == S_DECK ? DN_CYAN : INK, fg = scr == S_DECK ? DN_BG : ONINK;   // Deck: in its neon colours
   spr.fillRoundRect(6, remindBarY, W - 12, 30, 10, C(bg));
-  navAdd(6, remindBarY, W - 12, 30);
+  // [+1] on the right: logs now. The rest of the bar: go to Log.
+  String pl = remindPlusLabel(remindAct);
+  spr.setFont(FB); int pw2 = max(44, min(70, (int)spr.textWidth(pl) + 16));
+  remindPlusX = W - 9 - pw2;
+  navAdd(6, remindBarY, remindPlusX - 8, 30, NK_OVER);
+  navAdd(remindPlusX, remindBarY + 3, pw2, 24, NK_OVER);
+  spr.fillRoundRect(remindPlusX, remindBarY + 3, pw2, 24, 8, C(fg));
+  txt(FB, fitText(FB, pl, pw2 - 6), remindPlusX + pw2 / 2, remindBarY + 15, bg, D_MC);
   spr.fillCircle(20, remindBarY + 15, 5, C(acts[remindAct].color));
-  txt(FB, fitText(FB, "Time for " + acts[remindAct].name, W - 60), 32, remindBarY + 15, fg, D_ML);
-  txt(FB, ">", W - 18, remindBarY + 15, fg, D_MC);
+  txt(FB, fitText(FB, "Time for " + acts[remindAct].name, remindPlusX - 38), 32, remindBarY + 15, fg, D_ML);
   remindBarShown = true;
 }
 void render() {

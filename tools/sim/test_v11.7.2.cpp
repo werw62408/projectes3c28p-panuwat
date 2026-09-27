@@ -102,5 +102,54 @@ int main() {
     for (int k = 0; k < 20; k++) { openDeck(); if (deckVia != DV_BT) ftap(W - 38, HDR_H + 17); ftap(30, HDR_H + 17, 30); if (deckBleOn || BLEDevice::getInitialized() || scr != S_APPS) leaks++; }
     printf("N13 20 times in + out on Bluetooth: Bluetooth left on=%d times %s\n", leaks, R(leaks == 0)); }
 
+  // ================= reminder bar: its own [+1] button =================
+  auto actIdx = [&](const char* id) { for (size_t i = 0; i < acts.size(); i++) if (acts[i].id == id) return (int)i; return -1; };
+  auto cnt = [&](int i) { int c = 0; for (auto& e : todayEv) if (e.id == acts[i].id) c++; return c; };
+  auto sum = [&](int i) { float v = 0; for (auto& e : todayEv) if (e.id == acts[i].id) v += e.v; return v; };
+  auto showRemind = [&](int i) { remindAct = i; remindDoneAct = -1; wake(); dirty = true; run(100); };
+  auto plusTap = [&](int hold = 60) { ftap(W - 20, remindBarY + 15, hold); };
+  int wa = actIdx("water");
+  // R1 on Apps: tap [+1] -> one log, still on Apps, the reminder is gone, "Water +1 saved" shows
+  { goScreen(S_APPS); showRemind(wa); shot("t1172_remind_plus"); bool btn = remindBarShown && remindPlusX > W / 2;
+    int c0 = cnt(wa); plusTap(); render(); bool saved = remindBarIsDone; shot("t1172_remind_saved");
+    printf("R1 Apps: [+1] in the bar=%d, tap -> logged %d (1 expected), still on Apps=%d, reminder gone=%d, \"saved\" shown=%d %s\n", btn, cnt(wa) - c0, scr == S_APPS, remindAct < 0, saved, R(btn && cnt(wa) - c0 == 1 && scr == S_APPS && remindAct < 0 && saved)); }
+  // R2 a tap on "saved" does nothing (no 2nd log, no page change); it goes away after 1.5 s
+  { int c0 = cnt(wa); plusTap(); ftap(40, remindBarY + 15); bool none = cnt(wa) == c0 && scr == S_APPS;
+    runFor(1600); render(); bool gone = !remindBarShown;
+    printf("R2 taps on \"saved\": nothing logged + stays=%d, gone after 1.5 s=%d %s\n", none, gone, R(none && gone)); }
+  // R3 tap the words: go to Log, nothing logged (as before)
+  { showRemind(wa); int c0 = cnt(wa); ftap(60, remindBarY + 15);
+    printf("R3 tap \"Time for Water\": on Log=%d, nothing logged=%d %s\n", scr == S_HOME, cnt(wa) == c0, R(scr == S_HOME && cnt(wa) == c0)); }
+  // R4 an amount activity: the button shows its step (like the tile's [+]) and logs that amount
+  { int fu = actIdx("fuel"); goScreen(S_APPS); float st = acts[fu].step; showRemind(fu); String lab = remindPlusLabel(fu);
+    float s0 = sum(fu); plusTap(); float added = sum(fu) - s0;
+    printf("R4 amount activity \"%s\" (%s): button \"%s\", logged %.0f (%.0f expected) %s\n", acts[fu].name.c_str(), acts[fu].unit.c_str(), lab.c_str(), added, st, R(isUnitAct(acts[fu]) && lab == "+" + fmtNum(st) && fabsf(added - st) < 0.01f)); runFor(1600); }
+  // R5 stick only: ring to [+1] + press -> logged
+  { goScreen(S_APPS); showRemind(wa); navShow = false; int c0 = cnt(wa);
+    for (int k = 0; k < 4; k++) push(0, 1); for (int k = 0; k < 3; k++) push(1, 0); bool onPlus = navFX == remindPlusX; press();
+    printf("R5 stick only (Apps): 4 pushes down + right: ring on [+1]=%d, press: logged %d, still on Apps=%d %s\n", onPlus, cnt(wa) - c0, scr == S_APPS, R(onPlus && cnt(wa) - c0 == 1 && scr == S_APPS)); runFor(1600); }
+  { openDeck(); showRemind(wa); navShow = false; int c0 = cnt(wa); size_t n0 = g_simDeck.size();
+    for (int k = 0; k < 6; k++) push(0, 1); for (int k = 0; k < 3; k++) push(1, 0); bool onPlus = navFX == remindPlusX; press();
+    printf("R5b stick only (Deck, no bottom bar): down + right: ring on [+1]=%d, press: logged %d, still on Deck=%d, no key sent=%d %s\n", onPlus, cnt(wa) - c0, scr == S_DECK, g_simDeck.size() == n0, R(onPlus && cnt(wa) - c0 == 1 && scr == S_DECK && g_simDeck.size() == n0)); runFor(1600); }
+  // R6 pocket: screen off with the bar: a tap on [+1] only wakes, nothing logged; stick pushes log nothing
+  { goScreen(S_APPS); showRemind(wa); int c0 = cnt(wa); pw = P_OFF; lowPower = true; plusTap(); bool w = pw == P_ON;
+    pw = P_OFF; lowPower = true; for (int k = 0; k < 6; k++) push(k % 2 ? 1 : 0, k % 2 ? 0 : 1);
+    printf("R6 screen off: tap on [+1] only wakes=%d, pushes keep it off=%d, nothing logged=%d %s\n", w, pw == P_OFF, cnt(wa) == c0, R(w && pw == P_OFF && cnt(wa) == c0)); press(); remindAct = -1; }
+  // R7 fast double / triple taps on [+1]: only one log
+  { goScreen(S_APPS); showRemind(wa); int c0 = cnt(wa); for (int k = 0; k < 3; k++) ftap(W - 20, remindBarY + 15, 20);
+    printf("R7 3 fast taps on [+1]: logged %d (1 expected) %s\n", cnt(wa) - c0, R(cnt(wa) - c0 == 1)); runFor(1600); }
+  // R8 on Deck (neon, no bottom bar): [+1] logs, stays on Deck, no key sent
+  { openDeck(); showRemind(wa); shot("t1172_deck_remind_plus"); int c0 = cnt(wa); size_t n0 = g_simDeck.size(); plusTap();
+    printf("R8 Deck: logged %d, still on Deck=%d, no key sent=%d %s\n", cnt(wa) - c0, scr == S_DECK, g_simDeck.size() == n0, R(cnt(wa) - c0 == 1 && scr == S_DECK && g_simDeck.size() == n0)); runFor(1600); }
+  // R9 a long Thai name on a wide screen: the name is shortened, [+1] stays whole inside the bar
+  { String old = acts[wa].name; acts[wa].name = "ดื่มน้ำเปล่าแก้วใหญ่มากหลังออกกำลังกายตอนเย็น";
+    rot = 1; applyRotation(); goScreen(S_APPS); showRemind(wa); render(); savePng(spr, "t1172_remind_wide_thai", W, H);
+    bool ok = remindPlusX > W / 2 && remindPlusX + 44 <= W - 6; int c0 = cnt(wa); plusTap();
+    printf("R9 wide + long Thai name: [+1] at x=%d inside=%d, logged=%d %s\n", remindPlusX, ok, cnt(wa) - c0, R(ok && cnt(wa) - c0 == 1));
+    acts[wa].name = old; runFor(1600); rot = 0; applyRotation(); }
+  // R10 millis() wraps while "saved" shows: it still goes away
+  { goScreen(S_APPS); g_simMs = 0xFFFFFFFFULL - 500; showRemind(wa); plusTap(); runFor(1700); render();
+    printf("R10 millis() wraps under \"saved\": gone=%d, now %u ms %s\n", !remindBarShown, millis(), R(!remindBarShown && millis() < 5000)); }
+
   return 0;
 }
