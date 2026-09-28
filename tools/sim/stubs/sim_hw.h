@@ -107,6 +107,9 @@ extern SDMMCFS SD_MMC;
 // ---------------- Preferences (kept in memory) ----------------
 class Preferences {
   std::map<std::string, std::vector<uint8_t>> m_;
+ public:
+  bool clear() { m_.clear(); return true; }
+ private:
   template <typename T> T get(const char* k, T d) { auto it = m_.find(k); if (it == m_.end() || it->second.size() != sizeof(T)) return d; T v; memcpy(&v, it->second.data(), sizeof v); return v; }
   template <typename T> size_t put(const char* k, T v) { m_[k].assign((uint8_t*)&v, (uint8_t*)&v + sizeof v); return sizeof v; }
  public:
@@ -246,11 +249,12 @@ class HTTPClient {
 
 // ---------------- I2S audio ----------------
 enum { I2S_MODE_STD, I2S_DATA_BIT_WIDTH_16BIT = 16, I2S_SLOT_MODE_MONO = 1 };
+extern std::vector<int16_t> g_simI2S;   // every sample written to the sound chip (tests)
 class I2SClass {
  public:
   void setPins(int, int, int, int, int) {}
   bool begin(int, int, int, int) { return false; }
-  size_t write(const uint8_t*, size_t n) { return n; }
+  size_t write(const uint8_t* d, size_t n) { const int16_t* s = (const int16_t*)d; g_simI2S.insert(g_simI2S.end(), s, s + n / 2); return n; }   // tests read the samples
 };
 
 // ---------------- IR remote ----------------
@@ -294,11 +298,12 @@ class BLEScan {
   BLEScanResults* getResults() { return &r_; }
   void clearResults() {}
 };
-extern bool g_simBleOn; extern int g_simBleDeinits;   // tests: is the BLE stack holding its memory?
 class BLEDevice {
  public:
-  static bool getInitialized() { return g_simBleOn; }
-  static void init(const char*) { g_simBleOn = true; }
-  static void deinit(bool = false) { g_simBleOn = false; g_simBleDeinits++; }
+  static bool& inited() { static bool b = false; return b; }
+  static int& deinits() { static int n = 0; return n; }
+  static bool getInitialized() { return inited(); }
+  static void init(const char*) { inited() = true; }
+  static void deinit(bool) { if (!inited()) return; inited() = false; deinits()++; }   // (like the real one: nothing if not on)
   static BLEScan* getScan() { static BLEScan s; return &s; }
 };

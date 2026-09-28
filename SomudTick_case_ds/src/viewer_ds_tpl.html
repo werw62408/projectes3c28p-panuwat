@@ -1,0 +1,311 @@
+<title>__NAME__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* One deliberate look: the black + neon of the SomudTick Deck page (not tied to light/dark). */
+:root{
+  color-scheme:dark;
+  --bg:#07090f; --panel:#0d121c; --panel2:#111827; --line:#1d2636; --ink:#e3ebf6; --soft:#8a98ae;
+  --cyan:#22d3ee; --pink:#ff3daa; --cyan-dim:#0e3a47;
+  --display:"Chakra Petch","IBM Plex Sans Thai",system-ui,sans-serif;
+  --body:"IBM Plex Sans Thai",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{background:var(--bg)}
+body{color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.6;margin:0}
+.wrap{max-width:1120px;margin:0 auto;padding-inline:16px;padding-block:22px 44px;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 20px}
+.eyebrow{font-family:var(--display);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--cyan);margin:0 0 2px}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(28px,5vw,44px);line-height:1.05;margin:0;letter-spacing:.02em;text-wrap:balance}
+h1 b{color:var(--cyan);font-weight:700;text-shadow:0 0 18px rgba(34,211,238,.45)}
+.sub{color:var(--soft);margin:6px 0 0;font-size:14.5px;max-width:62ch}
+.readout{display:grid;grid-template-columns:auto auto;gap:2px 14px;font-family:var(--mono);font-size:13px;color:var(--soft);font-variant-numeric:tabular-nums}
+.readout b{color:var(--ink);font-weight:500}
+.stagebox{position:relative;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:radial-gradient(120% 90% at 50% 20%,#101a2b 0%,#07090f 70%)}
+#stage{display:block;width:100%;height:min(68vh,580px);touch-action:none;cursor:grab}
+#stage:active{cursor:grabbing}
+.hud{position:absolute;left:12px;right:12px;bottom:12px;display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:flex-end;pointer-events:none}
+.pick{background:rgba(13,18,28,.9);border:1px solid var(--line);border-radius:12px;padding:8px 12px;max-width:360px;font-size:14px}
+.pick b{font-family:var(--display);font-weight:600;color:var(--cyan)}
+.pick .m{font-family:var(--mono);font-size:12.5px;color:var(--soft)}
+.angle{font-family:var(--display);font-size:13px;letter-spacing:.12em;color:var(--soft);background:rgba(13,18,28,.8);border:1px solid var(--line);border-radius:10px;padding:6px 10px}
+.angle output{color:var(--pink);font-family:var(--mono);font-size:16px;letter-spacing:0;margin-left:6px}
+#err{padding:24px;color:var(--pink)}
+.tools{display:flex;flex-wrap:wrap;gap:14px 26px;align-items:center}
+.group{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.lbl{font-family:var(--display);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);margin-right:4px}
+button.chip{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:6px 13px;border-radius:999px;cursor:pointer}
+button.chip:hover{border-color:var(--cyan-dim)}
+button.chip[aria-pressed="true"]{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 0 1px var(--cyan) inset,0 0 14px rgba(34,211,238,.25)}
+button.chip:focus-visible,input:focus-visible{outline:2px solid var(--pink);outline-offset:2px}
+.slide{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--soft)}
+.slide input{accent-color:var(--cyan);width:min(220px,48vw)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:18px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+h2{font-family:var(--display);font-weight:600;font-size:18px;letter-spacing:.03em;margin:0 0 10px}
+h2 small{font-family:var(--body);font-weight:400;font-size:13px;color:var(--soft);letter-spacing:0;margin-left:6px}
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td{padding:7px 0;border-top:1px solid var(--line);vertical-align:top}
+tr:first-child td{border-top:0}
+td.v{font-family:var(--mono);font-size:12.5px;color:var(--soft);text-align:right;white-space:nowrap;padding-left:12px;font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px;vertical-align:0}
+.est{color:var(--pink);font-family:var(--mono);font-size:12px}
+ul{margin:0;padding-left:18px}
+li{margin:4px 0}
+.note{font-size:13.5px;color:var(--soft);margin:10px 0 0}
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto} }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">ES3C28P · Joystick Shield · 2 screens</p>
+      <h1>__H1__</h1>
+      <p class="sub" id="m-sub">กล่องพิมพ์ 3D แบบฝาพับเหมือน Nintendo DS จอใหญ่อยู่ฝาบน ปุ่มกับจอยอยู่ตัวล่าง ปิดฝาแล้วเห็นเวลาที่จอเล็กด้านหลัง ทุกชิ้นวางตามขนาดจริง</p>
+    </div>
+    <div class="readout" aria-label="ขนาดกล่อง">
+      <span id="l-size">ปิดฝา</span><b id="m-size"></b>
+      <span id="l-halves">ตัวล่าง / ตัวบน</span><b id="m-halves"></b>
+      <span>พลาสติกรวม</span><b id="m-vol"></b>
+    </div>
+  </header>
+
+  <div class="stagebox">
+    <canvas id="stage" aria-label="โมเดล 3D ของกล่อง ลากเพื่อหมุน"></canvas>
+    <div id="err" hidden>โหลดโมเดลไม่ได้ ลองรีเฟรชหน้านี้อีกครั้ง</div>
+    <div class="hud">
+      <div class="pick" id="pick"><b>แตะชิ้นส่วน</b> เพื่อดูชื่อและขนาด<div class="m">ลากหมุน · สองนิ้วซูม/เลื่อน</div></div>
+      <div class="angle" id="angHud">ฝาเปิด<output id="angOut">120°</output></div>
+    </div>
+  </div>
+
+  <div class="tools">
+    <label class="slide" for="ang" id="angBox"><span class="lbl">เปิดฝา</span><input id="ang" type="range" min="0" max="180" value="120"></label>
+    <div class="group" role="group" aria-label="มุมมอง">
+      <span class="lbl">มุมมอง</span>
+      <button class="chip" id="v-play" aria-pressed="true">ถือเล่น</button>
+      <button class="chip" id="v-closed" aria-pressed="false">ปิดฝา</button>
+      <button class="chip" id="v-hinge" aria-pressed="false">บานพับ</button>
+      <button class="chip" id="v-flat" aria-pressed="false">กางราบ</button>
+    </div>
+    <div class="group" role="group" aria-label="แสดง">
+      <span class="lbl">แสดง</span>
+      <button class="chip" id="t-shell" aria-pressed="true">ตัวกล่อง</button>
+      <button class="chip" id="t-parts" aria-pressed="true">อุปกรณ์</button>
+    </div>
+    <label class="slide" for="explode"><span class="lbl">แยกชิ้น</span><input id="explode" type="range" min="0" max="30" value="0"></label>
+  </div>
+
+  <div class="cols">
+    <section>
+      <h2>ชิ้นที่ต้องพิมพ์ <small>PETG หรือ PLA · ชั้น 0.2 มม. · ผนัง 3 เส้น · ไส้ใน 20%</small></h2>
+      <div class="tbl"><table id="printTbl">
+        <tr><td><span class="sw" style="background:#1d222b;border:1px solid #3a4454"></span>base_shell ตัวล่าง (หน้าปุ่ม)<br><span class="note">คว่ำหน้าปุ่มลงถาด · เปิดซัพพอร์ตเฉพาะใต้ข้อบานพับ</span></td><td class="v" data-p="base_shell"></td></tr>
+        <tr><td><span class="sw" style="background:#151920;border:1px solid #3a4454"></span>base_floor ฝาใต้ + ตะแกรงลำโพง</td><td class="v" data-p="base_floor"></td></tr>
+        <tr><td><span class="sw" style="background:#1d222b;border:1px solid #3a4454"></span>lid_shell ตัวบน (หน้าจอ)<br><span class="note">คว่ำหน้าจอลงถาด · ซัพพอร์ตเฉพาะใต้ข้อบานพับ</span></td><td class="v" data-p="lid_shell"></td></tr>
+        <tr><td><span class="sw" style="background:#151920;border:1px solid #3a4454"></span>lid_back ฝาหลัง + ช่อง OLED + โลโก้</td><td class="v" data-p="lid_back"></td></tr>
+        <tr><td><span class="sw" style="background:#f5c518"></span><span class="sw" style="background:#3b82f6"></span>btn_cap ×4 หมวกปุ่ม A B C D (พิมพ์สี)</td><td class="v" data-p="btn_cap"></td></tr>
+        <tr><td><span class="sw" style="background:#e5e7eb"></span>small_cap ×2 แกนปุ่ม E F</td><td class="v" data-p="small_cap"></td></tr>
+      </table></div>
+      <p class="note">ร่องรอบจอ ตัวอักษร SOMUDTICK และเส้นหลังฝา ลึก 0.5 มม. ทาสีเรืองแสงฟ้า/ชมพูได้ (ในโมเดลแสดงแบบทาแล้ว)</p>
+    </section>
+    <section>
+      <h2>ต้องวัดของจริงก่อนพิมพ์ <small>แก้เลขใน layout_ds.py แล้วสร้างใหม่</small></h2>
+      <div class="tbl"><table>
+        <tr><td>ความสูงจอย: ใต้แผงถึงยอดหัวจอย</td><td class="v">33 <span class="est">ประมาณ</span></td></tr>
+        <tr><td>ความสูงปุ่มใหญ่: บนแผงถึงยอดหมวกสี</td><td class="v">15 <span class="est">ประมาณ</span></td></tr>
+        <tr><td>ตำแหน่งจอยและปุ่มบนแผง</td><td class="v">จากรูปร้าน <span class="est">ประมาณ</span></td></tr>
+        <tr><td>บอร์ด PCF8574</td><td class="v"><span id="m-pcf"></span> <span class="est">ประมาณ</span></td></tr>
+        <tr><td>จอ OLED 0.91" (ทั้งแผ่น)</td><td class="v">38×12 <span class="est">ประมาณ</span></td></tr>
+        <tr><td colspan="2" id="m-screen"></td></tr>
+      </table></div>
+      <h2 style="margin-top:14px">ของเพิ่ม</h2>
+      <ul id="m-buy"></ul>
+    </section>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){
+const META = __META__;
+const GLB = "__GLB__";
+const INFO = {
+  front_shell:["ตัวหน้า (จอ + ปุ่ม)","พิมพ์ · ชิ้นเดียว ไม่มีบานพับ"], back_plate:["ฝาหลัง","พิมพ์ · OLED · ตะแกรงลำโพง · โลโก้"],
+  base_shell:["ตัวล่าง (หน้าปุ่ม)","พิมพ์ · 152×90×25 · ขอบยก 1 มม. กันฝากดปุ่ม · รูจอย Ø27"],
+  base_floor:["ฝาใต้","พิมพ์ · หนา 2 · ตะแกรงลำโพง 8 ช่อง · น็อต M3 4 ตัว"],
+  lid_shell:["ตัวบน (หน้าจอ)","พิมพ์ · ช่องจอ 71×49 · หลุมรับหัวจอยลึก 16"],
+  lid_back:["ฝาหลัง","พิมพ์ · ช่อง OLED 24×13 · โลโก้ SOMUDTICK"],
+  print_cap_y:["หมวกปุ่ม A / C (พิมพ์)","Ø10 โผล่ 0.6 มม. ครอบบนปุ่มเดิม"],
+  print_cap_b:["หมวกปุ่ม B / D (พิมพ์)","Ø10 โผล่ 0.6 มม. ครอบบนปุ่มเดิม"],
+  print_small:["แกนปุ่ม E / F (พิมพ์)","Ø4.8 ยาว 14.5"],
+  shield:["Joystick Shield V1.A","68.6×53.3 · ถอดขาก้างปลาด้านล่างออก · สวิตช์ไป 3V3"],
+  stick_body:["จอยของแผง","ต่อ X→IO2 · Y→IO3 · กด→IO14"], stick_cap:["หัวจอย","สูงจากใต้แผง ~33 มม. (ต้องวัด)"],
+  tact:["ปุ่มกดบนแผง","A–F → PCF8574 P0–P5"], cap_y:["หมวกปุ่มเดิม (เหลือง)",""], cap_b:["หมวกปุ่มเดิม (น้ำเงิน)",""],
+  battery:["แบต 48×30×10",""], speaker:["ลำโพง 40×28","หันลงตะแกรงฝาใต้"],
+  ds3231:["DS3231 นาฬิกา","I2C 0x68 · EEPROM 0x57"], coin:["ถ่าน CR2032",""],
+  pcf8574:["PCF8574","I2C 0x20 · ปุ่ม 6 ปุ่ม"], pcf8574_chip:["PCF8574","I2C 0x20"],
+  ky005:["KY-005 IR","IO21 · หลอดโผล่ขอบบานพับ"], led:["หลอด IR","ยิงออกด้านบานพับ (ชี้ไปที่แอร์)"],
+  switch:["สวิตช์เปิดปิด","ผนังซ้าย ตัวล่าง"], switch_rocker:["สวิตช์เปิดปิด",""],
+  magnet:["แม่เหล็ก 6×3","ปิดฝาแล้วดูดติด"], bolt:["น็อต M3×25","แกนบานพับ"],
+  acrylic:["อะคริลิกหน้าจอ","85×60×3"], glass:["จอ 2.8\" 240×320",""], pcb:["บอร์ด ES3C28P","50×86"],
+  brass:["เสาทองเหลือง","M3 ยึดจากหน้าฝา"], port:["USB-C / การ์ด SD","USB-C ผนังขวา · SD ขอบบานพับ"],
+  plug:["ขั้วต่อบนบอร์ด","I2C · IO · ลำโพง · แบต"],
+  oled_pcb:["จอ OLED 0.91\" 128×32","SSD1306 I2C 0x3C · 38×12 · ขาไปทางซ้าย"], oled_glass:["จอ OLED","มองผ่านฝาหลังตอนปิดฝา"],
+  paint_cyan:["ร่องทาสีฟ้า","ลึก 0.5 มม."], paint_pink:["ร่องทาสีชมพู","ลึก 0.5 มม."]
+};
+const COL = {
+  front_shell:[0x1d222b,.45,.35], back_plate:[0x151920,.55,.3],
+  base_shell:[0x1d222b,.45,.35], base_floor:[0x151920,.55,.3], lid_shell:[0x1d222b,.45,.35], lid_back:[0x151920,.55,.3],
+  print_cap_y:[0xf5c518,.4,0], print_cap_b:[0x3b82f6,.4,0], print_small:[0xe5e7eb,.5,0],
+  shield:[0xc0392b,.7,0], stick_body:[0x222222,.8,0], stick_cap:[0x1a1a1a,.9,0], tact:[0x777c85,.4,.6],
+  cap_y:[0xe0b020,.5,0], cap_b:[0x2f66c8,.5,0], battery:[0xc9b46a,.5,.2], speaker:[0x55595f,.5,.4],
+  ds3231:[0x1f5fbf,.6,0], coin:[0xc8ccd2,.3,.9], pcf8574:[0x1c4fa8,.6,0], pcf8574_chip:[0x111111,.6,0],
+  ky005:[0x111111,.7,0], led:[0x9fb3ff,.2,0], switch:[0x151515,.7,0], switch_rocker:[0x151515,.7,0],
+  magnet:[0xaab0b8,.3,.9], bolt:[0xb8bec6,.35,.9], acrylic:[0xcfe8f5,.1,0], glass:[0x0a1020,.3,0], pcb:[0x1b1f24,.7,0],
+  brass:[0xc9a24a,.35,.9], port:[0xb8bec6,.35,.9], plug:[0xf2efe6,.6,0], oled_pcb:[0x1b3f8f,.6,0], oled_glass:[0x05070c,.3,0],
+  paint_cyan:[0x22d3ee,.4,0,1], paint_pink:[0xff3daa,.4,0,1]
+};
+const $ = id => document.getElementById(id);
+$("m-size").textContent = META.SIZE; $("m-halves").textContent = META.HALVES; $("m-vol").textContent = META.VOL;
+$("m-pcf").textContent = META.PCF; $("m-screen").textContent = META.SCREEN_NOTE;
+document.querySelectorAll("[data-p]").forEach(td => { td.textContent = META.PRINT[td.dataset.p] || ""; });
+META.BUY.forEach(t => { const li = document.createElement("li"); li.textContent = t; $("m-buy").appendChild(li); });
+const GB = META.KIND === "gb";
+if (GB) {
+  $("angBox").hidden = true; $("angHud").hidden = true;
+  $("m-sub").textContent = "กล่องพิมพ์ 3D ทรง Game Boy ชิ้นเดียว ไม่มีบานพับ จอใหญ่หมุนข้างอยู่ด้านบน แผงจอยแดงทั้งแผ่นอยู่ด้านล่าง จอเล็กกับลำโพงอยู่ด้านหลัง ทุกชิ้นวางตามขนาดจริง";
+  $("l-size").textContent = "ขนาด"; $("l-halves").textContent = "หัวจอย";
+  const sw = '<span class="sw" style="background:#1d222b;border:1px solid #3a4454"></span>';
+  $("printTbl").innerHTML =
+    '<tr><td>' + sw + 'front_shell ตัวหน้า (จอ + ปุ่ม)<br><span class="note">คว่ำหน้าลงถาด · ไม่ต้องใช้ซัพพอร์ต</span></td><td class="v">' + META.PRINT.front_shell + '</td></tr>' +
+    '<tr><td>' + sw + 'back_plate ฝาหลัง (OLED + ตะแกรงลำโพง + โลโก้)</td><td class="v">' + META.PRINT.back_plate + '</td></tr>' +
+    '<tr><td><span class="sw" style="background:#f5c518"></span><span class="sw" style="background:#3b82f6"></span>btn_cap ×4 หมวกปุ่ม A B C D</td><td class="v">' + META.PRINT.btn_cap + '</td></tr>' +
+    '<tr><td><span class="sw" style="background:#e5e7eb"></span>small_cap ×2 แกนปุ่ม E F</td><td class="v">' + META.PRINT.small_cap + '</td></tr>';
+  [["v-play","หน้า"],["v-closed","เอียง"],["v-hinge","หลัง"],["v-flat","ข้าง"]].forEach(([id, t]) => $(id).textContent = t);
+}
+const canvas = $("stage");
+if (!window.THREE || !THREE.GLTFLoader || !THREE.OrbitControls) { $("err").hidden = false; return; }
+
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true, preserveDrawingBuffer:true});
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.outputEncoding = THREE.sRGBEncoding;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(32, 1, 1, 3000);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+scene.add(new THREE.HemisphereLight(0xcfe6ff, 0x1a1020, 0.55));
+const key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(120, 220, 180); scene.add(key);
+const rimL = new THREE.DirectionalLight(0x22d3ee, 0.45); rimL.position.set(-200, 80, -160); scene.add(rimL);
+const rimR = new THREE.DirectionalLight(0xff3daa, 0.3); rimR.position.set(220, 40, -120); scene.add(rimR);
+
+// the lid turns around the hinge axis
+const pivot = new THREE.Group(); pivot.position.set(0, META.AX_Z, META.AX_D - META.OD / 2); scene.add(pivot);
+const lidG = new THREE.Group(); lidG.position.set(0, -META.AX_Z, -(META.AX_D - META.OD / 2)); pivot.add(lidG);
+const baseG = new THREE.Group(); scene.add(baseG);
+const shells = [], parts = [], pickables = [];
+let floorNode = null, backNode = null;
+
+// screen pictures (drawn, then laid on the glass)
+function screenTex(w, h, draw){ const c = document.createElement("canvas"); c.width = w; c.height = h; draw(c.getContext("2d"), w, h); const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t; }
+const mainTex = screenTex(640, 442, (g, w, h) => {
+  g.fillStyle = "#05070d"; g.fillRect(0, 0, w, h);
+  g.strokeStyle = "#0c1422"; g.lineWidth = 2; for (let x = 0; x < w; x += 36) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); } for (let y = 0; y < h; y += 36) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+  g.fillStyle = "#000"; g.fillRect(0, 0, w, 50); g.fillStyle = "#22d3ee"; g.fillRect(0, 49, w, 3);
+  g.font = "600 30px Chakra Petch, sans-serif"; g.fillStyle = "#22d3ee"; g.textBaseline = "middle"; g.fillText("20:15  Thu 24 Sep", 16, 26);
+  g.textAlign = "right"; g.fillText("65%", w - 16, 26); g.textAlign = "left";
+  const keys = [["Play Pause","#22d3ee"],["Next","#22d3ee"],["Vol +","#22d3ee"],["Copy","#ff3daa"],["Paste","#ff3daa"],["Hello","#39ff88"],["Search","#ff3daa"],["Home","#ff3daa"]];
+  const cw = (w - 50) / 4, ch = (h - 90) / 2;
+  keys.forEach(([t, c], i) => { const x = 12 + (i % 4) * (cw + 8), y = 66 + Math.floor(i / 4) * (ch + 10);
+    g.shadowColor = c; g.shadowBlur = 16; g.strokeStyle = c; g.lineWidth = 4; g.beginPath(); g.roundRect ? g.roundRect(x, y, cw, ch - 6, 16) : g.rect(x, y, cw, ch - 6); g.stroke(); g.shadowBlur = 0;
+    g.fillStyle = "#e8fbff"; g.font = "600 28px Chakra Petch, sans-serif"; g.textAlign = "center"; g.fillText(t, x + cw / 2, y + (ch - 6) / 2); g.textAlign = "left"; });
+});
+const OW_ = META.OLED_WIN[1] - META.OLED_WIN[0], OH_ = META.OLED_WIN[3] - META.OLED_WIN[2];
+const oledTex = screenTex(512, Math.round(512 * OH_ / OW_), (g, w, h) => {   // 0.91" 128x32 look: time + today on one line
+  g.fillStyle = "#000"; g.fillRect(0, 0, w, h); g.fillStyle = "#5fd4ff"; g.textBaseline = "middle";
+  g.font = "700 " + Math.round(h * 0.78) + "px IBM Plex Mono, monospace"; g.fillText("20:15", w * 0.03, h * 0.54);
+  g.font = "500 " + Math.round(h * 0.34) + "px IBM Plex Mono, monospace"; g.textAlign = "right";
+  g.fillText("W 5/8", w * 0.97, h * 0.3); g.fillText("65%", w * 0.97, h * 0.74);
+});
+function addScreenPlane(tex, x0, x1, d0, d1, y, up){
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, d1 - d0), new THREE.MeshBasicMaterial({map: tex, toneMapped:false}));
+  m.rotation.x = up ? -Math.PI / 2 : Math.PI / 2;
+  m.position.set((x0 + x1) / 2 - META.OW / 2, y, (d0 + d1) / 2 - META.OD / 2);
+  lidG.add(m);
+}
+
+function b64ToBuf(b){ const s = atob(b); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; }
+new THREE.GLTFLoader().parse(b64ToBuf(GLB), "", gltf => {
+  const nodes = []; gltf.scene.traverse(o => { if (o.isMesh) nodes.push(o); });
+  nodes.forEach(o => {
+    const full = o.name || (o.parent && o.parent.name) || "";
+    const side = full.slice(0, 2), name = full.slice(2);
+    const c = COL[name] || [0x888888, .6, 0];
+    if (!o.geometry.attributes.normal || o.geometry.index) { o.geometry = o.geometry.toNonIndexed(); o.geometry.computeVertexNormals(); }
+    const mat = new THREE.MeshStandardMaterial({color:c[0], roughness:c[1], metalness:c[2]});
+    if (c[3]) { mat.emissive = new THREE.Color(c[0]); mat.emissiveIntensity = 1.1; }
+    if (name === "acrylic") { mat.transparent = true; mat.opacity = .35; }
+    o.material = mat; o.userData.part = name;
+    const isShell = /_shell|_floor|_back$|back_plate/.test(name) && !/^paint/.test(name);
+    (side === "L_" ? lidG : baseG).attach(o);
+    (isShell ? shells : parts).push(o); pickables.push(o);
+    if (name === "base_floor") floorNode = o; if (name === "lid_back" || name === "back_plate") backNode = o;
+  });
+  // the screen picture faces the base when closed; the OLED picture faces out of the back
+  if (GB) {
+    const pl = (tex, r, z, back) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(r[1] - r[0], r[3] - r[2]), new THREE.MeshBasicMaterial({map: tex, toneMapped:false}));
+      m.position.set((r[0] + r[1]) / 2 - META.OW / 2, -((r[2] + r[3]) / 2 - META.OH / 2), -(z - META.T / 2)); if (back) m.rotation.y = Math.PI; baseG.add(m); };
+    pl(mainTex, [META.GLASS[0] + 0.4, META.GLASS[1] - 0.4, META.GLASS[2] + 0.4, META.GLASS[3] - 0.4], META.GLASS_Z, false);
+    pl(oledTex, META.OLED_WIN, META.OLED_Z, true);
+  } else {
+  addScreenPlane(mainTex, META.GLASS[0] + 0.4, META.GLASS[1] - 0.4, META.GLASS[2] + 0.4, META.GLASS[3] - 0.4, META.BH + META.GLASS_Y, false);
+  addScreenPlane(oledTex, META.OLED_WIN[0], META.OLED_WIN[1], META.OLED_WIN[2], META.OLED_WIN[3], META.BH + META.OLED_Y, true);
+  }
+  view("play"); resize(); loop();
+}, () => { $("err").hidden = false; });
+
+function setAngle(a){ pivot.rotation.x = -a * Math.PI / 180; $("angOut").textContent = a + "°"; $("ang").value = a; }
+$("ang").addEventListener("input", e => setAngle(+e.target.value));
+$("explode").addEventListener("input", e => { const v = +e.target.value; if (floorNode) floorNode.position.y = -v; if (backNode) { if (GB) backNode.position.z = -v; else backNode.position.y = v; } });
+const VIEWS = {
+  play:   {ang:115, pos:[0, 230, 300], tgt:[0, 35, -25]},
+  closed: {ang:0,   pos:[90, 250, 210], tgt:[0, 20, 0]},
+  hinge:  {ang:100, pos:[-190, 150, -230], tgt:[0, 30, -45]},
+  flat:   {ang:180, pos:[0, 380, 70], tgt:[0, 20, -50]}
+};
+if (GB) Object.assign(VIEWS, {
+  play:   {ang:0, pos:[0, 20, 300], tgt:[0, 0, 0]},
+  closed: {ang:0, pos:[170, 150, 230], tgt:[0, 0, 0]},
+  hinge:  {ang:0, pos:[-60, 60, -290], tgt:[0, 0, 0]},
+  flat:   {ang:0, pos:[280, 30, 40], tgt:[0, 0, 0]}
+});
+function view(k){
+  const v = VIEWS[k]; setAngle(v.ang);
+  camera.position.set(...v.pos); controls.target.set(...v.tgt); controls.update();
+  ["play","closed","hinge","flat"].forEach(n => $("v-" + n).setAttribute("aria-pressed", n === k));
+}
+["play","closed","hinge","flat"].forEach(n => $("v-" + n).addEventListener("click", () => view(n)));
+function toggle(btn, list){ btn.addEventListener("click", () => { const on = btn.getAttribute("aria-pressed") !== "true"; btn.setAttribute("aria-pressed", on); list.forEach(o => o.visible = on); }); }
+toggle($("t-shell"), shells); toggle($("t-parts"), parts);
+
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(); let down = null;
+canvas.addEventListener("pointerdown", e => down = [e.clientX, e.clientY]);
+canvas.addEventListener("pointerup", e => {
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;
+  const r = canvas.getBoundingClientRect(); mouse.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObjects(pickables.filter(o => o.visible), false)[0];
+  if (!hit) return; const i = INFO[hit.object.userData.part] || [hit.object.userData.part, ""];
+  $("pick").innerHTML = "<b>" + i[0] + "</b><div class=\"m\">" + i[1] + "</div>";
+});
+function resize(){ const w = canvas.clientWidth, h = canvas.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+window.addEventListener("resize", resize);
+function loop(){ controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); }
+window.__view = view; window.__setAngle = setAngle;
+})();
+</script>

@@ -11,7 +11,7 @@
 ```
 cd tools/sim
 ./setup.sh                                          # ครั้งแรกครั้งเดียว: โหลด LovyanGFX 1.2.30 + ArduinoJson 7.4.2
-./run_tests.sh ../../SomudTick_v11.4/SomudTick      # รันทุกการทดสอบ
+./run_tests.sh ../../SomudTick_v11.7/SomudTick      # รันทุกการทดสอบ
 ./shots.sh shots_v11.cpp ../../SomudTick_v11.4/SomudTick run/shots   # ถ่ายภาพหน้าจอ
 python3 sheet.py out.png 4 run/shots/*.png          # รวมภาพหลายภาพเป็นแผ่นเดียว
 ```
@@ -51,3 +51,16 @@ node test_video.js ../../SomudTick_v11.4/SomudTick/webpage.h
 
 ✅ 4 แบบแรกต้องขึ้น `done` และ `frames=90`
 ✅ แบบสุดท้าย (`noframes`) ต้องขึ้น `ERROR:` พร้อมข้อความ ภายในประมาณ 20 วินาที ห้ามค้าง
+
+### ทดสอบหน้าเว็บส่วน Deck และปุ่มส่งเกม (v11.7)
+```
+cd tools/web
+node test_deck.js ../../SomudTick_v11.7/SomudTick/webpage.h
+```
+✅ ต้องขึ้น PASS ทั้ง 4 บรรทัด (W1–W4)
+
+## 4. อื่น ๆ ใน `sim/`
+- `roms/`: เกม Game Boy ฟรีที่ใช้ทดสอบ
+  - `2048.gb`: ใบอนุญาต zlib ดู `2048.LICENSE`
+  - `cpu_instrs.gb`: ชุดทดสอบ CPU ของ Game Boy (blargg)
+- `review_v11.6.cpp`: ตรวจ v11.6 แบบสถานการณ์สุดขั้ว บรรทัดที่ขึ้น FAIL คือบั๊กที่เจอใน v11.6 ซึ่งแก้แล้วใน v11.7

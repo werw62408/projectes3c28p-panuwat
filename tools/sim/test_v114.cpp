@@ -155,9 +155,9 @@ int main() {
     printf("G7 leave by holding, then let go: stays on the Games menu (Pixel Swim, Sudoku, Sand) %s\n", R(ok)); }
   // G6 Tilt Maze and Blocks still open their menus with the same hold (unchanged from v11.3)
   { mazeOpen(); run(100); press(); run(300); g_simDigital[JOY_SW] = LOW; run(1500); g_simDigital[JOY_SW] = HIGH; run(100);
-#ifdef FW_VERSION   // v11.5 (asked by the owner): the hold leaves Tilt Maze too, like every game; the pause menu is on [Pause]
+#ifdef FW_VERSION   // v11.5+: the hold leaves Tilt Maze too
     bool mz = scr == S_GAMES;
-    printf("G6 Tilt Maze (v11.5): hold 1 s = back to Games=%d %s\n", mz, R(mz)); }
+    printf("G6 Tilt Maze: hold 1 s = back to Games=%d (v11.5+) %s\n", mz, R(mz)); }
 #else
     bool mz = mzState == MZ_PAUSE;
     mzSetState(MZ_PLAY); scr = S_GAMES; dirty = true; loop();
@@ -175,13 +175,13 @@ int main() {
            hot, homeNo, homeYes, wrong, apOffAsks, R(hot && homeNo && homeYes && wrong && apOffAsks)); }
 
   // ---------- I: air con IR ----------
-  { int m0 = g_simIrMsgs; scr = S_AC; acSend(); int sent = g_simIrMsgs - m0;
-#ifdef FW_VERSION   // v11.5 (asked by the owner): sent once, the strong pin is kept
-    const int want = 1;
+#ifdef FW_VERSION
+  const int WANT_IR_SENDS = 1;   // v11.5+: the owner chose to send once (the strong pin was enough)
 #else
-    const int want = 2;
+  const int WANT_IR_SENDS = 2;
 #endif
-    printf("I1 AC: one tap sends the message %d times, IO21 drive strength %d (3 = strongest) %s\n", sent, g_simDriveCap[21], R(sent == want && g_simDriveCap[21] == GPIO_DRIVE_CAP_3)); }
+  { int m0 = g_simIrMsgs; scr = S_AC; acSend(); int sent = g_simIrMsgs - m0;
+    printf("I1 AC: one tap sends the message %d times, IO21 drive strength %d (3 = strongest) %s\n", sent, g_simDriveCap[21], R(sent == WANT_IR_SENDS && g_simDriveCap[21] == GPIO_DRIVE_CAP_3)); }
 
   // ---------- V: version ----------
   { scr = S_SET; setPage = 3; setScroll = 9999; dirty = true; render(); setScroll = 9999; dirty = true; render(); savePng(spr, "t114_about", W, H);

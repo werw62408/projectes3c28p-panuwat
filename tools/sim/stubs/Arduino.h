@@ -91,8 +91,8 @@ class String {
   void replace(const String& a, const String& b) { if (a.s_.empty()) return; size_t p = 0; while ((p = s_.find(a.s_, p)) != std::string::npos) { s_.replace(p, a.s_.size(), b.s_); p += b.s_.size(); } }
   void remove(unsigned i) { if (i < s_.size()) s_.erase(i); }
   void remove(unsigned i, unsigned n) { if (i < s_.size()) s_.erase(i, n); }
-  bool startsWith(const String& p) const { return s_.compare(0, p.s_.size(), p.s_) == 0; }
   int compareTo(const String& o) const { return s_.compare(o.s_); }
+  bool startsWith(const String& p) const { return s_.compare(0, p.s_.size(), p.s_) == 0; }
   bool endsWith(const String& p) const { return s_.size() >= p.s_.size() && s_.compare(s_.size() - p.s_.size(), p.s_.size(), p.s_) == 0; }
   bool equals(const String& o) const { return s_ == o.s_; }
   bool concat(const char* c) { s_ += c ? c : ""; return true; }
@@ -171,10 +171,7 @@ inline void randomSeed(unsigned long v) { g_simRng.seed(v); }
 inline void* heap_caps_malloc(size_t n, int) { return malloc(n); }
 typedef void* TaskHandle_t;
 #define pdPASS 1
-extern bool g_simTaskFail;   // tests: the next task cannot start (no memory)
-inline int xTaskCreatePinnedToCore(void (*fn)(void*), const char*, int, void* arg, int, TaskHandle_t* h, int) {   // simulator: runs the job at once
-  if (h) *h = nullptr;
-  if (g_simTaskFail) { g_simTaskFail = false; return 0; }
-  fn(arg); return pdPASS;
-}
+#define pdFAIL 0
+extern bool g_simTaskFail;   // tests: the next task cannot be made (no memory)
+inline int xTaskCreatePinnedToCore(void (*fn)(void*), const char*, int, void* arg, int, TaskHandle_t* h, int) { if (h) *h = nullptr; if (g_simTaskFail) { g_simTaskFail = false; return pdFAIL; } fn(arg); return pdPASS; }   // simulator: runs the job at once
 inline void vTaskDelete(void*) {}
