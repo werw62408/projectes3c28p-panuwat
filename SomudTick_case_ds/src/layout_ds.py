@@ -92,3 +92,26 @@ MAGNETS = [(90.0, 85.0), (126.0, 85.0)]          # 6 x 3 mm round magnets
 MAG_D, MAG_H = 6.2, 3.2
 RIM_H = 1.0                       # raised edge on the base face: a closed lid rests on it, never on the buttons
 NOTCH_X = 76.0                    # finger notch on the lid's front edge
+
+# ---------------- settings that differ between the case variants ----------------
+NAME = "SomudTick DS Case"
+SW_WALL = "left"                  # which wall the power switch is in
+LID_BOSSES = BOSSES               # screw bosses in the lid (the lid may need other spots than the base)
+CSK_R = 3.3                       # countersink radius for the cover screws
+PCF_IN = "base"                   # PCF8574 lies in the base (x0, d0, x1, d1, z0, z1 as PCF above)
+PCB = (59.5, 15.0, 145.5, 65.0)   # ES3C28P board (x0, d0, x1, d1)
+GLASS_Z = (0.3, 5.5)              # glass front / back, measured from the inside of the face plate
+STANDOFF_BACK = LID_IN            # back of the brass standoffs
+SD_PORT_D = (14.0, 28.0)
+PLUG_D = (65.0, 71.0)
+BAT_PLUG_D = (10.0, 15.0)
+FRAME_OFF = 3.2                   # engraved frame this far outside the screen window
+WIRE_Z = (16.5, 7.5)              # height of the wire slot: base, lid
+TEXT_POS = (52.0, 70.0, 1.45)     # SOMUDTICK logo on the lid back: x0, d0, pixel size
+TECH_LINES = [(40.65, 140.0, 19.9), (40.65, 118.0, 25.9)]   # engraved lines from the OLED: x from, x to, d
+DS3231_ON, IR_ON = True, True
+BUY = ["น็อต M3×25 + หัวน็อต 2 ชุด (แกนบานพับ)",
+       "น็อตเกลียวปล่อย M3×8 ×8 (ฝาใต้ + ฝาหลัง) และ M3×10 ×4 (ยึดจอ)",
+       "แม่เหล็กกลม 6×3 มม. ×4 (ปิดฝาแล้วติดแน่น)",
+       "สายไฟอ่อน (ซิลิโคน) ข้ามบานพับ ~12 เส้น เผื่อหย่อน 3 ซม."]
+SCREEN_NOTE = "จอ ES3C28P + อะคริลิก 85×60×14 ✓ วัดแล้ว"

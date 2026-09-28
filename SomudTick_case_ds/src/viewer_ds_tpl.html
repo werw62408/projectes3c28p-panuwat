@@ -1,4 +1,4 @@
-<title>SomudTick DS Case</title>
+<title>__NAME__</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -63,13 +63,13 @@ li{margin:4px 0}
   <header>
     <div>
       <p class="eyebrow">ES3C28P · Joystick Shield · 2 screens</p>
-      <h1>SomudTick <b>DS</b> Case</h1>
+      <h1>__H1__</h1>
       <p class="sub">กล่องพิมพ์ 3D แบบฝาพับเหมือน Nintendo DS จอใหญ่อยู่ฝาบน ปุ่มกับจอยอยู่ตัวล่าง ปิดฝาแล้วเห็นเวลาที่จอเล็กด้านหลัง ทุกชิ้นวางตามขนาดจริง</p>
     </div>
     <div class="readout" aria-label="ขนาดกล่อง">
-      <span>ปิดฝา</span><b>152 × 90 × 43 มม.</b>
-      <span>ตัวล่าง / ตัวบน</span><b>25 / 18 มม.</b>
-      <span>พลาสติกรวม</span><b id="vol">~140 ซม³</b>
+      <span>ปิดฝา</span><b id="m-size"></b>
+      <span>ตัวล่าง / ตัวบน</span><b id="m-halves"></b>
+      <span>พลาสติกรวม</span><b id="m-vol"></b>
     </div>
   </header>
 
@@ -103,12 +103,12 @@ li{margin:4px 0}
     <section>
       <h2>ชิ้นที่ต้องพิมพ์ <small>PETG หรือ PLA · ชั้น 0.2 มม. · ผนัง 3 เส้น · ไส้ใน 20%</small></h2>
       <div class="tbl"><table>
-        <tr><td><span class="sw" style="background:#1d222b;border:1px solid #3a4454"></span>base_shell ตัวล่าง (หน้าปุ่ม)<br><span class="note">คว่ำหน้าปุ่มลงถาด · เปิดซัพพอร์ตเฉพาะใต้ข้อบานพับ</span></td><td class="v">152×98×26</td></tr>
-        <tr><td><span class="sw" style="background:#151920;border:1px solid #3a4454"></span>base_floor ฝาใต้ + ตะแกรงลำโพง</td><td class="v">152×90×5</td></tr>
-        <tr><td><span class="sw" style="background:#1d222b;border:1px solid #3a4454"></span>lid_shell ตัวบน (หน้าจอ)<br><span class="note">คว่ำหน้าจอลงถาด · ซัพพอร์ตเฉพาะใต้ข้อบานพับ</span></td><td class="v">152×98×20</td></tr>
-        <tr><td><span class="sw" style="background:#151920;border:1px solid #3a4454"></span>lid_back ฝาหลัง + ช่อง OLED + โลโก้</td><td class="v">152×90×4</td></tr>
-        <tr><td><span class="sw" style="background:#f5c518"></span><span class="sw" style="background:#3b82f6"></span>btn_cap ×4 หมวกปุ่ม A B C D (พิมพ์สี)</td><td class="v">Ø13.5×4.5</td></tr>
-        <tr><td><span class="sw" style="background:#e5e7eb"></span>small_cap ×2 แกนปุ่ม E F</td><td class="v">Ø8×14.5</td></tr>
+        <tr><td><span class="sw" style="background:#1d222b;border:1px solid #3a4454"></span>base_shell ตัวล่าง (หน้าปุ่ม)<br><span class="note">คว่ำหน้าปุ่มลงถาด · เปิดซัพพอร์ตเฉพาะใต้ข้อบานพับ</span></td><td class="v" data-p="base_shell"></td></tr>
+        <tr><td><span class="sw" style="background:#151920;border:1px solid #3a4454"></span>base_floor ฝาใต้ + ตะแกรงลำโพง</td><td class="v" data-p="base_floor"></td></tr>
+        <tr><td><span class="sw" style="background:#1d222b;border:1px solid #3a4454"></span>lid_shell ตัวบน (หน้าจอ)<br><span class="note">คว่ำหน้าจอลงถาด · ซัพพอร์ตเฉพาะใต้ข้อบานพับ</span></td><td class="v" data-p="lid_shell"></td></tr>
+        <tr><td><span class="sw" style="background:#151920;border:1px solid #3a4454"></span>lid_back ฝาหลัง + ช่อง OLED + โลโก้</td><td class="v" data-p="lid_back"></td></tr>
+        <tr><td><span class="sw" style="background:#f5c518"></span><span class="sw" style="background:#3b82f6"></span>btn_cap ×4 หมวกปุ่ม A B C D (พิมพ์สี)</td><td class="v" data-p="btn_cap"></td></tr>
+        <tr><td><span class="sw" style="background:#e5e7eb"></span>small_cap ×2 แกนปุ่ม E F</td><td class="v" data-p="small_cap"></td></tr>
       </table></div>
       <p class="note">ร่องรอบจอ ตัวอักษร SOMUDTICK และเส้นหลังฝา ลึก 0.5 มม. ทาสีเรืองแสงฟ้า/ชมพูได้ (ในโมเดลแสดงแบบทาแล้ว)</p>
     </section>
@@ -118,17 +118,12 @@ li{margin:4px 0}
         <tr><td>ความสูงจอย: ใต้แผงถึงยอดหัวจอย</td><td class="v">33 <span class="est">ประมาณ</span></td></tr>
         <tr><td>ความสูงปุ่มใหญ่: บนแผงถึงยอดหมวกสี</td><td class="v">15 <span class="est">ประมาณ</span></td></tr>
         <tr><td>ตำแหน่งจอยและปุ่มบนแผง</td><td class="v">จากรูปร้าน <span class="est">ประมาณ</span></td></tr>
-        <tr><td>บอร์ด PCF8574</td><td class="v">36×20 <span class="est">ประมาณ</span></td></tr>
+        <tr><td>บอร์ด PCF8574</td><td class="v"><span id="m-pcf"></span> <span class="est">ประมาณ</span></td></tr>
         <tr><td>จอ OLED 0.96" (ทั้งแผ่น)</td><td class="v">27.3×27.8</td></tr>
-        <tr><td>จอ ES3C28P + อะคริลิก</td><td class="v">85×60×14 ✓ วัดแล้ว</td></tr>
+        <tr><td colspan="2" id="m-screen"></td></tr>
       </table></div>
       <h2 style="margin-top:14px">ของเพิ่ม</h2>
-      <ul>
-        <li>น็อต M3×25 + หัวน็อต 2 ชุด (แกนบานพับ)</li>
-        <li>น็อตเกลียวปล่อย M3×8 ×8 (ฝาใต้ + ฝาหลัง) และ M3×10 ×4 (ยึดจอ)</li>
-        <li>แม่เหล็กกลม 6×3 มม. ×4 (ปิดฝาแล้วติดแน่น)</li>
-        <li>สายไฟอ่อน (ซิลิโคน) ข้ามบานพับ ~12 เส้น เผื่อหย่อน 3 ซม.</li>
-      </ul>
+      <ul id="m-buy"></ul>
     </section>
   </div>
 </div>
@@ -175,6 +170,10 @@ const COL = {
   paint_cyan:[0x22d3ee,.4,0,1], paint_pink:[0xff3daa,.4,0,1]
 };
 const $ = id => document.getElementById(id);
+$("m-size").textContent = META.SIZE; $("m-halves").textContent = META.HALVES; $("m-vol").textContent = META.VOL;
+$("m-pcf").textContent = META.PCF; $("m-screen").textContent = META.SCREEN_NOTE;
+document.querySelectorAll("[data-p]").forEach(td => { td.textContent = META.PRINT[td.dataset.p] || ""; });
+META.BUY.forEach(t => { const li = document.createElement("li"); li.textContent = t; $("m-buy").appendChild(li); });
 const canvas = $("stage");
 if (!window.THREE || !THREE.GLTFLoader || !THREE.OrbitControls) { $("err").hidden = false; return; }
 
@@ -241,8 +240,8 @@ new THREE.GLTFLoader().parse(b64ToBuf(GLB), "", gltf => {
     if (name === "base_floor") floorNode = o; if (name === "lid_back") backNode = o;
   });
   // the screen picture faces the base when closed; the OLED picture faces out of the back
-  addScreenPlane(mainTex, 67.4, 137.6, 15.9, 64.1, META.BH + 2.2, false);
-  addScreenPlane(oledTex, 13.0, 36.3, 16.4, 29.4, META.BH + META.LH - 1.98, true);
+  addScreenPlane(mainTex, META.GLASS[0] + 0.4, META.GLASS[1] - 0.4, META.GLASS[2] + 0.4, META.GLASS[3] - 0.4, META.BH + META.GLASS_Y, false);
+  addScreenPlane(oledTex, META.OLED_WIN[0], META.OLED_WIN[1], META.OLED_WIN[2], META.OLED_WIN[3], META.BH + META.OLED_Y, true);
   view("play"); resize(); loop();
 }, () => { $("err").hidden = false; });
 

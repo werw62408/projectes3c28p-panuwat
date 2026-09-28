@@ -1,5 +1,5 @@
 """Turn the lid from closed (0) to flat open (180) and look for any hit with the base."""
-import builtins, io, contextlib
+import builtins, io, contextlib, os
 with contextlib.redirect_stdout(io.StringIO()):
     import build_ds as B
 from manifold3d import Manifold

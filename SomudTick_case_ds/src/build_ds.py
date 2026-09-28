@@ -14,9 +14,11 @@ import os, math
 import numpy as np
 import trimesh
 from manifold3d import Manifold
-from layout_ds import *
+import importlib
+CASE = os.environ.get("CASE", "layout_ds")          # layout_ds (big) or layout_mini
+globals().update({k: v for k, v in vars(importlib.import_module(CASE)).items() if not k.startswith("_")})
 
-OUT = os.path.join(os.path.dirname(__file__), "out"); os.makedirs(OUT, exist_ok=True)
+OUT = os.path.join(os.path.dirname(__file__), "out" if CASE == "layout_ds" else "out_" + CASE.split("_", 1)[1]); os.makedirs(OUT, exist_ok=True)
 SEG = 64
 W = WALL
 
@@ -123,10 +125,11 @@ for p in SMALLS.values():
     shell = shell - cyl(*p, PLATE_BOT - 1, BH + 1, SMALL_HOLE_D / 2, 32)
 # engraved ring around the button cluster (fill with paint for the neon look)
 shell = shell - ring(*CLUSTER, BH - 0.5, BH + 1, 22.5, 23.3)
-# walls: switch (left), IR LED + wires (hinge side)
-shell = shell - box(-1, SW[0] - SW_HOLE[0] / 2, SW[1] - SW_HOLE[1] / 2, W + 1, SW[0] + SW_HOLE[0] / 2, SW[1] + SW_HOLE[1] / 2)
-shell = shell - ycyl(-1, W + 1, IR_LED[0], IR_LED[1], IR_D / 2, 32)
-shell = shell - slot_y(-1, W + 1, (WIRE_X[0] + WIRE_X[1]) / 2, 16.5, WIRE_X[1] - WIRE_X[0], 7)
+# walls: switch, IR LED + wires (hinge side)
+swx0, swx1 = (-1, W + 1) if SW_WALL == "left" else (OW - W - 1, OW + 1)
+shell = shell - box(swx0, SW[0] - SW_HOLE[0] / 2, SW[1] - SW_HOLE[1] / 2, swx1, SW[0] + SW_HOLE[0] / 2, SW[1] + SW_HOLE[1] / 2)
+if IR_ON: shell = shell - ycyl(-1, W + 1, IR_LED[0], IR_LED[1], IR_D / 2, 32)
+shell = shell - slot_y(-1, W + 1, (WIRE_X[0] + WIRE_X[1]) / 2, WIRE_Z[0], WIRE_X[1] - WIRE_X[0], 7)
 
 # hinge: base knuckles
 AX_D, AX_Z = -HINGE_OFF, BH
@@ -150,7 +153,7 @@ floor = base_body - box(-5, -20, PLATE, OW + 5, OD + 5, BH + 5)
 lip = rbox(W + 0.35, W + 0.35, OW - W - 0.35, OD - W - 0.35, PLATE, PLATE + 1.6, R_CORNER - W - 0.35) \
     - rbox(W + 1.6, W + 1.6, OW - W - 1.6, OD - W - 1.6, PLATE - 1, PLATE + 3, R_CORNER - W - 1.6)
 for bx, bd in BOSSES: lip = lip - cyl(bx, bd, PLATE - 1, PLATE + 3, BOSS_R + 0.5)
-lip = lip - box(-1, SW[0] - 9, PLATE - 1, 20, SW[0] + 9, PLATE + 3)                # switch body
+lip = lip - (box(-1, SW[0] - 9, PLATE - 1, 20, SW[0] + 9, PLATE + 3) if SW_WALL == "left" else box(OW - 20, SW[0] - 9, PLATE - 1, OW + 1, SW[0] + 9, PLATE + 3))   # switch body
 floor = floor + lip
 for x, d in ((sx0 + 3, sd0 + 3), (sx0 + sw - 3, sd0 + 3), (sx0 + 3, sd0 + sh - 3), (sx0 + sw - 3, sd0 + sh - 3)):
     floor = floor + box(x - 2, d - 2, PLATE, x + 2, d + 2, SHIELD_Z)                    # posts under the shield
@@ -160,7 +163,7 @@ for i in range(8):                                                              
     x = s[0] + 5 + i * 4.3
     floor = floor - rbox(x - 1.1, s[1] + 5, x + 1.1, s[3] - 5, -1, PLATE + 1, 1.05)
 for bx, bd in BOSSES:
-    floor = floor - cyl(bx, bd, -1, PLATE + 3, SCREW_D / 2, 24) - cyl(bx, bd, -0.01, 1.7, 3.3, 32, 1.6)
+    floor = floor - cyl(bx, bd, -1, PLATE + 3, SCREW_D / 2, 24) - cyl(bx, bd, -0.01, 1.7, CSK_R, 32, SCREW_D / 2)
 base_floor = floor
 
 # caps (printed separately, stand upright on the bed)
@@ -176,13 +179,13 @@ lid_body = crbox(0, 0, OW, OD, 0, LH, R_CORNER, CHAMFER)
 lid_cav = rbox(W, W, OW - W, OD - W, PLATE, LB, R_CORNER - W)
 above = box(-5, -20, LB, OW + 5, OD + 5, LH + 5)
 lid = lid_body - lid_cav - above
-for bx, bd in BOSSES:
+for bx, bd in LID_BOSSES:
     lid = lid + cyl(bx, bd, PLATE - 0.5, LB, BOSS_R) - cyl(bx, bd, PLATE + 2, LB + 1, PILOT_D / 2, 24)
 # screen window, chamfered toward the outside
 gx0, gd0, gx1, gd1 = GLASS
 lid = lid - Manifold.batch_hull([box(gx0, gd0, 0.8, gx1, gd1, PLATE + 0.5), box(gx0 - 1.6, gd0 - 1.6, -0.5, gx1 + 1.6, gd1 + 1.6, 0.01)])
 # engraved frame around the screen (paint it: neon frame)
-fr = 3.2
+fr = FRAME_OFF
 lid = lid - (rbox(gx0 - fr - 0.8, gd0 - fr - 0.8, gx1 + fr + 0.8, gd1 + fr + 0.8, -1, 0.5, 3) - rbox(gx0 - fr, gd0 - fr, gx1 + fr, gd1 + fr, -2, 2, 2.2))
 lid = lid - cyl(*MIC, -1, PLATE + 1, 1.0, 16)
 for x, d in SCREWS:
@@ -194,7 +197,7 @@ lid = lid + ring(*STICK, PLATE - 0.5, LB, POCKET_R, POCKET_R + POCKET_WALL) - cy
 # walls: USB-C (right), SD card + wires (hinge side)
 lid = lid - slot_x(OW - W - 1, OW + 1, USB_C[0], PLATE + USB_C[1], *USB_HOLE)
 lid = lid - slot_y(-1, W + 1, SD[0], PLATE + SD[1], *SD_HOLE)
-lid = lid - slot_y(-1, W + 1, (WIRE_X[0] + WIRE_X[1]) / 2, 7.5, WIRE_X[1] - WIRE_X[0], 7)
+lid = lid - slot_y(-1, W + 1, (WIRE_X[0] + WIRE_X[1]) / 2, WIRE_Z[1], WIRE_X[1] - WIRE_X[0], 7)
 # finger notch on the front edge
 lid = lid - xcyl(NOTCH_X - 9, NOTCH_X + 9, OD + 1.0, 0.0, 3.2) - ycyl(OD - 6, OD + 2, NOTCH_X, -1.0, 4.5)
 # hinge: lid knuckles (same axis; in lid coordinates the axis is at z = -RIM_H)
@@ -210,7 +213,7 @@ lid_shell = lid
 back = lid_body - box(-5, -20, -5, OW + 5, OD + 5, LB)
 blip = rbox(W + 0.35, W + 0.35, OW - W - 0.35, OD - W - 0.35, LB - 1.6, LB, R_CORNER - W - 0.35) \
     - rbox(W + 1.6, W + 1.6, OW - W - 1.6, OD - W - 1.6, LB - 3, LB + 1, R_CORNER - W - 1.6)
-for bx, bd in BOSSES: blip = blip - cyl(bx, bd, LB - 3, LB + 1, BOSS_R + 0.5)
+for bx, bd in LID_BOSSES: blip = blip - cyl(bx, bd, LB - 3, LB + 1, BOSS_R + 0.5)
 back = back + blip
 ox0, od0, ox1, od1 = OLED
 back = back + rim(ox0, od0, ox1, od1, LB - 2.0, LB)                                  # holds the OLED in place
@@ -221,12 +224,12 @@ back = back - Manifold.batch_hull([box(ocx - ww, ocd - wh / 2 - 1.5, LB - 1, ocx
 back = back - Manifold.batch_hull([box(ocx - 12, ocd - 6.5, LB - 1, ocx + 12, ocd + 6.5, LH - 0.6),
                                    box(ocx - 13.2, ocd - 7.7, LH - 0.01, ocx + 13.2, ocd + 7.7, LH + 1)])
 for x, d in (BOOT, RESET): back = back - cyl(x, d, LB - 1, LH + 1, 1.5, 16)
-for bx, bd in BOSSES:
-    back = back - cyl(bx, bd, LB - 3, LH + 1, SCREW_D / 2, 24) - cyl(bx, bd, LH - 1.7, LH + 0.01, 1.6, 32, 3.3)
-PX = 1.45
-back = back - pixel_text("SOMUDTICK", 52.0, 70.0, PX, LH - 0.6, LH + 1)
-for (x0, x1, d) in ((ocx + 16, 140.0, ocd - 3.0), (ocx + 16, 118.0, ocd + 3.0)):        # tech lines from the OLED
-    back = back - box(x0, d - 0.4, LH - 0.5, x1, d + 0.4, LH + 1) - cyl(x1, d, LH - 0.5, LH + 1, 1.3, 24)
+for bx, bd in LID_BOSSES:
+    back = back - cyl(bx, bd, LB - 3, LH + 1, SCREW_D / 2, 24) - cyl(bx, bd, LH - 1.7, LH + 0.01, SCREW_D / 2, 32, CSK_R)
+TX, TD, PX = TEXT_POS
+back = back - pixel_text("SOMUDTICK", TX, TD, PX, LH - 0.6, LH + 1)
+for (x0, x1, d) in TECH_LINES:                                                       # tech lines from the OLED
+    back = back - box(min(x0, x1), d - 0.4, LH - 0.5, max(x0, x1), d + 0.4, LH + 1) - cyl(x1, d, LH - 0.5, LH + 1, 1.3, 24)
 lid_back = back
 
 # ================================================================== export printed parts
@@ -262,28 +265,34 @@ for p in SMALLS.values():
 def pbox(dic, name, t, r=1.0): add(dic, name, rbox(t[0], t[1], t[2], t[3], t[4], t[5], r))
 pbox(base_parts, "battery", BATT, 2)
 pbox(base_parts, "speaker", SPK, 3)
-pbox(base_parts, "ds3231", (DS3231[0], DS3231[1], DS3231[2], DS3231[3], DS3231[4], DS3231[4] + 1.6))
-add(base_parts, "coin", cyl((DS3231[0] + DS3231[2]) / 2, DS3231[1] + 26, DS3231[4] + 1.6, DS3231[5], 10.5))
-pbox(base_parts, "pcf8574", (PCF[0], PCF[1], PCF[2], PCF[3], PCF[4], PCF[4] + 1.6))
-add(base_parts, "pcf8574_chip", box(PCF[0] + 10, PCF[1] + 6, PCF[4] + 1.6, PCF[0] + 22, PCF[1] + 14, PCF[4] + 4))
-pbox(base_parts, "ky005", KY)
-add(base_parts, "led", ycyl(0.6, KY[1], IR_LED[0], IR_LED[1], 2.5, 24))
+if DS3231_ON:
+    pbox(base_parts, "ds3231", (DS3231[0], DS3231[1], DS3231[2], DS3231[3], DS3231[4], DS3231[4] + 1.6))
+    add(base_parts, "coin", cyl((DS3231[0] + DS3231[2]) / 2, DS3231[1] + 26, DS3231[4] + 1.6, DS3231[5], 10.5))
+pdic = base_parts if PCF_IN == "base" else lid_parts
+pbox(pdic, "pcf8574", (PCF[0], PCF[1], PCF[2], PCF[3], PCF[4], PCF[4] + 1.6))
+add(pdic, "pcf8574_chip", box(PCF[0] + 10, PCF[1] + 6, PCF[4] + 1.6, PCF[0] + 22, PCF[1] + 14, min(PCF[5], PCF[4] + 4)))
+if IR_ON:
+    pbox(base_parts, "ky005", KY)
+    add(base_parts, "led", ycyl(0.6, KY[1], IR_LED[0], IR_LED[1], 2.5, 24))
 sw_ = SW_BODY; add(base_parts, "switch", box(sw_[0], sw_[1], sw_[4], sw_[2], sw_[3], sw_[5]))
-add(base_parts, "switch_rocker", box(-1.4, SW[0] - 5.5, SW[1] - 3.2, 0.2, SW[0] + 5.5, SW[1] + 3.2))
+rx0, rx1 = (-1.4, 0.2) if SW_WALL == "left" else (OW - 0.2, OW + 1.4)
+add(base_parts, "switch_rocker", box(rx0, SW[0] - 5.5, SW[1] - 3.2, rx1, SW[0] + 5.5, SW[1] + 3.2))
 for mx, md in MAGNETS: add(base_parts, "magnet", cyl(mx, md, BH - MAG_H + 0.1, BH - 0.1, 3.0, 24))
 for a, b in HINGE_SETS:
     add(base_parts, "bolt", xcyl(a - 0.6, b + 0.6, AX_D, AX_Z, 1.45, 16))
     add(base_parts, "bolt", xcyl(a + 0.1, a + 2.1, AX_D, AX_Z, 2.7, 24))
 
-ax0, ad0, ax1, ad1 = ACR
-add(lid_parts, "acrylic", rbox(ax0, ad0, ax1, ad1, PLATE, PLATE + ACR_T, 2))
-add(lid_parts, "glass", box(gx0 + 0.4, gd0 + 0.4, PLATE + 0.3, gx1 - 0.4, gd1 - 0.4, PLATE + ACR_T + 2.5))
-add(lid_parts, "pcb", box(ax0 - 0.5, 15.0, PLATE + PCB_BACK - 1.6, ax1 + 0.5, 65.0, PLATE + PCB_BACK))
-for x, d in SCREWS: add(lid_parts, "brass", cyl(x, d, PLATE + PCB_BACK, PLATE + LID_IN - 0.1, 2.3, 6))
-add(lid_parts, "port", box(ax1 - 7, USB_C[0] - 4.5, PLATE + PCB_BACK, ax1 + 0.5, USB_C[0] + 4.5, PLATE + PCB_BACK + 3.2))
-add(lid_parts, "port", box(SD[0] - 7, 14.0, PLATE + PCB_BACK, SD[0] + 7, 28.0, PLATE + PCB_BACK + 1.9))
-for x, d in PLUGS: add(lid_parts, "plug", box(x - 3.5, 65.0, PLATE + PCB_BACK, x + 3.5, 71.0, PLATE + PCB_BACK + 5))
-add(lid_parts, "plug", box(BAT_PLUG[0] - 3.5, 10.0, PLATE + PCB_BACK, BAT_PLUG[0] + 3.5, 15.0, PLATE + PCB_BACK + 5))
+if ACR:
+    ax0, ad0, ax1, ad1 = ACR
+    add(lid_parts, "acrylic", rbox(ax0, ad0, ax1, ad1, PLATE, PLATE + ACR_T, 2))
+px0, pd0, px1, pd1 = PCB
+add(lid_parts, "glass", box(gx0 + 0.4, gd0 + 0.4, PLATE + GLASS_Z[0], gx1 - 0.4, gd1 - 0.4, PLATE + GLASS_Z[1]))
+add(lid_parts, "pcb", box(px0, pd0, PLATE + PCB_BACK - 1.6, px1, pd1, PLATE + PCB_BACK))
+for x, d in SCREWS: add(lid_parts, "brass", cyl(x, d, PLATE + PCB_BACK, PLATE + STANDOFF_BACK - 0.1, 2.3, 6))
+add(lid_parts, "port", box(px1 - 7.5, USB_C[0] - 4.5, PLATE + PCB_BACK, px1, USB_C[0] + 4.5, PLATE + PCB_BACK + 3.2))
+add(lid_parts, "port", box(SD[0] - 7, SD_PORT_D[0], PLATE + PCB_BACK, SD[0] + 7, SD_PORT_D[1], PLATE + PCB_BACK + 1.9))
+for x, d in PLUGS: add(lid_parts, "plug", box(x - 3.5, PLUG_D[0], PLATE + PCB_BACK, x + 3.5, PLUG_D[1], PLATE + PCB_BACK + 5))
+add(lid_parts, "plug", box(BAT_PLUG[0] - 3.5, BAT_PLUG_D[0], PLATE + PCB_BACK, BAT_PLUG[0] + 3.5, BAT_PLUG_D[1], PLATE + PCB_BACK + 5))
 add(lid_parts, "oled_pcb", box(ox0, od0, LB - OLED_T, ox1, od1, LB - OLED_T + 1.2))
 add(lid_parts, "oled_glass", box(ocx - 13, ocd - 9.5, LB - OLED_T + 1.2, ocx + 13, ocd + 9.5, LB - 0.05))
 for mx, md in MAGNETS: add(lid_parts, "magnet", cyl(mx, md, 0.1, MAG_H - 0.1, 3.0, 24))
@@ -291,9 +300,9 @@ for mx, md in MAGNETS: add(lid_parts, "magnet", cyl(mx, md, 0.1, MAG_H - 0.1, 3.
 # glow paint in the engraved lines (only for the 3D page: shows the painted look)
 add(base_parts, "paint_pink", ring(*CLUSTER, BH - 0.45, BH - 0.03, 22.55, 23.25))
 add(lid_parts, "paint_cyan", rbox(gx0 - fr - 0.75, gd0 - fr - 0.75, gx1 + fr + 0.75, gd1 + fr + 0.75, 0.03, 0.45, 3) - rbox(gx0 - fr - 0.05, gd0 - fr - 0.05, gx1 + fr + 0.05, gd1 + fr + 0.05, -1, 2, 2.25))
-add(lid_parts, "paint_cyan", pixel_text("SOMUDTICK", 52.0, 70.0, PX, LH - 0.55, LH - 0.03))
-for (x0, x1, d) in ((ocx + 16, 140.0, ocd - 3.0), (ocx + 16, 118.0, ocd + 3.0)):
-    add(lid_parts, "paint_pink", box(x0 + 0.05, d - 0.35, LH - 0.45, x1, d + 0.35, LH - 0.03) + cyl(x1, d, LH - 0.45, LH - 0.03, 1.25, 24))
+add(lid_parts, "paint_cyan", pixel_text("SOMUDTICK", TX, TD, PX, LH - 0.55, LH - 0.03))
+for (x0, x1, d) in TECH_LINES:
+    add(lid_parts, "paint_pink", box(min(x0, x1) + 0.05, d - 0.35, LH - 0.45, max(x0, x1) - 0.05, d + 0.35, LH - 0.03) + cyl(x1, d, LH - 0.45, LH - 0.03, 1.25, 24))
 
 # clash check (parts vs printed shells), and closed lid vs base
 def vol(a, b): return (a ^ b).volume()
@@ -331,6 +340,12 @@ for name, m in [("base_shell", base_shell), ("base_floor", base_floor)] + list(b
 for name, m in [("lid_shell", lid_shell), ("lid_back", lid_back)] + list(lid_parts.items()):
     scene.add_geometry(to_three(lid_closed(m)), node_name="L_" + name, geom_name="L_" + name)
 scene.export(os.path.join(OUT, "somudtick_ds.glb"))
-meta = dict(OW=OW, OD=OD, BH=BH + RIM_H, LH=LH, AX_D=AX_D, AX_Z=AX_Z)
+tot = sum(tm(m).volume for m in PRINT.values()) / 1000
+meta = dict(OW=OW, OD=OD, BH=BH + RIM_H, LH=LH, AX_D=AX_D, AX_Z=AX_Z, NAME=NAME,
+            GLASS=[gx0, gx1, gd0, gd1], GLASS_Y=PLATE + GLASS_Z[0] - 0.1,
+            OLED_WIN=[ocx - 12, ocx + 12, ocd - 6.5, ocd + 6.5], OLED_Y=LB + 0.02,
+            SIZE="%g × %g × %g มม." % (OW, OD, BH + RIM_H + LH), HALVES="%g / %g มม." % (BH + RIM_H, LH), VOL="~%d ซม³" % round(tot, -1),
+            PRINT={n: "×".join("%g" % round(v, 1) for v in tm(mirror(m)).extents) for n, m in PRINT.items()},
+            BUY=BUY, SCREEN_NOTE=SCREEN_NOTE, PCF="%g×%g" % (PCF[2] - PCF[0], PCF[3] - PCF[1]))
 import json; json.dump(meta, open(os.path.join(OUT, "meta.json"), "w"))
 print("glb", os.path.getsize(os.path.join(OUT, "somudtick_ds.glb")) // 1024, "KB")

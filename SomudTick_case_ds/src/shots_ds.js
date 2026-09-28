@@ -9,7 +9,7 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
   await p.route(/fonts\.(googleapis|gstatic)/, r => r.abort());
   p.on('console', m => { if (m.type() === 'error') console.log('CONSOLE', m.text()); });
   p.on('pageerror', e => console.log('PAGEERR', e.message));
-  await p.goto('file://' + __dirname + '/out/_preview.html');
+  await p.goto('file://' + __dirname + '/' + (process.argv[3] || 'out') + '/_preview.html');
   await p.waitForFunction(() => window.__view, null, { timeout: 60000 });
   await p.waitForTimeout(1500);
   const stage = await p.$('.stagebox');
