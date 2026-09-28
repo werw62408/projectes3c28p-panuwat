@@ -4,7 +4,7 @@
 // Scenarios: normal / noplay (the phone refuses to play) / stall (playing stops after 2 s) /
 //            dropseek (1 in 15 "seeked" never comes) / noframes (no "seeked" ever: must stop with a message, not hang)
 const path = require('path');
-let chromium; try { ({ chromium } = require('playwright')); } catch (e) { ({ chromium } = require(path.join(process.execPath, '../../lib/node_modules/playwright'))); }
+let chromium; try { ({ chromium } = require('playwright')); } catch (e) { ({ chromium } = require(process.env.PW || path.join(process.execPath, '../../lib/node_modules/playwright'))); }
 const fs = require('fs');
 const src = fs.readFileSync(process.argv[2], 'utf8');
 const html = src.slice(src.indexOf('R"HTMLPAGE(') + 11, src.indexOf(')HTMLPAGE"'));
@@ -24,7 +24,7 @@ const scenarios = {
     const op=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){return this.isConnected?op.call(this):Promise.reject(new Error('NotAllowed'))};}`,
 };
 (async () => {
-  const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+  const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'], ...(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {}) });
   const only = process.argv[3];
   for (const [name, patch] of Object.entries(scenarios)) {
     if (only && name !== only) continue;

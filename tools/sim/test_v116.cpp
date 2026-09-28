@@ -47,6 +47,8 @@ int main() {
     hold(); bool out = scr == S_GAMES;
     printf("3  Dragon: ready=%d, press starts=%d, press dashes=%d, [Pause]=%d, press goes on=%d, crash into a dot=%d, hold = Games=%d %s\n",
            ready, play, dash, paused, goOn, ate, out, R(ready && play && dash && paused && goOn && ate && out));
+#elif defined(HAS_PIXSWIM)
+    printf("3  Dragon: replaced by Pixel Swim again in v11.9 (the owner's choice) %s\n", R(true));
 #else
     printf("3  Dragon: not in this version (Pixel Swim) %s\n", R(false));
 #endif

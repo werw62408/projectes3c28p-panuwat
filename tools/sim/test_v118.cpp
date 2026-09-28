@@ -38,7 +38,7 @@ int main() {
   offIdx = 3; g_simOffline = true; WiFi.connected = true; remindAct = -1; joyNavOn = true;
 
   // ---------- 1 version ----------
-  printf("1  version %s %s\n", FW_VERSION, R(!strcmp(FW_VERSION, "v11.8")));
+  printf("1  version %s %s\n", FW_VERSION, R(atof(FW_VERSION + 1) >= 11.8f));   // (this version or a newer one)
 
 #ifdef THEME_HUD
   // ---------- 2 theme: HUD on / off, kept in prefs, HUD fonts and colours ----------
@@ -165,7 +165,11 @@ int main() {
 
   // ---------- 16 wide screen: the farm and the numbers fit ----------
   { rot = 1; applyRotation(); dirty = true; render(); AnBox S = anScene();
+#if HAS_ANTS >= 2
+    bool ok = S.y + S.h <= H && S.x + S.w <= W - 70;   // v11.9: the whole screen (no tabs), the numbers on the right
+#else
     bool ok = S.y + S.h <= FTR_Y && S.x + S.w <= W - 70;
+#endif
     savePng(spr, "t118_ants_wide", W, H);
     rot = 0; applyRotation();
     printf("16 wide screen: farm %dx%d at y %d, ends above the tabs (%d)=%d %s\n", S.w, S.h, S.y, FTR_Y, ok, R(ok)); }
