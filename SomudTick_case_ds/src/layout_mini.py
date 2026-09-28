@@ -53,12 +53,12 @@ FRAME_OFF = 1.2
 WIRE_Z = (16.5, 9.0)
 
 # OLED and PCF8574 sit behind the board, against the back plate
-OLED = (96.0, 14.0, 123.3, 41.8)
+OLED = (86.0, 30.0, 124.0, 42.0)      # 0.91" module 38 x 12, pins toward the left
 PCF_IN = "lid"
-PCF = (55.0, 15.0, 91.0, 35.0, LH - PLATE - 5.0, LH - PLATE)   # 36 x 20, 5 mm thick (no pin headers)
+PCF = (47.5, 15.0, 83.5, 35.0, LH - PLATE - 5.0, LH - PLATE)   # 36 x 20, 5 mm thick (no pin headers)
 
 TEXT_POS = (12.0, 53.0, 1.3)
-TECH_LINES = [(93.6, 20.0, 24.9), (93.6, 45.0, 30.9)]
+TECH_LINES = [(82.0, 20.0, 33.0), (82.0, 45.0, 39.0)]
 BUY = ["น็อต M3×25 + หัวน็อต 2 ชุด (แกนบานพับ)",
        "น็อตเกลียวปล่อย M2.5×8 ×8 (ฝาใต้ + ฝาหลัง)",
        "น็อต M3×8 หัวจม (หัวเตเปอร์) ×4 ยึดจอเข้าเสาทองเหลืองเดิม",

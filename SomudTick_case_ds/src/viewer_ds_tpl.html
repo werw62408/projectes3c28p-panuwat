@@ -119,7 +119,7 @@ li{margin:4px 0}
         <tr><td>ความสูงปุ่มใหญ่: บนแผงถึงยอดหมวกสี</td><td class="v">15 <span class="est">ประมาณ</span></td></tr>
         <tr><td>ตำแหน่งจอยและปุ่มบนแผง</td><td class="v">จากรูปร้าน <span class="est">ประมาณ</span></td></tr>
         <tr><td>บอร์ด PCF8574</td><td class="v"><span id="m-pcf"></span> <span class="est">ประมาณ</span></td></tr>
-        <tr><td>จอ OLED 0.96" (ทั้งแผ่น)</td><td class="v">27.3×27.8</td></tr>
+        <tr><td>จอ OLED 0.91" (ทั้งแผ่น)</td><td class="v">38×12 <span class="est">ประมาณ</span></td></tr>
         <tr><td colspan="2" id="m-screen"></td></tr>
       </table></div>
       <h2 style="margin-top:14px">ของเพิ่ม</h2>
@@ -155,7 +155,7 @@ const INFO = {
   acrylic:["อะคริลิกหน้าจอ","85×60×3"], glass:["จอ 2.8\" 240×320",""], pcb:["บอร์ด ES3C28P","50×86"],
   brass:["เสาทองเหลือง","M3 ยึดจากหน้าฝา"], port:["USB-C / การ์ด SD","USB-C ผนังขวา · SD ขอบบานพับ"],
   plug:["ขั้วต่อบนบอร์ด","I2C · IO · ลำโพง · แบต"],
-  oled_pcb:["จอ OLED 0.96\"","SSD1306 I2C 0x3C · 4 ขา"], oled_glass:["จอ OLED","มองผ่านฝาหลังตอนปิดฝา"],
+  oled_pcb:["จอ OLED 0.91\" 128×32","SSD1306 I2C 0x3C · 38×12 · ขาไปทางซ้าย"], oled_glass:["จอ OLED","มองผ่านฝาหลังตอนปิดฝา"],
   paint_cyan:["ร่องทาสีฟ้า","ลึก 0.5 มม."], paint_pink:["ร่องทาสีชมพู","ลึก 0.5 มม."]
 };
 const COL = {
@@ -210,10 +210,12 @@ const mainTex = screenTex(640, 442, (g, w, h) => {
     g.shadowColor = c; g.shadowBlur = 16; g.strokeStyle = c; g.lineWidth = 4; g.beginPath(); g.roundRect ? g.roundRect(x, y, cw, ch - 6, 16) : g.rect(x, y, cw, ch - 6); g.stroke(); g.shadowBlur = 0;
     g.fillStyle = "#e8fbff"; g.font = "600 28px Chakra Petch, sans-serif"; g.textAlign = "center"; g.fillText(t, x + cw / 2, y + (ch - 6) / 2); g.textAlign = "left"; });
 });
-const oledTex = screenTex(256, 128, (g, w, h) => {
+const OW_ = META.OLED_WIN[1] - META.OLED_WIN[0], OH_ = META.OLED_WIN[3] - META.OLED_WIN[2];
+const oledTex = screenTex(512, Math.round(512 * OH_ / OW_), (g, w, h) => {   // 0.91" 128x32 look: time + today on one line
   g.fillStyle = "#000"; g.fillRect(0, 0, w, h); g.fillStyle = "#5fd4ff"; g.textBaseline = "middle";
-  g.font = "700 64px IBM Plex Mono, monospace"; g.fillText("20:15", 22, 52);
-  g.font = "500 24px IBM Plex Mono, monospace"; g.fillText("W 5/8   65%", 24, 106);
+  g.font = "700 " + Math.round(h * 0.78) + "px IBM Plex Mono, monospace"; g.fillText("20:15", w * 0.03, h * 0.54);
+  g.font = "500 " + Math.round(h * 0.34) + "px IBM Plex Mono, monospace"; g.textAlign = "right";
+  g.fillText("W 5/8", w * 0.97, h * 0.3); g.fillText("65%", w * 0.97, h * 0.74);
 });
 function addScreenPlane(tex, x0, x1, d0, d1, y, up){
   const m = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, d1 - d0), new THREE.MeshBasicMaterial({map: tex, toneMapped:false}));

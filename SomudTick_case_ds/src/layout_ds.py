@@ -71,9 +71,11 @@ BOOT, RESET = (141.0, 29.3), (141.0, 52.1)
 PLUGS = [(108.0, 65.0), (95.0, 65.0), (77.5, 65.0)]   # I2C, IO, speaker plugs (on the far PCB edge)
 BAT_PLUG = (122.0, 15.0)
 
-# small OLED (SSD1306 0.96", 4 pins) on the outer back of the lid
-OLED = (11.0, 9.0, 38.3, 36.8)    # module 27.3 x 27.8 (x0, d0, x1, d1)
-OLED_WIN = (12.0, 7.0)            # window w (along x), h (along d)
+# small OLED (SSD1306 0.91" 128x32, 4 pins on one short end) on the outer back of the lid
+OLED = (12.0, 12.0, 50.0, 24.0)   # module 38 x 12 (x0, d0, x1, d1); pins toward the left
+OLED_WIN = (24.0, 7.0)            # window w (along x), h (along d)  (lit area 22.4 x 5.6)
+OLED_WIN_DX = 3.0                 # the glass sits this far right of the module centre (away from the pins)
+OLED_GLASS = (30.0, 11.5)
 OLED_T = 4.0
 
 # stick pocket: when closed, the stick top goes into the lid here (same x, same distance from the hinge)
@@ -108,7 +110,7 @@ BAT_PLUG_D = (10.0, 15.0)
 FRAME_OFF = 3.2                   # engraved frame this far outside the screen window
 WIRE_Z = (16.5, 7.5)              # height of the wire slot: base, lid
 TEXT_POS = (52.0, 70.0, 1.45)     # SOMUDTICK logo on the lid back: x0, d0, pixel size
-TECH_LINES = [(40.65, 140.0, 19.9), (40.65, 118.0, 25.9)]   # engraved lines from the OLED: x from, x to, d
+TECH_LINES = [(55.0, 140.0, 15.0), (55.0, 118.0, 21.0)]   # engraved lines from the OLED: x from, x to, d
 DS3231_ON, IR_ON = True, True
 BUY = ["น็อต M3×25 + หัวน็อต 2 ชุด (แกนบานพับ)",
        "น็อตเกลียวปล่อย M3×8 ×8 (ฝาใต้ + ฝาหลัง) และ M3×10 ×4 (ยึดจอ)",

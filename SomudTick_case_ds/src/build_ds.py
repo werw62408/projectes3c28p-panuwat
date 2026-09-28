@@ -219,10 +219,9 @@ ox0, od0, ox1, od1 = OLED
 back = back + rim(ox0, od0, ox1, od1, LB - 2.0, LB)                                  # holds the OLED in place
 ocx, ocd = (ox0 + ox1) / 2, (od0 + od1) / 2
 ww, wh = OLED_WIN
-back = back - Manifold.batch_hull([box(ocx - ww, ocd - wh / 2 - 1.5, LB - 1, ocx + ww, ocd + wh / 2 + 1.5, LB + 0.8),   # (made wide, trimmed below)
-                                   box(ocx - ww, ocd - wh / 2 - 1.5, LB + 0.8, ocx + ww, ocd + wh / 2 + 1.5, LB + 0.8)]) if False else back
-back = back - Manifold.batch_hull([box(ocx - 12, ocd - 6.5, LB - 1, ocx + 12, ocd + 6.5, LH - 0.6),
-                                   box(ocx - 13.2, ocd - 7.7, LH - 0.01, ocx + 13.2, ocd + 7.7, LH + 1)])
+wcx = ocx + OLED_WIN_DX                                                            # window centre (over the lit area)
+back = back - Manifold.batch_hull([box(wcx - ww / 2, ocd - wh / 2, LB - 1, wcx + ww / 2, ocd + wh / 2, LH - 0.6),
+                                   box(wcx - ww / 2 - 1.2, ocd - wh / 2 - 1.2, LH - 0.01, wcx + ww / 2 + 1.2, ocd + wh / 2 + 1.2, LH + 1)])
 for x, d in (BOOT, RESET): back = back - cyl(x, d, LB - 1, LH + 1, 1.5, 16)
 for bx, bd in LID_BOSSES:
     back = back - cyl(bx, bd, LB - 3, LH + 1, SCREW_D / 2, 24) - cyl(bx, bd, LH - 1.7, LH + 0.01, SCREW_D / 2, 32, CSK_R)
@@ -294,7 +293,7 @@ add(lid_parts, "port", box(SD[0] - 7, SD_PORT_D[0], PLATE + PCB_BACK, SD[0] + 7,
 for x, d in PLUGS: add(lid_parts, "plug", box(x - 3.5, PLUG_D[0], PLATE + PCB_BACK, x + 3.5, PLUG_D[1], PLATE + PCB_BACK + 5))
 add(lid_parts, "plug", box(BAT_PLUG[0] - 3.5, BAT_PLUG_D[0], PLATE + PCB_BACK, BAT_PLUG[0] + 3.5, BAT_PLUG_D[1], PLATE + PCB_BACK + 5))
 add(lid_parts, "oled_pcb", box(ox0, od0, LB - OLED_T, ox1, od1, LB - OLED_T + 1.2))
-add(lid_parts, "oled_glass", box(ocx - 13, ocd - 9.5, LB - OLED_T + 1.2, ocx + 13, ocd + 9.5, LB - 0.05))
+add(lid_parts, "oled_glass", box(wcx - OLED_GLASS[0] / 2, ocd - OLED_GLASS[1] / 2, LB - OLED_T + 1.2, wcx + OLED_GLASS[0] / 2, ocd + OLED_GLASS[1] / 2, LB - 0.05))
 for mx, md in MAGNETS: add(lid_parts, "magnet", cyl(mx, md, 0.1, MAG_H - 0.1, 3.0, 24))
 
 # glow paint in the engraved lines (only for the 3D page: shows the painted look)
@@ -343,7 +342,7 @@ scene.export(os.path.join(OUT, "somudtick_ds.glb"))
 tot = sum(tm(m).volume for m in PRINT.values()) / 1000
 meta = dict(OW=OW, OD=OD, BH=BH + RIM_H, LH=LH, AX_D=AX_D, AX_Z=AX_Z, NAME=NAME,
             GLASS=[gx0, gx1, gd0, gd1], GLASS_Y=PLATE + GLASS_Z[0] - 0.1,
-            OLED_WIN=[ocx - 12, ocx + 12, ocd - 6.5, ocd + 6.5], OLED_Y=LB + 0.02,
+            OLED_WIN=[wcx - ww / 2, wcx + ww / 2, ocd - wh / 2, ocd + wh / 2], OLED_Y=LB + 0.02,
             SIZE="%g × %g × %g มม." % (OW, OD, BH + RIM_H + LH), HALVES="%g / %g มม." % (BH + RIM_H, LH), VOL="~%d ซม³" % round(tot, -1),
             PRINT={n: "×".join("%g" % round(v, 1) for v in tm(mirror(m)).extents) for n, m in PRINT.items()},
             BUY=BUY, SCREEN_NOTE=SCREEN_NOTE, PCF="%g×%g" % (PCF[2] - PCF[0], PCF[3] - PCF[1]))
