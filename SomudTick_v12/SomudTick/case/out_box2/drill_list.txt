@@ -1,0 +1,33 @@
+SomudTick box - holes (mm). Face: x from the LEFT edge, y from the TOP edge (looking at the face).
+
+  face  small screen window    centre x   64.6  y   22.8   31.0 x 16.5 rect
+  face  big screen window      centre x   50.1  y   66.0   60.1 x 45.8 rect
+  face  joystick               centre x   22.0  y  125.9   diameter 28.0
+  face  button A               centre x   68.5  y  113.4   diameter 12.5
+  face  button B               centre x   80.6  y  124.9   diameter 12.5
+  face  button C               centre x   68.5  y  137.0   diameter 12.5
+  face  button D               centre x   56.6  y  124.9   diameter 12.5
+  face  button E               centre x   51.0  y  136.6   diameter 4.2
+  face  button F               centre x   38.0  y  136.6   diameter 4.2
+  face  M3 screen              centre x    8.0  y   45.0   diameter 3.2
+  face  M3 screen              centre x    8.0  y   87.0   diameter 3.2
+  face  M3 screen              centre x   86.0  y   45.0   diameter 3.2
+  face  M3 screen              centre x   86.0  y   87.0   diameter 3.2
+  face  M3 buttons             centre x    7.7  y   97.5   diameter 3.2
+  face  M3 buttons             centre x   86.3  y  112.5   diameter 3.2
+
+  left wall USB-C plug         y   66.0  from face   9.9   12.5 x 7.5
+  left wall switch lever       y   27.3  from face   9.0   9.0 x 4.0
+  top  wall IR LED (round 5.4) x   21.5  from face   6.7   5.4 x 5.4
+  top  wall IR receiver        x   39.0  from face   8.0   7.0 x 7.5
+
+  LID, looking at the BACK: x from the LEFT edge of the lid as you see it from behind, y from the top (small screen end)
+  lid   speaker                centre x   29.0  y   70.0   diameter 2.5
+  lid   speaker                centre x   29.0  y   74.0   diameter 2.5
+  lid   speaker                centre x   29.0  y   78.0   diameter 2.5
+  lid   speaker                centre x   25.0  y   70.0   diameter 2.5
+  lid   speaker                centre x   25.0  y   74.0   diameter 2.5
+  lid   speaker                centre x   25.0  y   78.0   diameter 2.5
+  lid   speaker                centre x   21.0  y   70.0   diameter 2.5
+  lid   speaker                centre x   21.0  y   74.0   diameter 2.5
+  lid   speaker                centre x   21.0  y   78.0   diameter 2.5
