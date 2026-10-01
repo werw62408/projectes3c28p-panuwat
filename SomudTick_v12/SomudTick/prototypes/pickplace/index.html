@@ -72,7 +72,7 @@ footer { color: var(--mute); font-size: 12px; }
     <section class="card"><div class="label">PARTS BIN</div><div class="parts" id="parts"></div></section>
     <section class="card"><div class="label">HOW TO PLAY</div>
       <ol>
-        <li>Tap a feeder tube: its front part drops onto the belt.</li>
+        <li>Tap a feeder tube in the middle: its front part drops onto the belt. Only the front parts show; the rest is hidden.</li>
         <li>A broken device grabs the parts it asks for as they pass.</li>
         <li>Fixed devices power up and leave; the next one steps in.</li>
         <li>The belt holds a limited number of parts. Go over it and the belt jams.</li>
@@ -81,7 +81,7 @@ footer { color: var(--mute); font-size: 12px; }
       <div class="keys"><kbd>SURGE</kbd><span>fix 2 devices within 7 s: up to 3 unwanted parts are zapped back to the end of their tubes</span><kbd>RUSH ⏱</kbd><span>fix it before its clock runs out for a bonus</span></div>
     </section>
   </div>
-  <footer>Progress is kept in this browser only. Stars: 3 if the belt never went past 60% full, 2 up to 80%.</footer>
+  <footer>Progress is kept in this browser only. The tubes only show their front parts; the rest stays hidden until it moves up.</footer>
 </div>
 
 <script>
@@ -109,7 +109,7 @@ const DEVS = ["radio", "robot", "console", "micro", "tv", "phone", "sat"];
 const DEVN = { radio: "RADIO", robot: "ROBOT", console: "GAME BOY", micro: "MICROWAVE", tv: "TV", phone: "PHONE", sat: "SATELLITE" };
 const LEVELS = 30;
 // geometry: the belt is a rounded loop (its centre line), parts ride it clockwise
-const BX0 = 18, BY0 = 62, BX1 = 190, BY1 = 184, BR = 14, BW = 14;
+const BX0 = 14, BY0 = 58, BX1 = 306, BY1 = 196, BR = 14, BW = 14;
 const SEG = [BX1 - BX0 - 2 * BR, BR * Math.PI / 2, BY1 - BY0 - 2 * BR, BR * Math.PI / 2, BX1 - BX0 - 2 * BR, BR * Math.PI / 2, BY1 - BY0 - 2 * BR, BR * Math.PI / 2];
 const LOOP = SEG.reduce((a, b) => a + b, 0), PITCH = 11;
 function pathAt(s) {
@@ -125,13 +125,14 @@ function pathAt(s) {
   return arc(BX0 + BR, BY0 + BR, Math.PI, s / BR);
 }
 const sTop = (x) => x - BX0 - BR, sBottom = (x) => SEG[0] + SEG[1] + SEG[2] + SEG[3] + (BX1 - BR - x);
-const ENTRY = SEG[0] + SEG[1] + 6;                       // right side, near the top: where the feeders drop parts
-const SEATS = [{ x: 56, top: true }, { x: 146, top: true }, { x: 146, top: false }, { x: 56, top: false }].map((q) => ({ ...q, s: q.top ? sTop(q.x) : sBottom(q.x), y: q.top ? 36 : 210 }));
-const FX0 = 210, FP = 22, FTOP = 30, FSTEP = 12;          // feeder tubes on the right
-const SPEED = 34;                                        // belt, px per second
+const SEATS = [{ x: 46, top: true }, { x: 146, top: true }, { x: 246, top: true }, { x: 246, top: false }, { x: 146, top: false }, { x: 46, top: false }].map((q) => ({ ...q, s: q.top ? sTop(q.x) : sBottom(q.x), y: q.top ? 31 : 222 }));
+const FP = 22, FX0 = 160 - (5 * FP - 4) / 2, FTOP = 84, FSTEP = 12, TUBE0 = 72, TUBE1 = 186;   // feeder tubes in the middle, front part at the top
+const MAXS = Math.floor((TUBE1 - FTOP + 6) / FSTEP);
+const ENTRIES = [0, 1, 2, 3, 4].map((i) => sTop(FX0 + i * FP + 9));                          // each tube drops onto the top run of the belt
+const SPEED = 44;                                        // belt, px per second
 
 // ======================= levels (made from a seed, the same every time) =======================
-const TUNE = { cap0: 26, capL: 0.4, win0: 3, winL: 0.1 };
+const TUNE = { cap0: 20, capL: 0.3, win0: 3, winL: 0.1 };
 function genLevel(L) {
   const r = rng(L * 7717 + 11);
   const nT = Math.min(8, 4 + Math.floor((L - 1) / 5));
@@ -156,9 +157,10 @@ function genLevel(L) {
 
 // ======================= saved progress =======================
 const SAVE = "pickplace.v1";
-function fresh() { return { open: 1, sel: 1, stars: {}, speed: 1 }; }
+function fresh() { return { open: 1, sel: 1, cleared: {}, speed: 1 }; }
 let P = fresh();
-try { const o = JSON.parse(localStorage.getItem(SAVE) || "null"); if (o && o.open) P = Object.assign(fresh(), o); } catch (e) {}
+try { const o = JSON.parse(localStorage.getItem(SAVE) || "null"); if (o && o.open) { P = Object.assign(fresh(), o); if (o.stars) { Object.keys(o.stars).forEach((k) => P.cleared[k] = 1); delete P.stars; } } } catch (e) {}
+const clearedN = () => Object.keys(P.cleared).length;
 let SIM = false;
 function save() { if (SIM) return; try { localStorage.setItem(SAVE, JSON.stringify(P)); } catch (e) {} }
 
@@ -204,17 +206,18 @@ const benchBg = mk(W, H, (p, x) => {
   p("#4a8fb8", 0, 0, W, H);                                                      // the blue anti-static mat
   for (let y = 14; y < H; y += 8) for (let X = (y / 8) % 2 ? 4 : 0; X < W; X += 8) p("#5a9cc4", X, y);
   p("#17263a", 0, 0, W, 13); p("#0f1a2a", 0, 13, W, 1);
-  // the PCB inside the loop, with gold traces and a few parts already soldered
-  const px0 = BX0 + BW / 2 + 4, py0 = BY0 + BW / 2 + 4, px1 = BX1 - BW / 2 - 4, py1 = BY1 - BW / 2 - 4;
+  // the PCB inside the loop, with gold traces
+  const px0 = BX0 + BW / 2 + 3, py0 = BY0 + BW / 2 + 3, px1 = BX1 - BW / 2 - 3, py1 = BY1 - BW / 2 - 3;
   p(K, px0 - 1, py0 - 1, px1 - px0 + 2, py1 - py0 + 2); p("#1f8a4c", px0, py0, px1 - px0, py1 - py0); p("#2aa05c", px0, py0, px1 - px0, 1);
   const r = rng(5);
-  for (let k = 0; k < 9; k++) { let tx = px0 + 6 + Math.floor(r() * (px1 - px0 - 12)), ty = py0 + 22 + Math.floor(r() * (py1 - py0 - 30)); const len = 10 + Math.floor(r() * 30); if (r() < 0.5) p("#e8c050", tx, ty, len, 1); else p("#e8c050", tx, ty, 1, Math.min(len, py1 - ty - 2)); p("#ffe08a", tx - 1, ty - 1, 3, 3); }
-  for (let k = 0; k < 14; k++) p("#ffe08a", px0 + 4 + Math.floor(r() * (px1 - px0 - 8)), py0 + 20 + Math.floor(r() * (py1 - py0 - 24)), 2, 2);
-  // the gantry rail of the pick-and-place robot
-  p(K, px0 + 2, py0 + 6, px1 - px0 - 4, 5); p("#c9d2da", px0 + 3, py0 + 7, px1 - px0 - 6, 3); p("#ffffff", px0 + 3, py0 + 7, px1 - px0 - 6, 1);
-  // feeder rack
-  p("#17263a", FX0 - 4, 16, W - FX0 + 4, H - 16); p("#24395a", FX0 - 3, 17, W - FX0 + 2, H - 18);
-  for (let i = 0; i < 5; i++) { const x0 = FX0 + i * FP; p("#0f1a2a", x0, FTOP - 6, 18, H - FTOP + 4); p("#2c4468", x0 + 1, FTOP - 5, 16, H - FTOP + 2); p("#3c5a86", x0 + 1, FTOP - 5, 1, H - FTOP + 2); }
+  for (let k = 0; k < 16; k++) { const tx = px0 + 4 + Math.floor(r() * (px1 - px0 - 8)), ty = py0 + 4 + Math.floor(r() * (py1 - py0 - 8)); if (tx > FX0 - 8 && tx < FX0 + 5 * FP + 4) continue; const len = 8 + Math.floor(r() * 26); if (r() < 0.5) p("#e8c050", tx, ty, Math.min(len, px1 - tx - 2), 1); else p("#e8c050", tx, ty, 1, Math.min(len, py1 - ty - 2)); p("#ffe08a", tx - 1, ty - 1, 3, 3); }
+  // the five feeder tubes in the middle, each with a chute up to the belt
+  p(K, FX0 - 5, TUBE0 - 3, 5 * FP + 6, TUBE1 - TUBE0 + 6); p("#24395a", FX0 - 4, TUBE0 - 2, 5 * FP + 4, TUBE1 - TUBE0 + 4);
+  for (let i = 0; i < 5; i++) {
+    const x0 = FX0 + i * FP;
+    p(K, x0 + 4, py0 - 2, 10, TUBE0 - py0 + 2); p("#c9d2da", x0 + 5, py0 - 2, 8, TUBE0 - py0 + 2);
+    p("#0f1a2a", x0, TUBE0, 18, TUBE1 - TUBE0); p("#2c4468", x0 + 1, TUBE0 + 1, 16, TUBE1 - TUBE0 - 2); p("#3c5a86", x0 + 1, TUBE0 + 1, 1, TUBE1 - TUBE0 - 2);
+  }
 });
 
 // ======================= a level =======================
@@ -222,8 +225,8 @@ let G = null;
 function startLevel(L) {
   const lv = genLevel(L);
   G = { L, cap: lv.cap, nT: lv.nT, queue: lv.devs.map((d, i) => ({ ...d, need: { ...d.need }, id: i })), total: lv.devs.length, done: 0,
-        tubes: lv.tubes.map((t) => t.slice()), seats: [null, null, null, null], items: [], pending: [], flying: [], hist: [],
-        off: 0, t: 0, phase: "play", undo: 2, mag: 1, maxFill: 0, lastDone: -99, surges: 0, rushOk: 0, sel: 2, uid: 1, seatT: [0.2, 0.5, 0.8, 1.1] };
+        tubes: lv.tubes.map((t) => t.slice()), seats: SEATS.map(() => null), vis: L <= 3 ? 3 : 2, items: [], pending: [], flying: [], hist: [],
+        off: 0, t: 0, phase: "play", undo: 2, mag: 1, maxFill: 0, lastDone: -99, surges: 0, rushOk: 0, sel: 2, uid: 1, seatT: SEATS.map((_, k) => 0.2 + k * 0.3) };
   if (!SIM) { fx = []; zaps = []; says = []; ui(); }
 }
 const onBelt = () => G.items.length + G.pending.length + G.flying.filter((f) => f.to === "belt").length;
@@ -236,7 +239,7 @@ function drop(i, magnet) {
     const t = tb.shift(), it = { id: G.uid++, t, tube: i };
     G.hist.push(it);
     if (SIM) G.pending.push(it);
-    else G.flying.push({ it, to: "belt", x0: FX0 + i * FP + 9, y0: FTOP, t: -k * 0.12, T: 0.28 });
+    else G.flying.push({ it, to: "belt", x0: FX0 + i * FP + 9, y0: FTOP, t: -k * 0.12, T: 0.22 });
   }
   G.sel = i; checkJam(); if (!SIM) ui();
   return true;
@@ -251,7 +254,7 @@ function undo() {
     if (where) where.splice(where.indexOf(it), 1); if (fl) G.flying.splice(G.flying.indexOf(fl), 1);
     G.tubes[it.tube].unshift(it.t); G.undo--;
     if (G.phase === "jam" && onBelt() <= G.cap) G.phase = "play";
-    if (!SIM) { say(FX0 + it.tube * FP + 9, FTOP - 8, "UNDO", "#f0b429"); ui(); }
+    if (!SIM) { say(FX0 + it.tube * FP + 9, FTOP + 8, "UNDO", "#f0b429"); ui(); }
     return true;
   }
   return false;
@@ -260,7 +263,7 @@ function stepLevel() {
   const g = G; if (g.phase !== "play") return;
   g.t += DT;
   // devices step in
-  for (let k = 0; k < 4; k++) {
+  for (let k = 0; k < SEATS.length; k++) {
     if (!g.seats[k] && g.queue.length) { g.seatT[k] -= DT; if (g.seatT[k] <= 0) { const d = g.queue.shift(); d.enter = 0.5; d.rushT = d.rush ? 32 : 0; g.seats[k] = d; } }
     const d = g.seats[k]; if (!d) continue;
     if (d.enter > 0) d.enter -= DT;
@@ -268,12 +271,16 @@ function stepLevel() {
     if (d.leave) { d.leave -= DT; if (d.leave <= 0) { g.seats[k] = null; g.seatT[k] = 0.7; } }
   }
   // parts waiting at the drop point join the belt when there is a gap
-  if (g.pending.length) { const s = ((ENTRY - g.off) % LOOP + LOOP) % LOOP; if (!g.items.some((it) => Math.abs(((it.s - s) % LOOP + LOOP + LOOP / 2) % LOOP - LOOP / 2) < PITCH)) { const it = g.pending.shift(); it.s = s; g.items.push(it); } }
+  if (g.pending.length) g.pending = g.pending.filter((it) => {
+    const s = ((ENTRIES[it.tube] - g.off) % LOOP + LOOP) % LOOP;
+    if (g.items.some((o) => Math.abs(((o.s - s) % LOOP + LOOP + LOOP / 2) % LOOP - LOOP / 2) < PITCH)) return true;
+    it.s = s; g.items.push(it); return false;
+  });
   // the belt moves; a device grabs a part it needs as the part passes it
   const prevOff = g.off; g.off += SPEED * DT;
   for (const it of g.items) {
     const a = ((it.s + prevOff) % LOOP + LOOP) % LOOP, b = a + SPEED * DT;
-    for (let k = 0; k < 4; k++) {
+    for (let k = 0; k < SEATS.length; k++) {
       const d = g.seats[k]; if (!d || d.leave || d.enter > 0 || !d.need[it.t]) continue;
       const ss = SEATS[k].s; if ((a <= ss && b > ss) || (a <= ss + LOOP && b > ss + LOOP)) { it.got = k; d.need[it.t]--; if (!d.need[it.t]) delete d.need[it.t]; break; }
     }
@@ -305,12 +312,11 @@ function surge() {
   const junk = g.items.filter((it) => !want(it.t)).slice(0, 3);
   g.items = g.items.filter((it) => !junk.includes(it));
   junk.forEach((it) => g.tubes[it.tube].push(it.t));        // zapped back to the end of its tube: every part is still needed later
-  if (!SIM) { say(104, 120, junk.length ? `SURGE! ${junk.length} ZAPPED` : "SURGE!", "#5cff8a"); junk.forEach((it) => { const q = pathAt(it.s + g.off); zaps.push({ x: q.x, y: q.y, t: 0.35 }); }); }
+  if (!SIM) { say(160, 130, junk.length ? `SURGE! ${junk.length} ZAPPED` : "SURGE!", "#5cff8a"); junk.forEach((it) => { const q = pathAt(it.s + g.off); zaps.push({ x: q.x, y: q.y, t: 0.35 }); }); }
 }
-function starsOf() { return G.maxFill <= 0.6 ? 3 : G.maxFill <= 0.8 ? 2 : 1; }
 function win() {
-  const g = G; g.phase = "won"; g.stars = starsOf();
-  P.stars[g.L] = Math.max(P.stars[g.L] || 0, g.stars); P.open = Math.max(P.open, Math.min(LEVELS, g.L + 1));
+  const g = G; g.phase = "won";
+  P.cleared[g.L] = 1; P.open = Math.max(P.open, Math.min(LEVELS, g.L + 1));
   if (g.L === P.sel && g.L < LEVELS) P.sel = g.L + 1;
   save(); if (!SIM) ui();
 }
@@ -334,13 +340,11 @@ function drawBelt(t) {
   for (let s = 0; s < LOOP; s += 2) { const q = pathAt(s); rect(Math.round(q.x - BW / 2 + 2), Math.round(q.y - BW / 2 + 2), BW - 4, BW - 4, "#b8c2cc"); }
   const off = G ? G.off : t * SPEED;
   for (let s = 0; s < LOOP; s += 7) { const q = pathAt(s + (off % 7)); rect(r3(q.x - 0.5), r3(q.y - 0.5), 1, 1, "#7a8794"); }
-  // drop point from the feeders
-  const e = pathAt(ENTRY); rect(e.x + 7, e.y - 3, FX0 - 4 - e.x - 7, 6, K); rect(e.x + 7, e.y - 2, FX0 - 4 - e.x - 7, 4, "#c9d2da");
 }
 function drawDevice(k, t) {
   const d = G.seats[k]; if (!d) return;
   const st = SEATS[k], enter = d.enter > 0 ? d.enter / 0.5 : 0, leave = d.leave ? 1 - d.leave / 1.1 : 0;
-  const dx = (enter * -30) + (leave > 0.45 ? (leave - 0.45) * 90 : 0) * (k % 3 ? 1 : -1);
+  const side = st.x > 160 ? 1 : -1, dx = (enter * 30 * side) + (leave > 0.45 ? (leave - 0.45) * 90 : 0) * side;
   const bob = d.leave ? -Math.abs(Math.sin(t * 14)) * 2 : Math.sin(t * 2 + k) * 0.6;
   const x = r3(st.x - 14 + dx), y = r3(st.y - 13 + bob);
   g2.globalAlpha = 1 - clamp((leave - 0.6) * 2.5, 0, 1) * 0.9;
@@ -348,30 +352,40 @@ function drawDevice(k, t) {
   g2.globalAlpha = 1;
   if (d.leave || d.enter > 0) return;
   // speech bubble with what it needs
-  const needs = Object.entries(d.need), bw = 30, bh = 4 + needs.length * 13, bx = k % 3 ? x + 30 : x - bw - 3, by = st.top ? y - 2 : y + 26 - bh;
-  box(bx, by, bw, bh, "#ffffff"); rect(k % 3 ? bx - 2 : bx + bw, by + bh / 2 - 1, 2, 3, K);
+  const needs = Object.entries(d.need), bw = 30, bh = 4 + needs.length * 13, right = true, bx = right ? x + 30 : x - bw - 3, by = st.top ? Math.max(15, y - 2) : Math.min(H - 1 - bh, y + 26 - bh);
+  box(bx, by, bw, bh, "#ffffff"); rect(right ? bx - 2 : bx + bw, by + bh / 2 - 1, 2, 3, K);
   needs.forEach(([tp, n], i) => { g2.drawImage(PSPR[tp], bx + 2, by + 2 + i * 13); txt(String(n), bx + 25, by + 12 + i * 13, K, "right", T8); });
   if (d.rush) { const c = d.rushT > 8 ? "#f0b429" : "#ff4a4a"; box(x + 18, y - 4, 14, 9, c); txt(d.rushT > 0 ? String(Math.ceil(d.rushT)) : "-", x + 25, y + 3.5, K, "center", V10); }
 }
 function drawItemAt(tp, x, y) { g2.drawImage(PSPR[tp], r3(x - 6), r3(y - 6)); }
-function drawGantry(t) {
-  const px0 = BX0 + BW / 2 + 4, px1 = BX1 - BW / 2 - 4, py0 = BY0 + BW / 2 + 4;
-  const hx = r3((px0 + px1) / 2 + Math.sin(t * 0.9) * 46), hy = py0 + 4;
-  rect(hx - 8, hy, 16, 12, K); rect(hx - 7, hy + 1, 14, 10, "#f0b429"); rect(hx - 7, hy + 1, 14, 1, "#ffe08a");
-  rect(hx - 5, hy + 3, 10, 6, K); const blink = (t * 10 % 37) < 1.5;
-  if (!blink) { rect(hx - 3, hy + 5, 2, 2, "#5cff8a"); rect(hx + 1, hy + 5, 2, 2, "#5cff8a"); } else { rect(hx - 3, hy + 6, 2, 1, "#5cff8a"); rect(hx + 1, hy + 6, 2, 1, "#5cff8a"); }
-  const nz = 6 + Math.abs(Math.sin(t * 1.8)) * 6; rect(hx - 1, hy + 12, 2, nz, K); rect(hx - 2, hy + 12 + nz, 4, 2, "#9aa6b2");
-}
 function drawFeeders(t) {
   for (let i = 0; i < 5; i++) {
-    const x0 = FX0 + i * FP, tb = G ? G.tubes[i] : [], sel = G && G.sel === i && G.phase === "play";
-    if (sel) { rect(x0 - 2, FTOP - 8, 22, H - FTOP + 6, "#f0b429"); rect(x0, FTOP - 6, 18, H - FTOP + 2, "#2c4468"); }
-    const n = Math.min(tb.length, Math.floor((H - FTOP) / FSTEP));
-    for (let k = 0; k < n; k++) g2.drawImage(PSPR[tb[k]], x0 + 3, FTOP - 4 + k * FSTEP);
-    if (tb.length > n) txtO("+" + (tb.length - n), x0 + 9, H - 3, "#ffffff", "center", V10);
-    txtO(String(i + 1), x0 + 9, FTOP - 10, sel ? "#f0b429" : "#c9d2da", "center", T8);
-    btns.push({ x: x0 - 1, y: FTOP - 18, w: FP, h: H - FTOP + 18, act: "drop", v: i });
+    const x0 = FX0 + i * FP, tb = G && mode === "play" ? G.tubes[i] : [], sel = G && mode === "play" && G.sel === i && G.phase === "play";
+    if (sel) { rect(x0 - 2, TUBE0 - 2, 22, TUBE1 - TUBE0 + 4, "#f0b429"); rect(x0, TUBE0, 18, TUBE1 - TUBE0, "#2c4468"); }
+    const vis = G ? G.vis : 2, n = Math.min(tb.length, MAXS);
+    for (let k = 0; k < n; k++) {
+      const y = FTOP - 6 + k * FSTEP;
+      if (k < vis) g2.drawImage(PSPR[tb[k]], x0 + 3, y);
+      else { box(x0 + 4, y + 1, 10, 10, "#3c5a86", "#0f1a2a"); txt("?", x0 + 9, y + 9, "#8fb0d8", "center", V10); }
+    }
+    if (mode === "play") txtO(String(tb.length), x0 + 9, TUBE1 - 1, tb.length ? "#ffffff" : "#5a6a80", "center", V10);
+    btns.push({ x: x0 - 1, y: TUBE0 - 8, w: FP, h: TUBE1 - TUBE0 + 10, act: "drop", v: i });
   }
+}
+function drawSide(t) {
+  // left: the next devices in the queue; right: the two tools
+  const lx = 30, ly = 73, rx = 222;
+  box(lx, ly, 70, 112, "#e8f4ef"); rect(lx + 1, ly + 1, 68, 11, "#17263a"); txt("NEXT", lx + 35, ly + 9.5, "#f0b429", "center", T8);
+  const q = G.queue.slice(0, 2);
+  if (!q.length) txt("LAST ONES", lx + 35, ly + 40, "#4f6a72", "center", V12);
+  q.forEach((d, i) => {
+    const y = ly + 16 + i * 48; g2.drawImage(DSPR[d.kind].sad, lx + 3, y);
+    Object.entries(d.need).forEach(([tp, n], j) => { g2.drawImage(PSPR[tp], lx + 34, y + 1 + j * 13); txt(String(n), lx + 66, y + 11 + j * 13, K, "right", T8); });
+    if (d.rush) txt("RUSH", lx + 17, y + 36, "#c07a00", "center", V10);
+  });
+  button(rx, 76, 68, 24, `UNDO ${G.undo}`, "undo", false); if (!G.undo) { g2.globalAlpha = 0.5; rect(rx, 76, 68, 26, "#4a8fb8"); g2.globalAlpha = 1; }
+  button(rx, 110, 68, 24, `MAGNET ${G.mag}`, "magnet", false); if (!G.mag) { g2.globalAlpha = 0.5; rect(rx, 110, 68, 26, "#4a8fb8"); g2.globalAlpha = 1; }
+  txt("TUBES SHOW", rx + 34, 154, "#e8f4ef", "center", V10); txt(`ONLY ${G.vis} PARTS`, rx + 34, 164, "#e8f4ef", "center", V10); txt("THE REST IS ?", rx + 34, 174, "#e8f4ef", "center", V10);
 }
 function draw(now, a) {
   const t = now / 1000;
@@ -381,19 +395,19 @@ function draw(now, a) {
   g2.save(); g2.translate(sx, 0);
   g2.drawImage(benchBg, 0, 0);
   drawBelt(t);
-  drawGantry(t);
+  drawFeeders(t);
   if (G && mode === "play") {
+    drawSide(t);
     const offA = G.off + (G.phase === "play" && !paused ? SPEED * DT * a : 0);
     G.items.forEach((it) => { const q = pathAt(it.s + offA); drawItemAt(it.t, q.x, q.y); });
-    for (let k = 0; k < 4; k++) drawDevice(k, t);
+    for (let k = 0; k < SEATS.length; k++) drawDevice(k, t);
     G.flying.forEach((f) => {
       const k = clamp(f.t / f.T, 0, 1); let x1, y1;
-      if (f.to === "belt") { const e = pathAt(ENTRY); x1 = e.x + 12; y1 = e.y; } else { x1 = SEATS[f.to].x; y1 = SEATS[f.to].y; }
+      if (f.to === "belt") { const e = pathAt(ENTRIES[f.it.tube]); x1 = e.x; y1 = e.y; } else { x1 = SEATS[f.to].x; y1 = SEATS[f.to].y; }
       if (f.t >= 0) drawItemAt(f.it.t, f.x0 + (x1 - f.x0) * k, f.y0 + (y1 - f.y0) * k - Math.sin(k * Math.PI) * 14);
     });
-    if (G.pending.length) { const e = pathAt(ENTRY); G.pending.slice(0, 3).forEach((it, i) => drawItemAt(it.t, e.x + 12 + i * 5, e.y - i)); }
+    const shown = {}; G.pending.forEach((it) => { if (shown[it.tube]) return; shown[it.tube] = 1; drawItemAt(it.t, FX0 + it.tube * FP + 9, BY0 + 10); });
   }
-  drawFeeders(t);
   zaps.forEach((z) => { g2.strokeStyle = "#5cff8a"; g2.lineWidth = 1; g2.beginPath(); g2.moveTo(z.x, z.y - 10); for (let j = 1; j <= 4; j++) g2.lineTo(z.x + (Math.random() - 0.5) * 6, z.y - 10 + j * 3); g2.stroke(); rect(z.x - 3, z.y - 3, 6, 6, "rgba(92,255,138,.5)"); });
   parts.forEach((p) => { g2.fillStyle = p.c; g2.globalAlpha = clamp(p.t * 3, 0, 1); g2.fillRect(r3(p.x), r3(p.y), 1, 1); }); g2.globalAlpha = 1;
   says.forEach((n) => txtO(n.text, n.x, n.y - (1.1 - n.t) * 8, n.c, "center", T8));
@@ -404,7 +418,7 @@ function draw(now, a) {
   else if (paused) { rect(0, 14, W, H - 14, "rgba(10,20,35,.5)"); txtO("PAUSED", 160, 120, "#ffffff", "center", T16); }
 }
 function drawHud(t) {
-  if (mode !== "play" || !G) { txt("PICK & PLACE", 5, 11, "#f0b429", "left", "14px VT323, monospace"); txt(`★ ${Object.values(P.stars).reduce((a, b) => a + b, 0)} / ${LEVELS * 3}`, 205, 10, "#ffffff", "right", V12); return; }
+  if (mode !== "play" || !G) { txt("PICK & PLACE", 5, 11, "#f0b429", "left", "14px VT323, monospace"); txt(`CLEARED ${clearedN()} / ${LEVELS}`, 315, 10.5, "#ffffff", "right", V12); return; }
   txt(`LV ${G.L}`, 5, 10, "#f0b429", "left", T8);
   rect(40, 3, 9, 8, "#5cff8a"); rect(42, 6, 1, 2, K); rect(43, 7, 1, 2, K); rect(44, 6, 1, 1, K); rect(45, 5, 1, 1, K); rect(46, 4, 1, 1, K);
   txt(`${G.done}/${G.total}`, 52, 10.5, "#ffffff", "left", V12);
@@ -426,7 +440,7 @@ function drawMap(t) {
   button(40, 54, 24, 26, "<", "prev", mapSel === 0 && L > 1);
   button(172, 54, 24, 26, ">", "next", mapSel === 0 && L < P.open);
   txt(`LEVEL ${L}`, 118, 72, K, "center", T16);
-  const st = P.stars[L] || 0; txt("★".repeat(st) + "☆".repeat(3 - st), 118, 88, "#c08a10", "center", "12px VT323, monospace");
+  txt(P.cleared[L] ? "CLEARED" : "NOT CLEARED YET", 118, 89, P.cleared[L] ? "#1f8a4c" : "#c07a00", "center", V12);
   txt(`${lv.devs.length} devices · belt ${lv.cap}`, 118, 102, "#4f6a72", "center", V12);
   PARTS.slice(0, lv.nT).forEach((p, i) => g2.drawImage(PSPR[p.id], 118 - lv.nT * 7 + i * 14, 108));
   const prev = genLevel(Math.max(1, L - 1));
@@ -439,7 +453,7 @@ function drawEnd(t) {
   const won = G.phase === "won";
   panel(30, 44, 176, 150, won ? "ALL FIXED" : "BELT JAM");
   if (won) {
-    txt("★".repeat(G.stars) + "☆".repeat(3 - G.stars), 118, 80, "#c08a10", "center", "24px VT323, monospace");
+    txt(`LEVEL ${G.L} DONE`, 118, 80, "#1f8a4c", "center", T16);
     txt(`Belt peak ${Math.round(G.maxFill * 100)}%`, 118, 98, K, "center", V12);
     txt(`Surges ${G.surges} · rush bonus ${G.rushOk}`, 118, 110, "#4f6a72", "center", V12);
   } else {
@@ -456,7 +470,7 @@ function drawEnd(t) {
 const oc = $("oled").getContext("2d");
 function drawOled() {
   oc.fillStyle = "#000"; oc.fillRect(0, 0, 128, 64); oc.fillStyle = "#e8f4ff"; oc.font = "8px Silkscreen, monospace"; oc.textAlign = "left"; oc.textBaseline = "alphabetic";
-  if (mode !== "play" || !G) { oc.font = "12px VT323, monospace"; oc.fillText("PICK & PLACE", 0, 8); oc.font = "8px Silkscreen, monospace"; oc.fillRect(0, 11, 128, 1); oc.font = "16px VT323, monospace"; oc.fillText(`LEVEL ${P.sel}`, 0, 28); oc.fillText(`STARS ${Object.values(P.stars).reduce((a, b) => a + b, 0)}`, 0, 44); oc.fillText(`OPEN UP TO ${P.open}`, 0, 60); return; }
+  if (mode !== "play" || !G) { oc.font = "12px VT323, monospace"; oc.fillText("PICK & PLACE", 0, 8); oc.font = "8px Silkscreen, monospace"; oc.fillRect(0, 11, 128, 1); oc.font = "16px VT323, monospace"; oc.fillText(`LEVEL ${P.sel}`, 0, 28); oc.fillText(`CLEARED ${clearedN()}/${LEVELS}`, 0, 44); oc.fillText(`OPEN UP TO ${P.open}`, 0, 60); return; }
   oc.fillText(`LV ${G.L}`, 0, 8); oc.textAlign = "right"; oc.fillText(`${G.done}/${G.total} FIXED`, 128, 8); oc.textAlign = "left"; oc.fillRect(0, 11, 128, 1);
   oc.font = "16px VT323, monospace"; oc.fillText("BELT", 0, 25); oc.strokeStyle = "#e8f4ff"; oc.strokeRect(30.5, 16.5, 96, 9); oc.fillRect(32, 18, 93 * clamp(onBelt() / G.cap, 0, 1), 6);
   oc.fillText(`${onBelt()}/${G.cap}  UNDO ${G.undo}  MAG ${G.mag}`, 0, 41);
@@ -563,13 +577,13 @@ function simLevel(L, how, undoOk = true) {
     if (G.phase === "jam") { if (undoOk && G.undo > 0) { undo(); continue; } break; }
     stepLevel(); cd -= DT; if (cd <= 0) { botMove(how); cd = how === "random" ? 0.3 : 0.35; checkJam(); }
   }
-  const r = { win: G.phase === "won", peak: Math.round(G.maxFill * 100), stars: G.phase === "won" ? starsOf() : 0, time: Math.round(G.t), undo: 2 - G.undo, surges: G.surges };
+  const r = { win: G.phase === "won", peak: Math.round(G.maxFill * 100), time: Math.round(G.t), undo: 2 - G.undo, surges: G.surges };
   SIM = false; return r;
 }
 window.PP = {
   gen: genLevel, state: () => G, tune: TUNE,
   sim: (L, how = "smart") => { const keep = JSON.stringify(P); const r = simLevel(L, how); P = JSON.parse(keep); return r; },
-  all: (how = "smart") => { const keep = JSON.stringify(P); const out = []; for (let L = 1; L <= LEVELS; L++) { const r = simLevel(L, how); out.push(`${L}:${r.win ? "★" + r.stars : "X"}${r.peak}${r.undo ? "u" + r.undo : ""}`); } P = JSON.parse(keep); return out.join(" "); },
+  all: (how = "smart") => { const keep = JSON.stringify(P); const out = []; for (let L = 1; L <= LEVELS; L++) { const r = simLevel(L, how); out.push(`${L}:${r.win ? "" : "X"}${r.peak}${r.undo ? "u" + r.undo : ""}`); } P = JSON.parse(keep); return out.join(" "); },
   go: (L) => { P.sel = L; act("start"); }, drop: (i) => drop(i), run: (sec) => { for (let i = 0; i < sec * 60 && G && G.phase === "play"; i++) stepLevel(); return G && { phase: G.phase, belt: onBelt(), done: G.done }; },
   give: (o) => { Object.assign(P, o); save(); ui(); },
 };
