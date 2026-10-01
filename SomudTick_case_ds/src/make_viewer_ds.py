@@ -8,7 +8,7 @@ out = os.path.join(d, "out_" + v if v else "out")
 b = base64.b64encode(open(os.path.join(out, "somudtick_ds.glb"), "rb").read()).decode()
 meta = open(os.path.join(out, "meta.json")).read()
 name = json.loads(meta)["NAME"]
-h1 = name.replace("DS", "<b>DS</b>", 1)
+h1 = name.replace("DS", "<b>DS</b>", 1) if " DS" in name else name.replace("GB", "<b>GB</b>", 1)
 t = open(os.path.join(d, "viewer_ds_tpl.html")).read().replace("__GLB__", b).replace("__META__", meta).replace("__NAME__", name).replace("__H1__", h1)
 fn = "somudtick_%s_3d.html" % (v or "ds")
 open(os.path.join(out, fn), "w").write(t)

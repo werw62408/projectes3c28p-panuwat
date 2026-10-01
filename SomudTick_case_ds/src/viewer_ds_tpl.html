@@ -172,6 +172,8 @@ const COL = {
   paint_cyan:[0x22d3ee,.4,0,1], paint_pink:[0xff3daa,.4,0,1]
 };
 const $ = id => document.getElementById(id);
+COL.lens = [0x0b0d12, .25, .15]; INFO.lens = ["แผ่นเลนส์ดำรอบจอ", "ร่องลึก 0.8 มม. ทาสีดำเงา หรือแปะแผ่นอะคริลิกดำ"];
+if (META.SHELL !== undefined) { COL.front_shell = [META.SHELL, .5, .15]; COL.back_plate = [META.SHELL, .6, .1]; }
 $("m-size").textContent = META.SIZE; $("m-halves").textContent = META.HALVES; $("m-vol").textContent = META.VOL;
 $("m-pcf").textContent = META.PCF; $("m-screen").textContent = META.SCREEN_NOTE;
 document.querySelectorAll("[data-p]").forEach(td => { td.textContent = META.PRINT[td.dataset.p] || ""; });
@@ -216,17 +218,28 @@ function screenTex(w, h, draw){ const c = document.createElement("canvas"); c.wi
 const mainTex = screenTex(640, 442, (g, w, h) => {
   g.fillStyle = "#05070d"; g.fillRect(0, 0, w, h);
   g.strokeStyle = "#0c1422"; g.lineWidth = 2; for (let x = 0; x < w; x += 36) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); } for (let y = 0; y < h; y += 36) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
-  g.fillStyle = "#000"; g.fillRect(0, 0, w, 50); g.fillStyle = "#22d3ee"; g.fillRect(0, 49, w, 3);
-  g.font = "600 30px Chakra Petch, sans-serif"; g.fillStyle = "#22d3ee"; g.textBaseline = "middle"; g.fillText("20:15  Thu 24 Sep", 16, 26);
-  g.textAlign = "right"; g.fillText("65%", w - 16, 26); g.textAlign = "left";
+  const bars = !META.OLED_FRONT;
+  if (bars) { g.fillStyle = "#000"; g.fillRect(0, 0, w, 50); g.fillStyle = "#22d3ee"; g.fillRect(0, 49, w, 3); }
+  g.textBaseline = "middle";
+  if (bars) { g.font = "600 30px Chakra Petch, sans-serif"; g.fillStyle = "#22d3ee"; g.fillText("20:15  Thu 24 Sep", 16, 26);
+  g.textAlign = "right"; g.fillText("65%", w - 16, 26); g.textAlign = "left"; }
   const keys = [["Play Pause","#22d3ee"],["Next","#22d3ee"],["Vol +","#22d3ee"],["Copy","#ff3daa"],["Paste","#ff3daa"],["Hello","#39ff88"],["Search","#ff3daa"],["Home","#ff3daa"]];
-  const cw = (w - 50) / 4, ch = (h - 90) / 2;
-  keys.forEach(([t, c], i) => { const x = 12 + (i % 4) * (cw + 8), y = 66 + Math.floor(i / 4) * (ch + 10);
+  const top = bars ? 66 : 14, cw = (w - 50) / 4, ch = (h - top - 24) / 2;
+  keys.forEach(([t, c], i) => { const x = 12 + (i % 4) * (cw + 8), y = top + Math.floor(i / 4) * (ch + 10);
     g.shadowColor = c; g.shadowBlur = 16; g.strokeStyle = c; g.lineWidth = 4; g.beginPath(); g.roundRect ? g.roundRect(x, y, cw, ch - 6, 16) : g.rect(x, y, cw, ch - 6); g.stroke(); g.shadowBlur = 0;
     g.fillStyle = "#e8fbff"; g.font = "600 28px Chakra Petch, sans-serif"; g.textAlign = "center"; g.fillText(t, x + cw / 2, y + (ch - 6) / 2); g.textAlign = "left"; });
 });
 const OW_ = META.OLED_WIN[1] - META.OLED_WIN[0], OH_ = META.OLED_WIN[3] - META.OLED_WIN[2];
 const oledTex = screenTex(512, Math.round(512 * OH_ / OW_), (g, w, h) => {   // 0.91" 128x32 look: time + today on one line
+  if (META.OLED_FRONT) {   // the top bar and the menu, moved off the big screen
+    g.fillStyle = "#000"; g.fillRect(0, 0, w, h); g.fillStyle = "#5fd4ff"; g.textBaseline = "middle";
+    g.font = "600 " + Math.round(h * 0.36) + "px IBM Plex Mono, monospace";
+    g.fillText("20:15", w * 0.03, h * 0.26); g.textAlign = "center"; g.fillText("Home", w * 0.5, h * 0.26); g.textAlign = "right"; g.fillText("65%", w * 0.97, h * 0.26);
+    g.textAlign = "left"; g.font = "500 " + Math.round(h * 0.34) + "px IBM Plex Mono, monospace";
+    g.fillText("Log", w * 0.05, h * 0.75); g.textAlign = "right"; g.fillText("Set", w * 0.95, h * 0.75); g.textAlign = "center";
+    g.fillRect(w * 0.36, h * 0.53, w * 0.28, h * 0.44); g.fillStyle = "#000"; g.fillText("Apps", w * 0.5, h * 0.76);
+    return;
+  }
   g.fillStyle = "#000"; g.fillRect(0, 0, w, h); g.fillStyle = "#5fd4ff"; g.textBaseline = "middle";
   g.font = "700 " + Math.round(h * 0.78) + "px IBM Plex Mono, monospace"; g.fillText("20:15", w * 0.03, h * 0.54);
   g.font = "500 " + Math.round(h * 0.34) + "px IBM Plex Mono, monospace"; g.textAlign = "right";
@@ -251,7 +264,7 @@ new THREE.GLTFLoader().parse(b64ToBuf(GLB), "", gltf => {
     if (c[3]) { mat.emissive = new THREE.Color(c[0]); mat.emissiveIntensity = 1.1; }
     if (name === "acrylic") { mat.transparent = true; mat.opacity = .35; }
     o.material = mat; o.userData.part = name;
-    const isShell = /_shell|_floor|_back$|back_plate/.test(name) && !/^paint/.test(name);
+    const isShell = /_shell|_floor|_back$|back_plate|^lens$/.test(name) && !/^paint/.test(name);
     (side === "L_" ? lidG : baseG).attach(o);
     (isShell ? shells : parts).push(o); pickables.push(o);
     if (name === "base_floor") floorNode = o; if (name === "lid_back" || name === "back_plate") backNode = o;
@@ -261,7 +274,7 @@ new THREE.GLTFLoader().parse(b64ToBuf(GLB), "", gltf => {
     const pl = (tex, r, z, back) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(r[1] - r[0], r[3] - r[2]), new THREE.MeshBasicMaterial({map: tex, toneMapped:false}));
       m.position.set((r[0] + r[1]) / 2 - META.OW / 2, -((r[2] + r[3]) / 2 - META.OH / 2), -(z - META.T / 2)); if (back) m.rotation.y = Math.PI; baseG.add(m); };
     pl(mainTex, [META.GLASS[0] + 0.4, META.GLASS[1] - 0.4, META.GLASS[2] + 0.4, META.GLASS[3] - 0.4], META.GLASS_Z, false);
-    pl(oledTex, META.OLED_WIN, META.OLED_Z, true);
+    pl(oledTex, META.OLED_WIN, META.OLED_Z, !META.OLED_FRONT);
   } else {
   addScreenPlane(mainTex, META.GLASS[0] + 0.4, META.GLASS[1] - 0.4, META.GLASS[2] + 0.4, META.GLASS[3] - 0.4, META.BH + META.GLASS_Y, false);
   addScreenPlane(oledTex, META.OLED_WIN[0], META.OLED_WIN[1], META.OLED_WIN[2], META.OLED_WIN[3], META.BH + META.OLED_Y, true);
