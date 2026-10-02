@@ -165,9 +165,70 @@ def drawing(outpath):
             "wire colours: red 3V3 / BAT+, black GND, blue SDA, yellow SCL, green buttons, purple stick, orange IR, grey speaker", fontsize=6.5, va="top")
     fig.savefig(outpath, bbox_inches="tight"); plt.close(fig)
 
+
+# ---- the easy-to-read drawing: 3 panels, one thick line per cable, nothing drawn on top of anything else ----
+PANELS = [
+    ("1  POWER + I2C (all through the HUB)", CABLE_COL := ["#1565c0", "#00897b", "#6a1b9a", "#ef6c00", "#2e7d32", "#ad1457", "#5d4037"], ["hub > small screen", "hub > IR receiver (power)", "hub > IR LED (power)", "I2C in: screen > hub",
+                                             "hub > clock", "hub > button board power", "hub > PCF8574"]),
+    ("2  SIGNALS (stick, buttons, IR)", ["#6a1b9a", "#2e7d32", "#ef6c00"], ["stick X / Y", "buttons (7-wire ribbon)", "IR signals"]),
+    ("3  BATTERY + SPEAKER", ["#c62828", "#ef6c00", "#616161"], ["battery > switch > screen", "switch > screen", "speaker"]),
+]
+SHORT = {"ES_I2C": "screen I2C plug", "ES_EXP": "screen EXP plug", "ES_BAT": "screen BAT plug", "ES_SPK": "screen SPK plug",
+         "HUB_T": "hub (top edge)", "HUB_B": "hub (bottom edge)", "PCF_IN": "PCF8574 IN", "PCF_P": "PCF8574 P0-P6", "DS_4": "DS3231 4-pin",
+         "OLED": "small screen", "IRRX": "IR receiver", "IRTX": "IR LED", "SW": "switch", "HDR": "NA011 yellow pins", "BAT": "18650 (BMS end)", "SPK": "speaker"}
+
+def drawing_easy(outpath):
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle, Circle, FancyBboxPatch
+    byname = {b[0]: b for b in B}
+    fig, axs = plt.subplots(1, 3, figsize=(19, 13.5), dpi=100)
+    X = lambda x: M.BOX_W - x; Y = lambda y: M.BOX_H - y          # seen from the BACK (lid off)
+    for ax, (title, cols, names) in zip(axs, PANELS):
+        ax.set_aspect("equal"); ax.axis("off")
+        ax.add_patch(FancyBboxPatch((0, 0), M.BOX_W, M.BOX_H, boxstyle="round,pad=0,rounding_size=4", fill=False, lw=1.5))
+        for n, bx_, by_, w, h, z0, z1, col in M.boxes():
+            if n in ("screen glass", "speaker ears", "screen back parts", "speaker foam pad", "USB-C"): continue
+            ax.add_patch(Rectangle((X(bx_) - w / 2, Y(by_) - h / 2), w, h, fc="#eceff1", ec="#90a4ae", lw=0.7, zorder=1))
+            ax.text(X(bx_), Y(by_ - h / 2) - 1.2, n.replace(" button board", "").replace(" board", ""), ha="center", va="top", fontsize=6.5, color="#546e7a", zorder=2)
+        ax.add_patch(Circle((X(M.spk_c[0]), Y(M.spk_c[1])), M.SPK_D / 2, fc="#eceff1", ec="#90a4ae", lw=0.7, zorder=1))
+        ax.text(X(M.spk_c[0]), Y(M.spk_c[1]), "speaker", ha="center", va="center", fontsize=6.5, color="#546e7a", zorder=2)
+        ax.add_patch(Rectangle((X(hubx) - M.HUB[0] / 2, Y(huby) - M.HUB[1] / 2), *M.HUB[:2], fc="#fff8e1", ec="#9e8a5a", lw=1.2, zorder=3))
+        ax.text(X(hubx), Y(huby), "HUB\n3V3 GND\nSDA SCL", ha="center", va="center", fontsize=6.5, weight="bold", zorder=3)
+        ax.add_patch(Rectangle((X(hx) - 8, Y(hy) - 2.6), 16, 5.2, fc="#fdd835", ec="k", lw=0.8, zorder=3))
+        n_b = len(names); notes = []
+        for i, name in enumerate(names):
+            b = byname[name]; col = cols[i]
+            o = (i - (n_b - 1) / 2) * 3.0                              # every cable gets its own lane, 3 mm apart
+            ox = -o if b[2][0][4] == "HUB_B" else o                    # under the hub the lanes fan the other way, so nothing crosses
+            paths = []
+            for w in b[2]:
+                pth = length(b, w)[1]
+                if pth not in paths: paths.append(pth)
+            for pth in paths:
+                ax.plot([X(q[0]) + ox for q in pth], [Y(q[1]) + o for q in pth], color=col, lw=3.0, zorder=5, solid_capstyle="round", solid_joinstyle="round")
+                for q in (pth[0], pth[-1]): ax.add_patch(Circle((X(q[0]) + ox, Y(q[1]) + o), 1.3, fc="white", ec=col, lw=1.6, zorder=6))
+            pth = paths[0]; k = max(range(len(pth) - 1), key=lambda j: math.dist(pth[j][:2], pth[j + 1][:2]))
+            mx, my = (X(pth[k][0]) + X(pth[k + 1][0])) / 2 + ox, (Y(pth[k][1]) + Y(pth[k + 1][1])) / 2 + o
+            ids = b[2][0][0] + ("-" + b[2][-1][0] if len(b[2]) > 1 else "")
+            ax.text(mx, my, f"{i + 1}", fontsize=7.5, color="white", weight="bold", ha="center", va="center", zorder=8,
+                    bbox=dict(boxstyle="circle,pad=0.25", fc=col, ec="white", lw=0.8))
+            ends = sorted({(w[4], w[5]) for w in b[2]})
+            sig = ", ".join(w[1].split(" >")[0] if ">" in w[1] else w[1] for w in b[2])
+            notes.append((col, f"{i + 1}  {ids}  ({len(b[2])} wire{'s' if len(b[2]) > 1 else ''})  " + "; ".join(f"{SHORT[a]} > {SHORT[c]}" for a, c in ends) + f"\n     {sig}"))
+        ax.set_xlim(-4, M.BOX_W + 4); ax.set_ylim(-62, M.BOX_H + 10)
+        ax.text(M.BOX_W / 2, M.BOX_H + 5, title, ha="center", fontsize=11, weight="bold")
+        for j, (col, t) in enumerate(notes):
+            ax.text(-2, -6 - j * 7.8, t, fontsize=7, color="#222", va="top", family="monospace")
+            ax.add_patch(Rectangle((-4, -6 - j * 7.8 - 2.6), 1.4, 2.6, fc=col, ec="none"))
+    fig.suptitle("SomudTick box (layout 2): wires seen from the BACK, lid off (left and right are swapped compared with the front)\n"
+                 "one thick line = one cable (2-7 wires together); the circled number matches the list under each panel; cut lengths are in cut_list.md",
+                 fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.95)); fig.savefig(outpath, dpi=100); plt.close(fig)
+
 if __name__ == "__main__":
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out_box2")
-    tot = cut_list(os.path.join(out, "cut_list.md")); drawing(os.path.join(out, "wiring_box.png"))
+    tot = cut_list(os.path.join(out, "cut_list.md")); drawing(os.path.join(out, "wiring_detail.png")); drawing_easy(os.path.join(out, "wiring_box.png"))
     for w in wires3d: w["a"], w["b"] = NAMES[w["a"]], NAMES[w["b"]]
     json.dump(dict(wires=sorted(wires3d, key=lambda w: int(w["id"][1:])), joints=[dict(j=j, t=tx) for j, _, tx in J]), open(os.path.join(out, "box_wires.json"), "w", encoding="utf-8"), ensure_ascii=False)
     for r in rows: print(f"  {r[0]:4s} {NAMES[r[1]]:>18s} -> {NAMES[r[2]]:18s} {r[3]:22s} {r[4]} AWG  cut {r[5]:4d} mm (path {r[6]})")
