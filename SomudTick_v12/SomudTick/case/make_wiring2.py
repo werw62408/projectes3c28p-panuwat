@@ -63,7 +63,7 @@ for i, (n, net) in enumerate((("3V", "3V3"), ("G", "GND"), ("X", "IO2"), ("Y", "
     ax.plot(164, py, "o", ms=5.5, mfc="#e0e0e0", mec="#777", zorder=5); ax.text(162.4, py, n, color="white", fontsize=9, va="center", ha="right", weight="bold")
     tag(164, py, net, left=False)
 
-board(78, 38, 30, "OLED 1.3\"  SH1106", [("GND", "GND"), ("VCC", "3V3"), ("SCL", "SCL"), ("SDA", "SDA")], "L", "128x64, 0x3C. Check GND / VCC order!", h=24)
+board(78, 38, 30, "OLED 1.3\"  SH1106", [("GND", "GND"), ("VCC", "3V3"), ("SCL", "SCL"), ("SDA", "SDA")], "L", "DST-013, 128x64, 0x3C. Pins: GND VDD SCK SDA", h=24)
 board(66, 11.5, 30, "DS3231 clock", [("SCL", "SCL"), ("SDA", "SDA"), ("VCC", "3V3"), ("GND", "GND")], "L", "(already fitted)", h=24) if False else None
 board(120, 30, 24, "DS3231 clock", [("SCL", "SCL"), ("SDA", "SDA"), ("VCC", "3V3"), ("GND", "GND")], "L", "already fitted", h=24)
 board(152, 30, 22, "KY-005 IR LED", [("S", "IO21"), ("middle", "3V3"), ("-", "GND")], "L", "sends (air con)", h=20)

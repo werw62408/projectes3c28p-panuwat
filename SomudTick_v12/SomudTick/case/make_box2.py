@@ -29,7 +29,7 @@ BODY_D = BOX_D - LID                        # the body alone (face + walls)
 
 # ============================== parts (measured, or the maker's usual size) ==============================
 # 1.3" OLED I2C (SH1106 128x64): usual module 35.4 x 33.5, 4 x M2 holes 30.4 x 28.4, pins along the top edge
-OLED = dict(w=35.5, h=33.5, t=3.7, win_w=31.0, win_h=16.5, win_dy=1.5)   # measured 35.5 x 33.5 x 3.7 (2 Oct); window size / place still MEASURE (win_dy: window below the module centre)
+OLED = dict(w=35.5, h=33.5, t=3.7, win_w=31.0, win_h=16.5, win_dy=-1.9)   # DST-013 module, measured 35.5 x 33.5 x 3.7; from the photo the glass (34.7 x 18.4) sits 1.9 mm ABOVE the board centre, pins GND VDD SCK SDA on the top edge
 SCR = dict(w=86.0, h=50.0, glass_w=69.2, glass_h=50.0, vis_w=59.45, vis_h=45.2, vis_off=3.07,
            pcb_front=4.5, pcb_t=1.5, back=10.0, standoff=5.0, hole_dx=78.0, hole_dy=42.0, usb_out=3.0, usb_z=7.4)
 NA = dict(w=87.0, h=53.0, pcb_t=1.5, joy=(18.5, 30.9), knob_d=20.0, joy_total=30.0, btn_top=14.0, small_top=5.0,
