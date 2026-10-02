@@ -1,0 +1,757 @@
+<title>Hookline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one column like the device: the 1.3" OLED strip, the 320x240 world view, then the stats sheet and how-to. */
+:root {
+  --bg: #c4ccc8;        /* dull field-kit grey */
+  --panel: #dcdfda;
+  --line: #8fa39b;
+  --ink: #232a33;
+  --mute: #56636a;
+  --brass: #b9a26a;     /* the robot's brass: the one accent */
+  --moss: #4f6b4a;
+  --f-pix: "Silkscreen", "VT323", ui-monospace, monospace;
+  --f-term: "VT323", "IBM Plex Mono", ui-monospace, monospace;
+  --f-body: "IBM Plex Mono", ui-monospace, "Courier New", monospace;
+  color-scheme: light;
+}
+html, body { background: var(--bg); color: var(--ink); }
+body { font-family: var(--f-body); font-size: 14px; line-height: 1.5; margin: 0; padding-inline: 16px; padding-block: 16px 32px; }
+.wrap { max-width: 760px; margin: 0 auto; display: grid; gap: 12px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+h1 { font-family: var(--f-pix); font-weight: 700; font-size: clamp(24px, 5vw, 34px); letter-spacing: .03em; margin: 0; text-wrap: balance; }
+h1 span { color: #8e7a4c; }
+.sub { font-family: var(--f-term); font-size: 18px; color: var(--mute); }
+.oledrow { display: flex; align-items: center; gap: 12px; }
+.oled { width: min(256px, 60%); max-width: 100%; aspect-ratio: 2 / 1; image-rendering: pixelated; background: #000; border: 2px solid var(--ink); border-radius: 3px; display: block; }
+.oledrow span { font-family: var(--f-term); font-size: 17px; color: var(--mute); line-height: 1.2; }
+.screen { width: 100%; max-width: 100%; aspect-ratio: 4 / 3; background: #000; border: 2px solid var(--ink); border-radius: 4px; overflow: hidden; }
+#cv { width: 100%; height: 100%; display: block; image-rendering: pixelated; touch-action: none; -webkit-user-select: none; user-select: none; }
+#cv:focus-visible { outline: 3px solid var(--brass); outline-offset: -3px; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.bar .grow { flex: 1 1 auto; }
+button { font-family: var(--f-pix); font-size: 12px; color: var(--ink); background: var(--panel); border: 2px solid var(--ink); border-radius: 3px; padding: 6px 10px; min-height: 38px; cursor: pointer; box-shadow: 0 2px 0 var(--ink); }
+button:active { transform: translateY(2px); box-shadow: none; }
+button:focus-visible { outline: 3px solid var(--brass); outline-offset: 1px; }
+button.warn { color: #7a2a1a; }
+.cards { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+@media (max-width: 640px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 2px solid var(--ink); border-radius: 4px; padding: 12px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.label { font-family: var(--f-pix); font-size: 11px; letter-spacing: .1em; color: #3f6b52; }
+.stat { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 0 8px; align-items: center; }
+.stat i img { width: 14px; height: 14px; image-rendering: pixelated; }
+.stat i { font-style: normal; font-family: var(--f-pix); font-size: 11px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 3px; color: #f4f1e8; background: var(--c); }
+.stat b { font-family: var(--f-pix); font-size: 11px; font-weight: 400; }
+.stat small { display: block; font-size: 11.5px; color: var(--mute); line-height: 1.3; }
+.stat em { font-style: normal; font-family: var(--f-term); font-size: 20px; }
+ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.keys { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 10px; font-size: 12.5px; color: var(--mute); }
+.keys kbd { font-family: var(--f-term); font-size: 15px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 2px; padding: 0 6px; white-space: nowrap; }
+footer { color: var(--mute); font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>HOOK<span>LINE</span></h1>
+    <div class="sub">Zone-taking hook robot · SomudTick prototype · 320×240</div>
+  </header>
+  <div class="oledrow"><canvas class="oled" id="oled" width="128" height="64" aria-label="Small 1.3 inch OLED screen"></canvas><span>1.3" OLED<br>128×64</span></div>
+  <div class="screen"><canvas id="cv" tabindex="0" aria-label="Top-down world: your robot in the middle, its hooks fire at enemies inside the dashed ring by themselves."></canvas></div>
+  <div class="bar"><button id="bPause" data-act="pause">Pause</button><span class="grow"></span><button class="warn" data-act="reset" id="bReset">Reset world</button></div>
+  <div class="cards">
+    <section class="card"><div class="label">ROBOT</div><div id="stats"></div></section>
+    <section class="card"><div class="label">HOW TO PLAY</div>
+      <ol>
+        <li>Walk. Your hooks lock on to the closest enemy inside the ring and strike by themselves. Hooks cannot pass rock walls.</li>
+        <li>Every kill makes one stat grow. The icon over an enemy shows which one.</li>
+        <li>Clear a zone, then stand in it until the ring fills: the zone is yours. You heal fast there, and you come back there if you fall.</li>
+        <li>Big zone numbers are harder. Bosses give one more hook (up to 4).</li>
+      </ol>
+      <div class="keys"><kbd>WASD · arrows</kbd><span>walk (the stick on the board)</span><kbd>drag on the screen</kbd><span>walk on a phone</span><kbd>P · Esc</kbd><span>pause</span></div>
+    </section>
+  </div>
+  <footer>Progress is kept in this browser only. The yellow arrow points to the easiest zone you have not taken yet.</footer>
+</div>
+
+<script>
+(() => {
+"use strict";
+const W = 320, H = 240, S = 3, DT = 1 / 60, TAU = Math.PI * 2;
+const T = 16, ZW = 16, ZH = 12, NZX = 5, NZY = 5, MW = ZW * NZX, MH = ZH * NZY, WPX = MW * T, HPX = MH * T;
+const WALLH = 10;                          // how tall the rock walls stand (pixels)
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const r3 = (v) => Math.round(v * S) / S;
+function rng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const K = "#1e2328";
+
+// ======================= stats =======================
+const STAT = {
+  atk:   { n: "ATTACK",    s: "ATK", c: "#a5574a", d: "damage per hook hit" },
+  aspd:  { n: "HOOK SPEED", s: "SPD", c: "#7d6a9a", d: "hook throws per second" },
+  hp:    { n: "MAX HP",    s: "HP",  c: "#6f8f5f", d: "how much you can take" },
+  regen: { n: "REGEN",     s: "REG", c: "#4f8a86", d: "HP back per second" },
+  run:   { n: "RUN",       s: "RUN", c: "#a08a4a", d: "walking speed" },
+};
+const BASE = { atk: 6, aspd: 1.0, hp: 60, regen: 1, run: 52 };
+function reward(stat, lv) {
+  switch (stat) {
+    case "atk": return 0.6 + 0.12 * lv;
+    case "aspd": return 0.02 + 0.002 * lv;
+    case "hp": return 3 + 0.6 * lv;
+    case "regen": return 0.1 + 0.02 * lv;
+    case "run": return 0.8 + 0.04 * lv;
+  }
+}
+const CAP = { aspd: 4, run: 110 };
+const EN = {
+  sword:  { n: "BLADE",  give: "atk",   hp: 1.0, dmg: 1.2, spd: 1.0, body: "#8a4a42", hat: "#6b6b66" },
+  dagger: { n: "QUICK",  give: "aspd",  hp: 0.8, dmg: 0.9, spd: 1.2, body: "#5f5274", hat: "#4a4058" },
+  brute:  { n: "BRUTE",  give: "hp",    hp: 1.8, dmg: 1.0, spd: 0.75, body: "#6a6f64", hat: "#53584e", big: true },
+  shaman: { n: "SHAMAN", give: "regen", hp: 0.9, dmg: 1.0, spd: 0.9, body: "#4d6f62", hat: "#3c5a4f", ranged: true },
+  runner: { n: "RUNNER", give: "run",   hp: 0.7, dmg: 0.8, spd: 1.7, body: "#9a8448", hat: "#7a6a3c" },
+};
+const TYPES = Object.keys(EN);
+const TUNE = { hp0: 14, dmg0: 3, spd0: 30, hpL: 0.4, dmgL: 0.25, boss: 30, lvD: 2.2 };
+
+// ======================= the world (the same every time) =======================
+const tile = new Uint8Array(MW * MH);      // 0 grass, 1 dirt, 2 water, 3 rock wall, 4 tree
+const at = (tx, ty) => (tx < 0 || ty < 0 || tx >= MW || ty >= MH) ? 3 : tile[ty * MW + tx];
+const set = (tx, ty, v) => { if (tx > 0 && ty > 0 && tx < MW - 1 && ty < MH - 1) tile[ty * MW + tx] = v; };
+const ZONES = [], GATES = [];   // GATES: [tile x, tile y, zone a, zone b]
+function genWorld() {
+  const r = rng(424242);
+  tile.fill(0);
+  for (let x = 0; x < MW; x++) { tile[x] = 3; tile[(MH - 1) * MW + x] = 3; }
+  for (let y = 0; y < MH; y++) { tile[y * MW] = 3; tile[y * MW + MW - 1] = 3; }
+  for (let k = 1; k < NZX; k++) for (let y = 0; y < MH; y++) tile[y * MW + k * ZW] = 3;
+  for (let k = 1; k < NZY; k++) for (let x = 0; x < MW; x++) tile[k * ZH * MW + x] = 3;
+  const gates = GATES;
+  // gates: 3-tile gaps between neighbouring zones (some borders get two)
+  for (let zy = 0; zy < NZY; zy++) for (let zx = 0; zx < NZX - 1; zx++) {
+    const n = r() < 0.3 ? 2 : 1;
+    for (let g = 0; g < n; g++) { const gy = zy * ZH + 2 + Math.floor(r() * (ZH - 6)) + (n === 2 ? (g ? 2 : -1) : 0); const gx = (zx + 1) * ZW; for (let d = 0; d < 3; d++) tile[(gy + d) * MW + gx] = 1; gates.push([gx, gy + 1, zy * NZX + zx, zy * NZX + zx + 1]); }
+  }
+  for (let zy = 0; zy < NZY - 1; zy++) for (let zx = 0; zx < NZX; zx++) {
+    const gx = zx * ZW + 3 + Math.floor(r() * (ZW - 7)), gy = (zy + 1) * ZH;
+    for (let d = 0; d < 3; d++) tile[gy * MW + gx + d] = 1; gates.push([gx + 1, gy, zy * NZX + zx, (zy + 1) * NZX + zx]);
+  }
+  for (let zy = 0; zy < NZY; zy++) for (let zx = 0; zx < NZX; zx++) {
+    const d = zx + (NZY - 1 - zy);
+    const lv = d === 0 ? 1 : Math.round(1 + d * TUNE.lvD + r() * 1.5);
+    const cx = zx * ZW + ZW / 2, cy = zy * ZH + ZH / 2;
+    const theme = [TYPES[Math.floor(r() * 5)], TYPES[Math.floor(r() * 5)]];
+    ZONES.push({ i: zy * NZX + zx, zx, zy, d, lv, cx, cy, boss: false, theme, captured: false, cap: 0, bossDead: false });
+  }
+  // dirt paths from each zone centre to its gates (2 wide); nothing solid is ever put on them
+  const path = new Uint8Array(MW * MH);
+  const dig = (x, y) => { for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) { const X = x + a, Y = y + b; if (at(X, Y) !== 3 || path[Y * MW + X]) { if (X > 0 && Y > 0 && X < MW - 1 && Y < MH - 1 && !isBorder(X, Y)) { tile[Y * MW + X] = 1; path[Y * MW + X] = 1; } } } };
+  function isBorder(X, Y) { return X % ZW === 0 || Y % ZH === 0; }
+  for (const [gx, gy, a, b] of gates) for (const zi of [a, b]) {
+    const z = ZONES[zi]; let x = Math.floor(z.cx), y = Math.floor(z.cy);
+    while (x !== gx) { dig(x, y); x += Math.sign(gx - x); }
+    while (y !== gy) { dig(x, y); y += Math.sign(gy - y); }
+    path[gy * MW + gx] = 1;
+  }
+  for (const [gx, gy] of gates) for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) { const X = gx + a, Y = gy + b; if (X >= 0 && Y >= 0 && X < MW && Y < MH) path[Y * MW + X] = 1; }
+  const free = (X, Y) => tile[Y * MW + X] === 0 && !path[Y * MW + X] && !isBorder(X, Y) && X > 0 && Y > 0 && X < MW - 1 && Y < MH - 1;
+  for (const z of ZONES) {
+    const x0 = z.zx * ZW + 1, y0 = z.zy * ZH + 1;
+    const near = (X, Y) => Math.abs(X - z.cx) < 3 && Math.abs(Y - z.cy) < 3;
+    if (z.d > 0 && r() < 0.45) {          // a pond
+      const px = x0 + 2 + Math.floor(r() * (ZW - 6)), py = y0 + 2 + Math.floor(r() * (ZH - 6)), rx = 1.5 + r() * 1.5, ry = 1.2 + r();
+      for (let Y = py - 3; Y <= py + 3; Y++) for (let X = px - 4; X <= px + 4; X++) if (((X - px) / rx) ** 2 + ((Y - py) / ry) ** 2 <= 1 && free(X, Y) && !near(X, Y)) tile[Y * MW + X] = 2;
+    }
+    const rocks = z.d === 0 ? 1 : 2 + Math.floor(r() * 3);
+    for (let k = 0; k < rocks; k++) {     // rock outcrops (they block hooks too)
+      const px = x0 + 1 + Math.floor(r() * (ZW - 4)), py = y0 + 1 + Math.floor(r() * (ZH - 4)), w = 1 + Math.floor(r() * 3), h = 1 + Math.floor(r() * 2);
+      for (let Y = py; Y < py + h; Y++) for (let X = px; X < px + w; X++) if (free(X, Y) && !near(X, Y)) tile[Y * MW + X] = 3;
+    }
+    for (let k = 0; k < 9; k++) { const X = x0 + Math.floor(r() * (ZW - 1)), Y = y0 + Math.floor(r() * (ZH - 1)); if (free(X, Y) && !near(X, Y)) tile[Y * MW + X] = 4; }
+  }
+  // bosses: one at distance 3, 5 and 8 (the far corner): each gives a hook
+  for (const d of [3, 5, 8]) { const c = ZONES.filter((z) => z.d === d); c.sort((a, b) => b.lv - a.lv); c[0].boss = true; c[0].lv += d === 8 ? 4 : 2; }
+}
+
+// ======================= sprites =======================
+function mk(w, h, fn) { const c = document.createElement("canvas"); c.width = w; c.height = h; const x = c.getContext("2d"); fn((col, X, Y, ww = 1, hh = 1) => { x.fillStyle = col; x.fillRect(X, Y, ww, hh); }, x); return c; }
+function flipped(c) { return mk(c.width, c.height, (p, x) => { x.translate(c.width, 0); x.scale(-1, 1); x.drawImage(c, 0, 0); }); }
+function whiteOf(c) { return mk(c.width, c.height, (p, x) => { x.drawImage(c, 0, 0); x.globalCompositeOperation = "source-in"; x.fillStyle = "#f4f1e8"; x.fillRect(0, 0, c.width, c.height); }); }
+function robot(f, blink) {
+  return mk(16, 17, (p) => {
+    const b = f ? 1 : 0;
+    p(K, 7, 0 + b, 1, 3); p("#c8705e", 6, 0 + b, 3, 1);                                    // antenna
+    p(K, 3, 3 + b, 10, 10); p(K, 2, 5 + b, 12, 6);                                           // dome body
+    p("#b9a26a", 3, 4 + b, 10, 8); p("#b9a26a", 3, 5 + b, 10, 6); p("#d6c48e", 4, 4 + b, 5, 1); p("#8e7a4c", 10, 6 + b, 2, 6);
+    p(K, 4, 6 + b, 7, 4); p("#26323a", 5, 6 + b, 5, 3);                                       // visor
+    if (!blink) { p("#8fd0c2", 5, 7 + b, 1, 1); p("#8fd0c2", 8, 7 + b, 1, 1); } else { p("#8fd0c2", 5, 8 + b, 2, 1); p("#8fd0c2", 8, 8 + b, 2, 1); }
+    p(K, 12, 6 + b, 4, 5); p("#7d7f7a", 13, 7 + b, 2, 3); p("#c9c4b4", 15, 8 + b, 1, 1);    // hook launcher on the back
+    p(K, 2, 13, 12, 4); p("#3e4246", 3, 14, 10, 2); for (let i = 0; i < 5; i++) p("#6a6e70", 3 + i * 2 + (f ? 1 : 0), 14, 1, 1);   // treads
+  });
+}
+function grunt(type, f) {
+  const e = EN[type], lp = [0, 1, 0, -1][f];
+  return mk(14, 17, (p) => {
+    p(K, 4, 0, 6, 6); p("#c2a283", 5, 1, 4, 4); p(e.hat, 4, 0, 6, 2); p(K, 5, 3, 1, 1); p(K, 8, 3, 1, 1);   // head + hat
+    p(K, 3, 6, 8, 7); p(e.body, 4, 6, 6, 6); p("rgba(255,255,255,.12)", 4, 6, 6, 1);
+    p(K, 4 + lp, 13, 2, 4); p(K, 8 - lp, 13, 2, 4);
+    switch (type) {
+      case "sword": p("#c9c4b4", 11, 3, 1, 8); p(K, 10, 9, 3, 1); break;
+      case "dagger": p("#c9c4b4", 11, 8, 1, 4); p("#c9c4b4", 2, 8, 1, 4); break;
+      case "brute": p(K, 0, 6, 4, 7); p("#7d7f7a", 1, 7, 2, 5); p("#a5574a", 1, 9, 2, 1); break;
+      case "shaman": p("#7a5a3a", 11, 1, 1, 12); p("#8fd0c2", 10, 0, 3, 2); break;
+      case "runner": p("#c9c4b4", 11, 7, 2, 1); p(e.hat, 2, 10, 2, 2); break;
+    }
+  });
+}
+function golem(f) {
+  return mk(30, 30, (p) => {
+    const lp = f % 2;
+    p(K, 5, 2, 20, 20); p(K, 2, 8, 26, 12);
+    p("#7d7f7a", 6, 3, 18, 18); p("#7d7f7a", 3, 9, 24, 10); p("#9a9b94", 6, 3, 18, 2); p("#5f615c", 18, 6, 6, 14);
+    p("#5f615c", 10, 8, 1, 6); p("#5f615c", 15, 12, 4, 1); p("#5f615c", 8, 16, 3, 1);
+    p(K, 10, 6, 10, 4); p("#d0805a", 11, 7, 3, 2); p("#d0805a", 16, 7, 3, 2);                 // eyes
+    p(K, 12, 12, 6, 6); p("#d0805a", 13, 13, 4, 4); p("#f0b88a", 14, 14, 2, 2);               // glowing core
+    p(K, 7 + lp, 22, 6, 8); p(K, 17 - lp, 22, 6, 8); p("#6a6c66", 8 + lp, 22, 4, 7); p("#6a6c66", 18 - lp, 22, 4, 7);
+  });
+}
+const SPR = { robot: [], robotL: [], en: {}, enL: {}, enW: {}, golem: [], golemW: [] };
+function buildSprites() {
+  for (let f = 0; f < 2; f++) { SPR.robot[f] = robot(f, false); SPR.robotL[f] = flipped(SPR.robot[f]); }
+  SPR.blink = robot(0, true); SPR.blinkL = flipped(SPR.blink);
+  for (const t of TYPES) { SPR.en[t] = [0, 1, 2, 3].map((f) => grunt(t, f)); SPR.enL[t] = SPR.en[t].map(flipped); SPR.enW[t] = SPR.en[t].map(whiteOf); }
+  SPR.golem = [0, 1].map(golem); SPR.golemW = SPR.golem.map(whiteOf);
+}
+// stat icons, 7x7
+const ICON = {
+  atk: mk(7, 7, (p) => { p("#e8e2d0", 5, 0, 2, 1); p("#e8e2d0", 4, 1, 2, 1); p("#e8e2d0", 3, 2, 2, 1); p("#e8e2d0", 2, 3, 2, 1); p("#e8e2d0", 1, 4, 1, 1); p("#e8e2d0", 0, 5, 2, 2); p("#e8e2d0", 1, 2, 1, 1); p("#e8e2d0", 4, 5, 1, 1); }),
+  aspd: mk(7, 7, (p) => { p("#e8e2d0", 3, 0, 3, 1); p("#e8e2d0", 2, 1, 3, 1); p("#e8e2d0", 1, 2, 5, 1); p("#e8e2d0", 3, 3, 3, 1); p("#e8e2d0", 2, 4, 2, 1); p("#e8e2d0", 1, 5, 2, 1); p("#e8e2d0", 0, 6, 2, 1); }),
+  hp: mk(7, 7, (p) => { p("#e8e2d0", 1, 0, 2, 1); p("#e8e2d0", 4, 0, 2, 1); p("#e8e2d0", 0, 1, 7, 2); p("#e8e2d0", 1, 3, 5, 1); p("#e8e2d0", 2, 4, 3, 1); p("#e8e2d0", 3, 5, 1, 1); }),
+  regen: mk(7, 7, (p) => { p("#e8e2d0", 2, 0, 3, 7); p("#e8e2d0", 0, 2, 7, 3); }),
+  run: mk(7, 7, (p) => { p("#e8e2d0", 2, 0, 3, 3); p("#e8e2d0", 1, 3, 4, 2); p("#e8e2d0", 0, 5, 3, 1); p("#e8e2d0", 4, 5, 3, 2); }),
+};
+
+// ======================= the ground (drawn once) =======================
+let floorC, overC;
+const GRASS = ["#4f6b4a", "#4b6646", "#53704d", "#486243"];
+function zoneOf(px, py) { const zx = clamp(Math.floor(px / (ZW * T)), 0, NZX - 1), zy = clamp(Math.floor(py / (ZH * T)), 0, NZY - 1); return ZONES[zy * NZX + zx]; }
+function paintTile(p, x, tx, ty, r) {
+  const v = at(tx, ty), X = tx * T, Y = ty * T, z = zoneOf(X + 8, Y + 8), cap = z && z.captured;
+  const g = GRASS[(tx * 7 + ty * 13) % 4];
+  p(cap ? mixc(g, "#5f8a86", 0.22) : g, X, Y, T, T);
+  for (let k = 0; k < 6; k++) p(r() < 0.5 ? "rgba(0,0,0,.10)" : "rgba(255,255,230,.06)", X + Math.floor(r() * 15), Y + Math.floor(r() * 15), 1 + Math.floor(r() * 2), 1);
+  if (v === 1) { p("#7a6650", X, Y, T, T); for (let k = 0; k < 7; k++) p(r() < 0.5 ? "#6d5a46" : "#88745c", X + Math.floor(r() * 15), Y + Math.floor(r() * 15), 2, 1); }
+  if (v === 2) {
+    p("#4f6f86", X, Y, T, T); p("#45637a", X, Y + 10, T, 6);
+    if (at(tx, ty - 1) !== 2) { p("#34495a", X, Y, T, 3); }
+    if (r() < 0.6) p("#7b97a8", X + 3 + Math.floor(r() * 8), Y + 5 + Math.floor(r() * 6), 3, 1);
+  }
+  if (v === 3) {
+    if (at(tx, ty + 1) !== 3) {     // the front face of the block + its shadow on the ground
+      p("#6d6c66", X, Y + T - WALLH, T, WALLH); p("#5d5c57", X, Y + T - 2, T, 2);
+      for (let k = 0; k < 3; k++) p("#5d5c57", X + 3 + k * 5, Y + T - WALLH + 1, 1, WALLH - 3);
+      p("rgba(0,0,0,.28)", X, Y + T, T, 4); p("rgba(0,0,0,.12)", X, Y + T + 4, T, 2);
+    } else p("#6d6c66", X, Y, T, T);
+  }
+  if (v === 4) {                     // tree: shadow and trunk on the ground (the crown is drawn above everything)
+    p("rgba(0,0,0,.25)", X + 3, Y + 11, 12, 4); p("rgba(0,0,0,.15)", X + 5, Y + 15, 9, 1);
+    p(K, X + 6, Y + 6, 4, 9); p("#6d5236", X + 7, Y + 6, 2, 8);
+  }
+}
+function paintOver(p, x, tx, ty, r) {
+  const v = at(tx, ty), X = tx * T, Y = ty * T;
+  if (v === 3) {
+    const top = Y - WALLH;
+    p("#9c9b92", X, top, T, T);
+    for (let k = 0; k < 5; k++) p(r() < 0.5 ? "#8e8d85" : "#aaa99f", X + Math.floor(r() * 14), top + Math.floor(r() * 14), 2, 1);
+    if (at(tx, ty - 1) !== 3) p("#b9b8ad", X, top, T, 2);
+    if (at(tx - 1, ty) !== 3) p("#aeada3", X, top, 1, T);
+    if (at(tx + 1, ty) !== 3) p("#7f7e77", X + T - 1, top, 1, T);
+  }
+  if (v === 4) {
+    const cx = X + 8, cy = Y - 1;
+    x.fillStyle = K; x.beginPath(); x.arc(cx, cy, 8, 0, TAU); x.fill();
+    x.fillStyle = "#4d6b45"; x.beginPath(); x.arc(cx, cy, 7, 0, TAU); x.fill();
+    x.fillStyle = "#5c7b52"; x.beginPath(); x.arc(cx - 1.5, cy - 1.5, 5, 0, TAU); x.fill();
+    x.fillStyle = "#6f8d62"; x.beginPath(); x.arc(cx - 3, cy - 3, 2.2, 0, TAU); x.fill();
+    p("rgba(0,0,0,.18)", X + 9, Y + 1, 5, 3);
+  }
+}
+function mixc(a, b, t) { const q = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)); const A = q(a), B = q(b); return "#" + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, "0")).join(""); }
+function paintWorld() {
+  floorC = mk(WPX, HPX, (p, x) => { const r = rng(7); for (let ty = 0; ty < MH; ty++) for (let tx = 0; tx < MW; tx++) paintTile(p, x, tx, ty, r); });
+  overC = mk(WPX, HPX, (p, x) => { const r = rng(9); for (let ty = 0; ty < MH; ty++) for (let tx = 0; tx < MW; tx++) paintOver(p, x, tx, ty, r); });
+}
+function repaintZone(z) {   // after a capture: the zone's ground gets the cool tint
+  const x = floorC.getContext("2d"), p = (col, X, Y, w = 1, h = 1) => { x.fillStyle = col; x.fillRect(X, Y, w, h); }, r = rng(z.i * 31 + 7);
+  for (let ty = z.zy * ZH; ty < (z.zy + 1) * ZH + 1 && ty < MH; ty++) for (let tx = z.zx * ZW; tx < (z.zx + 1) * ZW + 1 && tx < MW; tx++) paintTile(p, x, tx, ty, r);
+}
+
+// ======================= game state =======================
+const SAVE = "hookline.v1";
+let P, enemies = [], hooks = [], bolts = [], says = [], parts = [], SIM = false;
+function freshP() { const z = ZONES[(NZY - 1) * NZX]; return { x: z.cx * T, y: z.cy * T, ox: 0, oy: 0, hp: BASE.hp, st: { ...BASE }, hooks: 1, resp: z.i, captured: [], bossDead: [], kills: 0, dir: 1, walk: 0, down: 0, hurtT: 0 }; }
+function load() {
+  P = freshP();
+  try { const o = JSON.parse(localStorage.getItem(SAVE) || "null"); if (o && o.st) { Object.assign(P, { st: Object.assign({ ...BASE }, o.st), hooks: o.hooks || 1, resp: o.resp ?? P.resp, captured: o.captured || [], bossDead: o.bossDead || [], kills: o.kills || 0 }); const z = ZONES[P.resp]; P.x = z.cx * T; P.y = z.cy * T; P.hp = P.st.hp; } } catch (e) {}
+  for (const z of ZONES) { z.captured = P.captured.includes(z.i); z.bossDead = P.bossDead.includes(z.i); z.cap = 0; }
+}
+function save() { if (SIM) return; try { localStorage.setItem(SAVE, JSON.stringify({ st: P.st, hooks: P.hooks, resp: P.resp, captured: P.captured, bossDead: P.bossDead, kills: P.kills })); } catch (e) {} }
+function spawnZone(z) {
+  if (z.captured) return;
+  const r = rng(z.i * 977 + 13 + Math.floor(Math.random() * 1000));
+  const n = z.d === 0 ? 4 : 3 + Math.floor(z.d * 0.6) + Math.floor(r() * 2);
+  for (let k = 0; k < n; k++) {
+    const type = r() < 0.6 ? z.theme[k % 2] : TYPES[Math.floor(r() * 5)];
+    const e = makeEnemy(type, z, false); placeIn(e, z, r); enemies.push(e);
+  }
+  if (z.boss && !z.bossDead) {   // the boss waits near the middle of its zone, on open ground
+    const e = makeEnemy("brute", z, true); let bx = z.cx * T + 30, by = z.cy * T - 20;
+    for (let k = 0; k < 60 && blocked(bx, by, 9); k++) { bx = z.cx * T + Math.cos(k) * (12 + k); by = z.cy * T + Math.sin(k) * (10 + k * 0.6); }
+    e.x = e.hx = e.ox = bx; e.y = e.hy = e.oy = by; enemies.push(e);
+  }
+}
+function makeEnemy(type, z, boss) {
+  const E = EN[type], lv = z.lv, hp = TUNE.hp0 * E.hp * (1 + TUNE.hpL * (lv - 1)) * (boss ? TUNE.boss : 1);
+  return { type, z: z.i, lv, boss, hp, max: hp, dps: TUNE.dmg0 * E.dmg * (1 + TUNE.dmgL * (lv - 1)) * (boss ? 2.5 : 1), spd: TUNE.spd0 * E.spd * (boss ? 0.7 : 1),
+           x: 0, y: 0, ox: 0, oy: 0, hx: 0, hy: 0, tx: 0, ty: 0, wt: 0, aggro: false, flash: 0, walk: Math.random() * 10, dir: 1, shoot: 1 + Math.random(), r: boss ? 11 : E.big ? 6 : 5, dead: false };
+}
+function placeIn(e, z, r) {
+  for (let k = 0; k < 40; k++) {
+    const x = (z.zx * ZW + 2 + r() * (ZW - 4)) * T, y = (z.zy * ZH + 2 + r() * (ZH - 4)) * T;
+    if (!solidAt(x, y) && Math.hypot(x - z.cx * T, y - z.cy * T) > 30) { e.x = e.hx = e.ox = x; e.y = e.hy = e.oy = y; return; }
+  }
+  e.x = e.hx = e.ox = z.cx * T + 20; e.y = e.hy = e.oy = z.cy * T;
+}
+function solidAt(x, y) { const v = at(Math.floor(x / T), Math.floor(y / T)); return v === 2 || v === 3 || (v === 4 && (() => { const cx = Math.floor(x / T) * T + 8, cy = Math.floor(y / T) * T + 11; return Math.hypot(x - cx, (y - cy) * 1.4) < 5; })()); }
+function blocked(x, y, r) {   // corners plus edge middles, so a round tree trunk cannot slip between the corners
+  const t = y - r * 0.6, b = y + r * 0.4;
+  return solidAt(x - r, t) || solidAt(x + r, t) || solidAt(x - r, b) || solidAt(x + r, b) || solidAt(x, t) || solidAt(x, b) || solidAt(x - r, y) || solidAt(x + r, y);
+}
+function move(o, dx, dy, r) {
+  if (blocked(o.x, o.y, r)) {   // already overlapping (spawned on a trunk): hop to the nearest free spot
+    for (let k = 1; k <= 16; k++) for (let j = 0; j < 8; j++) { const nx = o.x + Math.cos(j * TAU / 8) * k, ny = o.y + Math.sin(j * TAU / 8) * k; if (!blocked(nx, ny, r)) { o.x = nx; o.y = ny; return; } }
+    return;
+  }
+  const sx = o.x, sy = o.y;
+  if (!blocked(o.x + dx, o.y, r)) o.x += dx; if (!blocked(o.x, o.y + dy, r)) o.y += dy;
+  // corner help: if a push was stopped, slip sideways up to 4 px around the edge of a trunk or wall end
+  const v = Math.hypot(dx, dy);
+  if (o.x === sx && dx) for (let k = 1; k <= 4; k++) { if (!blocked(o.x + dx, o.y - k, r)) { o.y -= Math.min(v, k); break; } if (!blocked(o.x + dx, o.y + k, r)) { o.y += Math.min(v, k); break; } }
+  if (o.y === sy && dy) for (let k = 1; k <= 4; k++) { if (!blocked(o.x - k, o.y + dy, r)) { o.x -= Math.min(v, k); break; } if (!blocked(o.x + k, o.y + dy, r)) { o.x += Math.min(v, k); break; } }
+}
+function los(x0, y0, x1, y1) { const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 4); for (let i = 1; i < n; i++) { const t = i / n; if (at(Math.floor((x0 + (x1 - x0) * t) / T), Math.floor((y0 + (y1 - y0) * t) / T)) === 3) return false; } return true; }
+const RANGE = 74;
+function startWorld() {
+  enemies = []; hooks = []; bolts = []; says = []; parts = [];
+  for (const z of ZONES) spawnZone(z);
+  for (let k = 0; k < P.hooks; k++) hooks.push(newHook(k));
+}
+function newHook(k) { return { k, s: "home", x: P.x, y: P.y, cd: 0.2 * k, tgt: null }; }
+
+// ======================= one step (60 per second) =======================
+let input = { x: 0, y: 0 }, pt = 0;
+function step() {
+  pt += DT;
+  P.ox = P.x; P.oy = P.y; for (const e of enemies) { e.ox = e.x; e.oy = e.y; }
+  if (P.down > 0) { P.down -= DT; if (P.down <= 0) respawn(); return; }
+  // walking
+  let ix = input.x, iy = input.y; const m = Math.hypot(ix, iy); if (m > 1) { ix /= m; iy /= m; }
+  if (m > 0.05) { move(P, ix * P.st.run * DT, iy * P.st.run * DT, 5); P.walk += DT * 8 * Math.min(1, m); if (Math.abs(ix) > 0.1) P.dir = ix > 0 ? 1 : -1; }
+  const z = zoneOf(P.x, P.y);
+  P.hp = Math.min(P.st.hp, P.hp + P.st.regen * (z.captured ? 4 : 1) * DT);
+  if (P.hurtT > 0) P.hurtT -= DT;
+  // hooks: each one locks on to the closest enemy in the ring it can see, flies, hits, comes back
+  for (const h of hooks) {
+    if (h.s === "home") {
+      h.x = P.x; h.y = P.y - 6; h.cd -= DT;
+      if (h.cd <= 0) {
+        let best = null, bd = RANGE;
+        for (const e of enemies) { if (e.dead) continue; const d = Math.hypot(e.x - P.x, e.y - P.y); const taken = hooks.some((o) => o !== h && o.tgt === e) ? 18 : 0; if (d + taken < bd && los(P.x, P.y - 4, e.x, e.y - 4)) { bd = d + taken; best = e; } }
+        if (best) { h.s = "out"; h.tgt = best; } else h.cd = 0.05;
+      }
+    } else if (h.s === "out") {
+      const e = h.tgt; if (!e || e.dead) { h.s = "back"; continue; }
+      const tx = e.x, ty = e.y - (e.boss ? 12 : 6), d = Math.hypot(tx - h.x, ty - h.y), v = 230 * DT;
+      if (d <= v) { h.x = tx; h.y = ty; hit(e, P.st.atk); h.s = "back"; h.tgt = null; }
+      else { h.x += (tx - h.x) / d * v; h.y += (ty - h.y) / d * v; if (Math.hypot(h.x - P.x, h.y - P.y) > RANGE * 1.5) { h.s = "back"; h.tgt = null; } }
+    } else {
+      const tx = P.x, ty = P.y - 6, d = Math.hypot(tx - h.x, ty - h.y), v = 300 * DT;
+      if (d <= v) { h.s = "home"; h.cd = 1 / P.st.aspd; } else { h.x += (tx - h.x) / d * v; h.y += (ty - h.y) / d * v; }
+    }
+  }
+  // enemies
+  for (const e of enemies) {
+    if (e.dead) { e.resT -= DT; if (e.resT <= 0 && !ZONES[e.z].captured && Math.hypot(e.hx - P.x, e.hy - P.y) > 170) revive(e); continue; }
+    if (e.flash > 0) e.flash -= DT;
+    const E = EN[e.type], dx = P.x - e.x, dy = P.y - e.y, d = Math.hypot(dx, dy);
+    const homeD = Math.hypot(e.hx - e.x, e.hy - e.y);
+    if (!e.aggro && d < (e.boss ? 100 : 84) && los(e.x, e.y - 4, P.x, P.y - 4)) e.aggro = true;
+    if (e.aggro && (d > 150 || homeD > 140 || zoneOf(P.x, P.y).i !== e.z && homeD > 60)) e.aggro = false;
+    let mx = 0, my = 0;
+    if (e.aggro) {
+      if (E.ranged && !e.boss) {
+        if (d > 48) { mx = dx / d; my = dy / d; } else if (d < 36) { mx = -dx / d; my = -dy / d; }
+        e.shoot -= DT; if (e.shoot <= 0 && d < 90) { e.shoot = 2; bolts.push({ x: e.x, y: e.y - 6, vx: dx / d * 80, vy: dy / d * 80, t: 1.6, dmg: e.dps * 1.6 }); }
+      } else if (d > e.r + 5) { mx = dx / d; my = dy / d; }
+      else { P.hp -= e.dps * DT; P.hurtT = 0.15; if (P.hp <= 0) { knockOut(); return; } }
+    } else {
+      e.wt -= DT;
+      if (homeD > 6 && e.wt < 0) {   // walk home; heal only when nobody is hitting it; a stuck one pops back home
+        mx = (e.hx - e.x) / homeD; my = (e.hy - e.y) / homeD;
+        if (pt - (e.lastHit || -9) > 3 && e.hp < e.max) e.hp = Math.min(e.max, e.hp + e.max * 0.2 * DT);
+        if (Math.hypot(e.x - (e.px ?? e.x), e.y - (e.py ?? e.y)) < 0.05) e.stuck = (e.stuck || 0) + DT; else e.stuck = 0;
+        e.px = e.x; e.py = e.y;
+        if (e.stuck > 2 && d > 60) { e.x = e.ox = e.hx; e.y = e.oy = e.hy; e.stuck = 0; }
+      }
+      else if (e.wt < -2.5) { e.wt = 1 + Math.random() * 2; e.tx = (Math.random() - 0.5) * 40; e.ty = (Math.random() - 0.5) * 30; }
+      else if (e.wt > 0) { const tx = e.hx + e.tx - e.x, ty = e.hy + e.ty - e.y, td = Math.hypot(tx, ty); if (td > 2) { mx = tx / td * 0.4; my = ty / td * 0.4; } }
+    }
+    if (mx || my) { move(e, mx * e.spd * DT, my * e.spd * DT, e.r * 0.8); e.walk += DT * 6; if (Math.abs(mx) > 0.05) e.dir = mx > 0 ? 1 : -1; }
+  }
+  for (const b of bolts) { b.x += b.vx * DT; b.y += b.vy * DT; b.t -= DT; if (at(Math.floor(b.x / T), Math.floor(b.y / T)) === 3) b.t = 0; if (Math.hypot(b.x - P.x, b.y - (P.y - 6)) < 7) { P.hp -= b.dmg; P.hurtT = 0.15; b.t = 0; if (P.hp <= 0) { knockOut(); return; } } }
+  bolts = bolts.filter((b) => b.t > 0);
+  // taking a zone: no enemy of it alive (and its boss down), stand inside for 3 s
+  if (!z.captured) {
+    const alive = enemies.some((e) => !e.dead && e.z === z.i) || (z.boss && !z.bossDead);
+    if (!alive) { z.cap += DT / 3; if (z.cap >= 1) capture(z); } else z.cap = Math.max(0, z.cap - DT);
+  }
+}
+function hit(e, dmg) {
+  if (e.dead) return;
+  e.hp -= dmg; e.flash = 0.08; e.aggro = true; e.lastHit = pt;
+  if (!SIM) { say(e.x + (Math.random() - 0.5) * 10, e.y - (e.boss ? 38 : 24), String(Math.round(dmg)), "#e8e2d0", 0.45, true); for (let k = 0; k < 4; k++) parts.push({ x: e.x, y: e.y - 6, vx: (Math.random() - 0.5) * 50, vy: -Math.random() * 40, t: 0.3, c: "#c9c4b4" }); }
+  if (e.hp <= 0) kill(e);
+}
+function kill(e) {
+  e.dead = true; e.resT = 35; P.kills++;
+  const z = ZONES[e.z];
+  if (e.boss) {
+    z.bossDead = true; if (!P.bossDead.includes(z.i)) P.bossDead.push(z.i);
+    if (P.hooks < 4) { P.hooks++; hooks.push(newHook(hooks.length)); if (!SIM) say(P.x, P.y - 30, "+1 HOOK!", "#d6c48e", 2); }
+    for (const k of Object.keys(STAT)) addStat(k, reward(k, e.lv) * 3);
+    e.resT = 1e9;
+  } else {
+    const k = EN[e.type].give; addStat(k, reward(k, e.lv));
+    if (!SIM) say(e.x, e.y - 10, `+${fmt(k, reward(k, e.lv))} ${STAT[k].s}`, mixc(STAT[k].c, "#ffffff", 0.35), 1.1);
+  }
+  if (!SIM) for (let k = 0; k < (e.boss ? 30 : 10); k++) parts.push({ x: e.x, y: e.y - 6, vx: (Math.random() - 0.5) * 90, vy: -Math.random() * 70, t: 0.5, c: k % 2 ? EN[e.type].body : "#c2a283" });
+  if (!SIM) { ui(); save(); }
+}
+function addStat(k, v) { const old = P.st[k]; P.st[k] = CAP[k] ? Math.min(CAP[k], old + v) : old + v; if (k === "hp") P.hp += P.st.hp - old; }
+const fmt = (k, v) => k === "aspd" ? v.toFixed(2) : v < 10 ? v.toFixed(1) : Math.round(v);
+function revive(e) { const z = ZONES[e.z]; Object.assign(e, makeEnemy(e.type, z, e.boss)); placeIn(e, z, rng(Math.floor(Math.random() * 1e6))); }
+function capture(z) {
+  z.captured = true; z.cap = 1; if (!P.captured.includes(z.i)) P.captured.push(z.i); P.resp = z.i;
+  enemies = enemies.filter((e) => e.z !== z.i);
+  if (!SIM) { repaintZone(z); say(P.x, P.y - 34, "ZONE TAKEN", "#8fd0c2", 2); for (let k = 0; k < 24; k++) parts.push({ x: P.x, y: P.y - 6, vx: Math.cos(k / 24 * TAU) * 60, vy: Math.sin(k / 24 * TAU) * 40, t: 0.6, c: "#8fd0c2" }); ui(); save(); }
+}
+function knockOut() { P.hp = 0; P.down = 1.6; for (const h of hooks) { h.s = "home"; h.tgt = null; } P.deaths = (P.deaths || 0) + 1; }
+function respawn() {
+  const z = ZONES[P.resp]; P.x = P.ox = z.cx * T; P.y = P.oy = z.cy * T; P.hp = P.st.hp;
+  for (const e of enemies) if (!e.dead) { e.aggro = false; e.hp = e.max; e.x = e.ox = e.hx; e.y = e.oy = e.hy; }
+  bolts = [];
+}
+function guide() {   // the easiest zone not taken yet that touches a zone you hold (or the start)
+  let best = null;
+  for (const z of ZONES) {
+    if (z.captured) continue;
+    const touch = z.d === 0 || ZONES.some((o) => o.captured && Math.abs(o.zx - z.zx) + Math.abs(o.zy - z.zy) === 1);
+    if (!touch) continue;
+    if (!best || z.lv < best.lv) best = z;
+  }
+  return best;
+}
+
+// ======================= drawing =======================
+const cv = $("cv"); cv.width = W * S; cv.height = H * S;
+const g = cv.getContext("2d");
+let cam = { x: 0, y: 0 }, paused = false;
+function say(x, y, text, c, T2, small) { says.push({ x, y, text, c, t: T2, T: T2, small }); if (says.length > 10) says.splice(says.findIndex((n) => n.small) >= 0 ? says.findIndex((n) => n.small) : 0, 1); }
+const T8 = "8px Silkscreen, monospace", V12 = "12px VT323, monospace", V10 = "10px VT323, monospace", T16 = "16px Silkscreen, monospace";
+function txt(s, x, y, c, al = "left", font = T8) { g.font = font; g.textAlign = al; g.textBaseline = "alphabetic"; g.fillStyle = c; g.fillText(s, x, y); }
+function txtO(s, x, y, c, al, font) { for (const [dx, dy] of [[-0.67, 0], [0.67, 0], [0, -0.67], [0, 0.67]]) txt(s, x + dx, y + dy, K, al, font); txt(s, x, y, c, al, font); }
+function rect(x, y, w, h, c) { g.fillStyle = c; g.fillRect(x, y, w, h); }
+function barColor(e) {
+  const myDps = P.st.atk * P.st.aspd * P.hooks, ttkMe = e.hp / Math.max(0.1, myDps), ttkThem = P.hp / Math.max(0.1, e.dps);
+  const r = ttkMe / ttkThem; return r < 0.35 ? "#6f9a5f" : r < 1 ? "#c9a24a" : "#b4594a";
+}
+function draw(now, a) {
+  const t = now / 1000;
+  const px = P.ox + (P.x - P.ox) * a, py = P.oy + (P.y - P.oy) * a;
+  cam.x += (px - W / 2 - cam.x) * 0.18; cam.y += (py - H / 2 - 8 - cam.y) * 0.18;
+  cam.x = clamp(cam.x, 0, WPX - W); cam.y = clamp(cam.y, -WALLH, HPX - H);
+  const cx = r3(cam.x), cy = r3(cam.y);
+  g.setTransform(S, 0, 0, S, 0, 0); g.imageSmoothingEnabled = false;
+  rect(0, 0, W, H, "#1e2328");
+  g.save(); g.translate(-cx, -cy);
+  g.drawImage(floorC, Math.floor(cx), Math.max(0, Math.floor(cy)), W + 2, H + 2, Math.floor(cx), Math.max(0, Math.floor(cy)), W + 2, H + 2);
+  // zone numbers painted on the ground, faint
+  for (const z of ZONES) {
+    const zx = z.cx * T, zy = z.cy * T; if (zx < cx - 60 || zx > cx + W + 60 || zy < cy - 40 || zy > cy + H + 40) continue;
+    g.globalAlpha = z.captured ? 0.25 : 0.4; txt(z.captured ? "OK" : String(z.lv), zx, zy - 30, z.captured ? "#8fd0c2" : "#d6c48e", "center", T16); g.globalAlpha = 1;
+    if (z.boss && !z.bossDead) { g.globalAlpha = 0.45; txt("BOSS", zx, zy - 20, "#c8705e", "center", T8); g.globalAlpha = 1; }
+  }
+  // the hook ring
+  if (!P.down) { g.strokeStyle = "rgba(230,226,208,.28)"; g.lineWidth = 1 / S * 2; g.setLineDash([3, 3]); g.beginPath(); g.ellipse(px, py - 4, RANGE, RANGE, 0, 0, TAU); g.stroke(); g.setLineDash([]); }
+  // things, back to front
+  const things = [];
+  for (const e of enemies) if (!e.dead) { const ex = e.ox + (e.x - e.ox) * a, ey = e.oy + (e.y - e.oy) * a; if (ex > cx - 30 && ex < cx + W + 30 && ey > cy - 30 && ey < cy + H + 40) things.push({ y: ey, e, ex, ey }); }
+  things.push({ y: py, me: true });
+  things.sort((p, q) => p.y - q.y);
+  for (const th of things) {
+    if (th.me) { drawMe(px, py, t); continue; }
+    const e = th.e, ex = th.ex, ey = th.ey;
+    g.fillStyle = "rgba(0,0,0,.3)"; g.beginPath(); g.ellipse(r3(ex), r3(ey), e.r + 1, e.boss ? 5 : 2.5, 0, 0, TAU); g.fill();
+    if (e.boss) { const f = Math.floor(e.walk) % 2; g.drawImage(e.flash > 0 ? SPR.golemW[f] : SPR.golem[f], r3(ex - 15), r3(ey - 29)); }
+    else { const f = Math.floor(e.walk) % 4, sp = e.flash > 0 ? SPR.enW[e.type][f] : (e.dir < 0 ? SPR.enL[e.type][f] : SPR.en[e.type][f]); g.drawImage(sp, r3(ex - 7), r3(ey - 16)); }
+    const top = ey - (e.boss ? 33 : 20), w = e.boss ? 34 : 18;
+    rect(r3(ex - w / 2) - 0.34, r3(top) - 0.34, w + 0.67, 3.67, K); rect(r3(ex - w / 2), r3(top), w * clamp(e.hp / e.max, 0, 1), 3, barColor(e));
+    if (e.boss) txtO(String(Math.ceil(e.hp)), ex, top - 1.5, "#f4f1e8", "center", V10);
+    if (!e.boss) { const ic = ICON[EN[e.type].give]; rect(r3(ex + w / 2 + 1), r3(top - 3), 9, 9, STAT[EN[e.type].give].c); g.drawImage(ic, r3(ex + w / 2 + 2), r3(top - 2)); }
+  }
+  // hooks: a chain of links and the hook head
+  for (const h of hooks) {
+    if (h.s === "home") continue;
+    const sx = px + (P.dir < 0 ? -8 : 8), sy = py - 12, hx = h.x, hy = h.y, d = Math.hypot(hx - sx, hy - sy), n = Math.max(1, Math.floor(d / 2.5));
+    g.strokeStyle = "rgba(20,24,28,.55)"; g.lineWidth = 1.4; g.beginPath(); g.moveTo(sx, sy + 1); g.lineTo(hx, hy + 1); g.stroke();   // chain shadow
+    for (let i = 0; i <= n; i++) { const k = i / n, lx = sx + (hx - sx) * k, ly = sy + (hy - sy) * k - Math.sin(k * Math.PI) * (h.s === "back" ? 3 : 0); rect(r3(lx - 0.67), r3(ly - 0.67), 1.34, 1.34, i % 2 ? "#7c7d77" : "#c9c4b4"); }
+    const ang = Math.atan2(hy - sy, hx - sx);
+    g.save(); g.translate(r3(hx), r3(hy)); g.rotate(ang); g.scale(1.4, 1.4);
+    rect(-2.5, -1.5, 5, 3, K); rect(1, -3.5, 3, 7, K); rect(-2, -0.5, 4, 1, "#d8d3c4"); rect(2, -2.5, 1, 5, "#d8d3c4"); rect(2, -2.5, -1.5, 1, "#d8d3c4"); rect(2, 1.5, -1.5, 1, "#d8d3c4"); rect(2.5, -0.5, 1, 1, "#e8c070");
+    g.restore();
+    if (h.s === "out") { g.globalAlpha = 0.35; rect(r3(hx - Math.cos(ang) * 5 - 1), r3(hy - Math.sin(ang) * 5 - 1), 2, 2, "#e8e2d0"); g.globalAlpha = 1; }
+  }
+  for (const b of bolts) { rect(r3(b.x - 1.5), r3(b.y - 1.5), 3, 3, "#8fd0c2"); rect(r3(b.x - 0.5), r3(b.y - 0.5), 1, 1, "#f4f1e8"); }
+  // tree crowns and wall tops cover what stands behind them
+  g.drawImage(overC, Math.floor(cx), Math.max(0, Math.floor(cy)), W + 2, H + 14, Math.floor(cx), Math.max(0, Math.floor(cy)), W + 2, H + 14);
+  if (cy < 0) g.drawImage(overC, Math.floor(cx), 0, W + 2, 16, Math.floor(cx), 0, W + 2, 16);
+  parts.forEach((q) => { g.fillStyle = q.c; g.globalAlpha = clamp(q.t * 3, 0, 1); g.fillRect(r3(q.x), r3(q.y), 1, 1); }); g.globalAlpha = 1;
+  says.forEach((n) => { g.globalAlpha = clamp(n.t / n.T * 3, 0, 1); txtO(n.text, n.x, n.y - (1 - n.t / n.T) * 10, n.c, "center", n.small ? V10 : n.text.length > 6 ? T8 : V12); g.globalAlpha = 1; });
+  g.restore();
+  // soft light: darker at the edges
+  const v = g.createRadialGradient(W / 2, H / 2, 70, W / 2, H / 2, 200); v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(10,14,18,.45)"); g.fillStyle = v; g.fillRect(0, 0, W, H);
+  if (P.hurtT > 0) { g.fillStyle = `rgba(160,60,50,${P.hurtT})`; g.fillRect(0, 0, W, H); }
+  drawGuide(px, py, cx, cy);
+  drawHud(t);
+  if (paused) { rect(0, 0, W, H, "rgba(20,24,30,.55)"); txtO("PAUSED", W / 2, H / 2, "#f4f1e8", "center", T16); }
+  if (P.down > 0) { rect(0, 0, W, H, `rgba(20,24,30,${0.6 - P.down * 0.2})`); txtO("KNOCKED OUT", W / 2, H / 2 - 6, "#c8705e", "center", T16); txtO(`back at your zone LV ${ZONES[P.resp].lv}`, W / 2, H / 2 + 8, "#e8e2d0", "center", V12); }
+  drawStick();
+}
+function drawMe(px, py, t) {
+  const blink = (t * 10 % 41) < 1.5, f = Math.floor(P.walk) % 2;
+  g.fillStyle = "rgba(0,0,0,.32)"; g.beginPath(); g.ellipse(r3(px), r3(py), 7, 2.5, 0, 0, TAU); g.fill();
+  const sp = blink ? (P.dir < 0 ? SPR.blinkL : SPR.blink) : (P.dir < 0 ? SPR.robotL[f] : SPR.robot[f]);
+  if (P.down > 0) g.globalAlpha = 0.4;
+  g.drawImage(sp, r3(px - 8), r3(py - 16)); g.globalAlpha = 1;
+  // hooks waiting at home sit on the launcher
+  const home = hooks.filter((h) => h.s === "home").length;
+  for (let i = 0; i < home; i++) rect(r3(px + (P.dir < 0 ? -9 : 7)) + 0, r3(py - 13 + i * 2), 2, 1, "#c9c4b4");
+  const w = 26, top = py - 23;
+  rect(r3(px - w / 2) - 0.34, r3(top) - 0.34, w + 0.67, 3.67, K); rect(r3(px - w / 2), r3(top), w * clamp(P.hp / P.st.hp, 0, 1), 3, "#6f9a5f");
+  const z = zoneOf(P.x, P.y);
+  if (!z.captured && z.cap > 0) { g.strokeStyle = "#8fd0c2"; g.lineWidth = 1.5; g.beginPath(); g.arc(px, py - 8, 13, -Math.PI / 2, -Math.PI / 2 + TAU * z.cap); g.stroke(); }
+}
+function drawGuide(px, py, cx, cy) {
+  const z = guide(); if (!z || P.down > 0) return;
+  const tx = z.cx * T, ty = z.cy * T, d = Math.hypot(tx - px, ty - py); if (d < 40) return;
+  const ang = Math.atan2(ty - py, tx - px), R = 34, gx = px - cx + Math.cos(ang) * R, gy = py - 6 - cy + Math.sin(ang) * R;
+  g.save(); g.translate(gx, gy); g.rotate(ang);
+  g.fillStyle = K; g.beginPath(); g.moveTo(7, 0); g.lineTo(-5, -5); g.lineTo(-5, 5); g.closePath(); g.fill();
+  g.fillStyle = "#c9b45a"; g.beginPath(); g.moveTo(5.5, 0); g.lineTo(-4, -4); g.lineTo(-4, 4); g.closePath(); g.fill();
+  g.restore();
+  txtO(`${Math.round(d / 8)} m`, gx + Math.cos(ang) * 12, gy + Math.sin(ang) * 12 + 3, "#e8e2d0", "center", V12);
+}
+function drawHud(t) {
+  // stats strip, top left
+  rect(2, 2, 120, 22, "rgba(30,35,40,.72)");
+  rect(5, 5, 60, 5, K); rect(5, 5, 60 * clamp(P.hp / P.st.hp, 0, 1), 5, "#6f9a5f");
+  txt(`${Math.ceil(P.hp)}/${Math.round(P.st.hp)} HP`, 68, 10, "#e8e2d0", "left", V10);
+  let x = 5;
+  for (const k of ["atk", "aspd", "regen", "run"]) { rect(x, 13, 8, 8, STAT[k].c); g.drawImage(ICON[k], x + 0.5, 13.5); txt(fmt(k, P.st[k]), x + 10, 20.5, "#e8e2d0", "left", V10); x += 29; }
+  for (let i = 0; i < 4; i++) { rect(4 + i * 7, 26, 6, 5, i < P.hooks ? "#c9c4b4" : "rgba(30,35,40,.6)"); }
+  txt("HOOKS", 33, 31, "#e8e2d0", "left", V10);
+  // minimap, top right: 5 x 5 zones
+  const mw = 12, mh = 9, mx0 = W - NZX * mw - 4, my0 = 3;
+  rect(mx0 - 1, my0 - 1, NZX * mw + 2, NZY * mh + 2, "rgba(30,35,40,.8)");
+  for (const z of ZONES) {
+    const X = mx0 + z.zx * mw, Y = my0 + z.zy * mh;
+    rect(X + 0.5, Y + 0.5, mw - 1, mh - 1, z.captured ? "#4f8a86" : mixc("#6f9a5f", "#b4594a", clamp((z.lv - P.st.atk * 0.6) / 30, 0, 1)));
+    if (z.boss && !z.bossDead) { rect(X + mw / 2 - 1.5, Y + mh / 2 - 1.5, 3, 3, "#1e2328"); rect(X + mw / 2 - 0.5, Y + mh / 2 - 0.5, 1, 1, "#c8705e"); }
+  }
+  const gz = guide(); if (gz && Math.floor(t * 2) % 2) { g.strokeStyle = "#c9b45a"; g.lineWidth = 0.67; g.strokeRect(mx0 + gz.zx * mw + 0.5, my0 + gz.zy * mh + 0.5, mw - 1, mh - 1); }
+  rect(mx0 + P.x / WPX * NZX * mw - 1, my0 + P.y / HPX * NZY * mh - 1, 2, 2, "#f4f1e8");
+  // zone strip, bottom
+  const z = zoneOf(P.x, P.y), left = enemies.filter((e) => !e.dead && e.z === z.i).length;
+  rect(0, H - 12, W, 12, "rgba(30,35,40,.72)");
+  txt(`ZONE LV ${z.lv}`, 5, H - 3, "#d6c48e", "left", T8);
+  txt(z.captured ? "yours: fast heal, you come back here" : left ? `${left} ${left === 1 ? "enemy" : "enemies"} left${z.boss && !z.bossDead ? " + BOSS" : ""}` : "clear! stand here to take it", 82, H - 3, z.captured ? "#8fd0c2" : "#e8e2d0", "left", V12);
+  txt(`${P.captured.length}/25`, W - 5, H - 3, "#e8e2d0", "right", V12);
+}
+let stick = null;
+function drawStick() { if (!stick) return; g.strokeStyle = "rgba(230,226,208,.5)"; g.lineWidth = 1; g.beginPath(); g.arc(stick.x0, stick.y0, 18, 0, TAU); g.stroke(); g.fillStyle = "rgba(230,226,208,.45)"; g.beginPath(); g.arc(stick.x0 + input.x * 18, stick.y0 + input.y * 18, 7, 0, TAU); g.fill(); }
+
+// ======================= OLED =======================
+const oc = $("oled").getContext("2d");
+function drawOled() {
+  oc.fillStyle = "#000"; oc.fillRect(0, 0, 128, 64); oc.fillStyle = "#e8f4ff"; oc.textBaseline = "alphabetic"; oc.textAlign = "left";
+  oc.font = "8px Silkscreen, monospace"; const z = zoneOf(P.x, P.y);
+  oc.fillText(`ZONE ${z.lv}`, 0, 8); oc.textAlign = "right"; oc.fillText(`${P.captured.length}/25`, 128, 8); oc.textAlign = "left"; oc.fillRect(0, 11, 128, 1);
+  oc.font = "12px VT323, monospace";
+  oc.fillText(`ATK ${fmt("atk", P.st.atk)}`, 0, 23); oc.fillText(`SPD ${fmt("aspd", P.st.aspd)}`, 64, 23);
+  oc.fillText(`HP ${Math.round(P.st.hp)}`, 0, 35); oc.fillText(`REG ${fmt("regen", P.st.regen)}`, 64, 35);
+  oc.fillText(`RUN ${fmt("run", P.st.run)}`, 0, 47); oc.fillText(`HOOKS ${P.hooks}/4`, 64, 47);
+  oc.strokeStyle = "#e8f4ff"; oc.strokeRect(0.5, 53.5, 127, 9); oc.fillRect(2, 55, 124 * clamp(P.hp / P.st.hp, 0, 1), 6);
+}
+
+// ======================= HTML =======================
+let uiDirty = true; const ui = () => { uiDirty = true; };
+let resetArm = false; const iconURLs = {}; const iconURL = (k) => iconURLs[k] || (iconURLs[k] = ICON[k].toDataURL());
+function renderUI() {
+  $("stats").innerHTML = Object.entries(STAT).map(([k, s]) => `<div class="stat" style="--c:${s.c}"><i><img src="${iconURL(k)}" alt=""></i><div><b>${s.n}</b><small>${s.d} · from ${Object.values(EN).find((e) => e.give === k).n}</small></div><em>${k === "hp" ? Math.round(P.st[k]) : fmt(k, P.st[k])}</em></div>`).join("")
+    + `<div class="stat" style="--c:#7d7f7a"><i>H</i><div><b>HOOKS</b><small>one more for each boss</small></div><em>${P.hooks}/4</em></div>`
+    + `<div class="stat" style="--c:#4f8a86"><i>Z</i><div><b>ZONES TAKEN</b><small>kills ${P.kills}</small></div><em>${P.captured.length}/25</em></div>`;
+  $("bPause").textContent = paused ? "Resume" : "Pause";
+  $("bReset").textContent = resetArm ? "Tap again to erase" : "Reset world";
+}
+document.addEventListener("click", (ev) => {
+  const el = ev.target.closest("button[data-act]"); if (!el) return;
+  if (el.dataset.act === "pause") paused = !paused;
+  if (el.dataset.act === "reset") { if (!resetArm) { resetArm = true; setTimeout(() => { resetArm = false; ui(); }, 4000); } else { resetArm = false; try { localStorage.removeItem(SAVE); } catch (e) {} newGame(); } }
+  ui();
+});
+const keys = {};
+window.addEventListener("keydown", (ev) => {
+  const k = ev.key.toLowerCase(); if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d", " "].includes(k)) ev.preventDefault();
+  if (k === "p" || k === "escape") { paused = !paused; ui(); return; }
+  keys[k] = true; keyInput();
+});
+window.addEventListener("keyup", (ev) => { keys[ev.key.toLowerCase()] = false; keyInput(); });
+function keyInput() { if (stick) return; input.x = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0); input.y = (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0); }
+function toLogical(ev) { const r = cv.getBoundingClientRect(); return { x: (ev.clientX - r.left) / r.width * W, y: (ev.clientY - r.top) / r.height * H }; }
+cv.addEventListener("pointerdown", (ev) => { cv.focus(); const p = toLogical(ev); stick = { x0: p.x, y0: p.y, id: ev.pointerId }; cv.setPointerCapture(ev.pointerId); });
+cv.addEventListener("pointermove", (ev) => { if (!stick || ev.pointerId !== stick.id) return; const p = toLogical(ev); let dx = (p.x - stick.x0) / 18, dy = (p.y - stick.y0) / 18; const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; } input.x = dx; input.y = dy; });
+const endStick = () => { stick = null; input.x = 0; input.y = 0; keyInput(); };
+cv.addEventListener("pointerup", endStick); cv.addEventListener("pointercancel", endStick);
+
+// ======================= loop =======================
+let acc = 0, lastT = performance.now(), oledT = 0, uiT = 0;
+function frame(now) {
+  const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
+  let a = 1;
+  if (!paused) { acc += dt; let n = 0; while (acc >= DT && n < 8) { step(); acc -= DT; n++; } if (n >= 8) acc = 0; a = clamp(acc / DT, 0, 1); }
+  const vdt = paused ? 0 : dt;
+  parts.forEach((q) => { q.vy += 120 * vdt; q.x += q.vx * vdt; q.y += q.vy * vdt; q.t -= vdt; }); parts = parts.filter((q) => q.t > 0); if (parts.length > 200) parts.splice(0, parts.length - 200);
+  says.forEach((n) => n.t -= vdt); says = says.filter((n) => n.t > 0);
+  draw(now, a);
+  oledT -= dt; if (oledT <= 0) { oledT = 0.25; drawOled(); }
+  uiT -= dt; if (uiT <= 0) { uiT = 1; ui(); }
+  if (uiDirty) { renderUI(); uiDirty = false; }
+  requestAnimationFrame(frame);
+}
+
+// ======================= bot for balance tests (same rules, no drawing) =======================
+const bot = { rest: false, wander: 0, sx: 0, sy: 0, st: 0 };
+function botInput() {
+  const z = zoneOf(P.x, P.y), target = guide();
+  let tx, ty;
+  if (P.hp < P.st.hp * 0.35) bot.rest = true; else if (P.hp > P.st.hp * 0.95) bot.rest = false;
+  if (bot.rest) { const r = ZONES[P.resp]; tx = r.cx * T; ty = r.cy * T; }
+  else {
+    const goal = target || z;
+    let best = null, bd = 1e9;
+    for (const e of enemies) if (!e.dead && (e.z === goal.i || e.aggro && e.z === z.i && z.i !== goal.i && false)) { const d = Math.hypot(e.x - P.x, e.y - P.y); if (d < bd) { bd = d; best = e; } }
+    bot.why = (bot.rest ? "REST " : "") + (best ? `e${Math.round(best.x)},${Math.round(best.y)} z${best.z} ${best.aggro ? 'A' : ''} bd${Math.round(bd)} ehp${Math.round(best.hp)}/${Math.round(best.max)}${best.boss ? "B" : ""} tg${hooks.map((h) => h.tgt ? Math.round(h.tgt.hp) : "-").join("/")}` : "none");
+    if (!best) { tx = goal.cx * T; ty = goal.cy * T; }
+    else if (bd > 56 || !los(P.x, P.y - 4, best.x, best.y - 4)) { tx = best.x; ty = best.y; }
+    else if (bd < 38 && !bot.rush) { tx = P.x - (best.x - P.x); ty = P.y - (best.y - P.y); if (blocked(tx, ty, 6)) { tx = P.x + (best.y - P.y); ty = P.y - (best.x - P.x); } }   // back off, or side-step at a wall
+    else { tx = P.x; ty = P.y; }
+  }
+  // walk around walls: breadth-first search over tiles, then head for the next open tile on the path
+  // between zones, travel through zones you hold and their gates (the shortest way may cross a hostile zone)
+  const tz = zoneOf(tx, ty);
+  if (tz.i !== z.i) {
+    const nz = zoneRoute(z, tz);
+    if (nz) {
+      let gb = null, gd = 1e9;
+      for (const q of GATES) if ((q[2] === z.i && q[3] === nz.i) || (q[3] === z.i && q[2] === nz.i)) { const dd = Math.hypot(q[0] * T + 8 - P.x, q[1] * T + 8 - P.y); if (dd < gd) { gd = dd; gb = q; } }
+      if (gb) { tx = gb[0] * T + 8; ty = gb[1] * T + 8; if (gd < 14) { tx += Math.sign(nz.zx - z.zx) * 24; ty += Math.sign(nz.zy - z.zy) * 24; } }
+    }
+  }
+  bot.tx = tx; bot.ty = ty;
+  const w = pathStep(P.x, P.y, tx, ty); if (w) { tx = w[0]; ty = w[1]; }
+  const d = Math.hypot(tx - P.x, ty - P.y); input.x = d > 3 ? (tx - P.x) / d : 0; input.y = d > 3 ? (ty - P.y) / d : 0;
+  // the bot is a test helper, not a smart player: if it has not got anywhere for 2 s, wander for a moment
+  if (bot.wander > 0) { bot.wander -= 0.1; input.x = bot.wx; input.y = bot.wy; return; }
+  if (d > 3 && Math.hypot(P.x - bot.sx, P.y - bot.sy) > 10) { bot.sx = P.x; bot.sy = P.y; bot.st = pt; }
+  else if (d > 3 && pt - bot.st > 2) { const a = Math.random() * TAU; bot.wx = Math.cos(a); bot.wy = Math.sin(a); bot.wander = 0.6; bot.st = pt; }
+}
+function zoneRoute(a, b) {   // next zone on the way from a to b, walking only through held zones
+  const from = new Array(ZONES.length).fill(-1); from[a.i] = a.i; const q = [a.i];
+  for (let qi = 0; qi < q.length; qi++) {
+    const c = ZONES[q[qi]]; if (c.i === b.i) break;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = c.zx + dx, ny = c.zy + dy; if (nx < 0 || ny < 0 || nx >= NZX || ny >= NZY) continue;
+      const n = ZONES[ny * NZX + nx]; if (from[n.i] !== -1 || !(n.captured || n.i === b.i)) continue;
+      from[n.i] = c.i; q.push(n.i);
+    }
+  }
+  if (from[b.i] === -1) return null;
+  let c = b.i; while (from[c] !== a.i) c = from[c];
+  return ZONES[c];
+}
+const prev = new Int32Array(MW * MH);
+function pathStep(x0, y0, x1, y1) {
+  const tl = (x, y) => clamp(Math.floor(y / T), 0, MH - 1) * MW + clamp(Math.floor(x / T), 0, MW - 1);
+  const s = tl(x0, y0), g = tl(x1, y1);
+  if (s === g) return null;
+  prev.fill(-1); prev[s] = s; const q = [s];
+  for (let qi = 0; qi < q.length; qi++) {
+    const c = q[qi]; if (c === g) break;
+    const cx = c % MW, cy = (c / MW) | 0;
+    for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cx + ax, ny = cy + ay, n = ny * MW + nx, v = at(nx, ny);
+      if (prev[n] !== -1 || v === 2 || v === 3 || (v === 4 && n !== g)) continue;
+      prev[n] = c; q.push(n);
+    }
+  }
+  if (prev[g] === -1) return null;
+  const path = []; for (let c = g; c !== s; c = prev[c]) path.push(c);
+  path.reverse();
+  // look ahead along the path while the straight line stays clear
+  let pick = path[0];
+  for (let k = 1; k < Math.min(path.length, 6); k++) { const c = path[k], cx = (c % MW) * T + 8, cy = ((c / MW) | 0) * T + 8; if (clearLine(x0, y0, cx, cy)) pick = c; else break; }
+  if (pick === g) return null;
+  return [(pick % MW) * T + 8, ((pick / MW) | 0) * T + 8];
+}
+function clearLine(x0, y0, x1, y1) { const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 3); for (let i = 1; i <= n; i++) { const t = i / n; if (blocked(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, 6)) return false; } return true; }
+window.HL = {
+  dbg: (src) => eval(src),
+  tune: TUNE, state: () => ({ P, zones: ZONES.map((z) => ({ i: z.i, lv: z.lv, captured: z.captured, boss: z.boss })), enemies: enemies.filter((e) => !e.dead).length }),
+  sim: (minutes = 40, rush = false) => {
+    bot.rush = rush; SIM = true; bot.rest = false; const keepP = P, keepE = enemies, keepH = hooks; P = freshP(); for (const z of ZONES) { z.captured = false; z.bossDead = false; z.cap = 0; } startWorld();
+    const log = [], ring = []; let lastCap = 0, capAt = 0;
+    for (let i = 0; i < minutes * 3600; i++) {
+      if (i % 6 === 0) botInput();
+      step();
+      if (P.captured.length !== lastCap) { lastCap = P.captured.length; capAt = i; const z = ZONES[P.captured[lastCap - 1]]; log.push(`${Math.round(i / 60)}s:lv${z.lv}${z.boss ? "B" : ""}`); }
+      if (i % 180 === 0) { const g = guide(), z = zoneOf(P.x, P.y); ring.push(`[${Math.round(i / 60)}s ${Math.round(P.x)},${Math.round(P.y)} z${z.i} g${g && g.i} hp${Math.round(P.hp)} in${input.x.toFixed(1)},${input.y.toFixed(1)} ${bot.why || ''} H${hooks.map((h) => h.s + Math.round(h.cd * 10)).join('/')} B${+blocked(P.x + 1, P.y, 5)}${+blocked(P.x - 1, P.y, 5)}${+blocked(P.x, P.y + 1, 5)}${+blocked(P.x, P.y - 1, 5)} W${JSON.stringify(pathStep(P.x, P.y, bot.tx, bot.ty))}]`); if (ring.length > 30) ring.shift(); }
+      if (P.captured.length === lastCap && i - capAt > 240 * 60) { log.push('STALL', ...ring); break; }
+      if (lastCap === 25) break;
+    }
+    const r = { taken: P.captured.length, deaths: P.deaths || 0, hooks: P.hooks, minutes: +(pt / 60).toFixed(1), st: Object.fromEntries(Object.entries(P.st).map(([k, v]) => [k, +v.toFixed(2)])), log: log.join(" ") };
+    SIM = false; P = keepP; enemies = keepE; hooks = keepH; for (const z of ZONES) { z.captured = P.captured.includes(z.i); z.bossDead = P.bossDead.includes(z.i); z.cap = 0; } pt = 0;
+    return r;
+  },
+  give: (o) => { Object.assign(P.st, o); ui(); }, tp: (zi) => { const z = ZONES[zi]; P.x = P.ox = z.cx * T; P.y = P.oy = z.cy * T; },
+};
+function newGame() { load(); paintWorld(); startWorld(); cam.x = P.x - W / 2; cam.y = P.y - H / 2; ui(); }
+
+genWorld(); buildSprites(); newGame();
+if (document.fonts && document.fonts.load) Promise.all([document.fonts.load("16px Silkscreen"), document.fonts.load("12px VT323")]).catch(() => {});
+requestAnimationFrame(frame);
+})();
+</script>
