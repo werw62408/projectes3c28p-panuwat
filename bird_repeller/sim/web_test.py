@@ -181,11 +181,8 @@ def pir_flow(page, sim):
     page.wait_for_timeout(4000)
     check("ไฟเขียวติดเมื่อ Pi + กล้องพร้อม", "ติด" in page.inner_text("#rdy"), page.inner_text("#rdy"))
     check("ไฟส้มดับตอนยังไม่เจอนก", page.inner_text("#blamp") == "ดับ", page.inner_text("#blamp"))
-    check("หน้าเว็บบอกว่า PIR ยังอุ่นเครื่อง", "อุ่นเครื่อง" in page.inner_text("#pir"), page.inner_text("#pir"))
-    shot(page, "06_pir_warmup.png")
-
-    s = wait_state(sim, lambda s: s["hw"]["pir_warm"] == 0, 75)
-    check("PIR อุ่นเครื่องครบ 60 วิ", s is not None)
+    s = wait_state(sim, lambda s: s["hw"]["pir_warm"] == 0, 30)
+    check("PIR อุ่นเครื่องเสร็จเร็ว (ไม่ต้องรอ 60 วิ)", s is not None)
     frames = state(sim)["total_frames"]
     page.wait_for_timeout(5000)
     check("ปิดตรวจอัตโนมัติแล้ว ไม่มีการถ่ายภาพเอง", state(sim)["total_frames"] == frames)
@@ -199,6 +196,8 @@ def pir_flow(page, sim):
     check("รอบนั้นมาจาก PIR และเจอนก", st["last_source"] == "pir" and st["bird_count"] > 0, st["status"])
     page.wait_for_timeout(1200)
     check("หน้าเว็บแสดงไฟส้มติด", page.inner_text("#blamp") == "ติด", page.inner_text("#blamp"))
+    check("หน้าเว็บเห็น PIR กำลัง HIGH ทันที (ไม่ต้องรอ STAT)", "เคลื่อนไหว" in page.inner_text("#pir"), page.inner_text("#pir"))
+    check("บันทึก PIR มีรายการที่ทริก", "ทริก ✓" in page.inner_text("#pirLog"), page.inner_text("#pirLog"))
     check("ข้อความบอกว่ามาจาก PIR", "PIR ทริก" in msg(page), msg(page))
     page.evaluate("window.scrollTo(0, document.getElementById('cnt').getBoundingClientRect().top - 300)")
     shot(page, "07_pir_bird_lamp.png")
@@ -206,6 +205,11 @@ def pir_flow(page, sim):
         check("ขารีเลย์ไฟส้ม (GPIO26) เป็น HIGH จริง", "LAMP_ORANGE HIGH" in f.read())
 
     sim.set_sensors(PIR=0, ECHO_CM=15)
+    page.wait_for_timeout(1500)
+    check("บันทึก PIR บอกว่า HIGH นานกี่วินาที", "HIGH " in page.inner_text("#pirLog") and "วิ" in page.inner_text("#pirLog"),
+          page.inner_text("#pirLog"))
+    page.evaluate("document.getElementById('pirLog').scrollIntoView({block:'center'})")
+    shot(page, "08_pir_log.png")
     s = wait_state(sim, lambda s: not s["hw"]["bird_lamp"], 14)
     check("ไม่เจอนกต่อ -> ไฟส้มดับเองใน 10 วิ", s is not None)
 

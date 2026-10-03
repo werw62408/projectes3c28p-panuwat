@@ -2,9 +2,15 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.1
- ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.1
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.2
+ ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.2
 --------------------------------------------------------------------------
+ เปลี่ยนจาก v6.1 (รุ่นนี้ — PIR):
+   - สถานะ PIR บนเว็บมาจาก EVT PLVL ทันทีที่เปลี่ยน ไม่ใช่สุ่มดูจาก STAT ทุก 3 วิ
+   - เพิ่มบันทึก PIR: แต่ละครั้ง HIGH นานเท่าไหร่ ทริกจริงไหม พร้อมตัวนับ
+     ทริก / กระตุก (สัญญาณรบกวน) / ไม่สนใจเพราะมอเตอร์ ไว้หาสาเหตุ PIR หลอน
+   - รับเฉพาะบรรทัด "EVT PIR" ตรงตัวเป็นการทริก
+
  เปลี่ยนจาก v6 (รุ่นนี้ — ไฟสถานะแบบใหม่):
    - ไฟเขียว = พร้อม (บอร์ดจัดการเอง) / ไฟส้ม = เจอนก: ตรวจเจอนกเมื่อไหร่ สั่ง BIRD 1 ทันที
      ไม่ขึ้นกับโหมดไล่อัตโนมัติ ทดสอบได้แม้อยู่ในโหมดทดสอบ
@@ -466,6 +472,7 @@ class Controller:
             "water_fault": False, "pump_duty_left": None,
             "pos_ok": None, "reset_reason": "", "ready": False,
             "bird_lamp": False, "pir_warm": 0,
+            "pir_trig": 0, "pir_glitch": 0, "pir_ignored": 0,
             "vbat": 0.0,
         }
         self.last_error = ""
@@ -479,6 +486,7 @@ class Controller:
         self.motion_until = 0.0              # เพิ่งสั่งหมุน ให้ถือว่ายังหมุนอยู่จนกว่า STAT จะยืนยัน
         self.last_pir_at = 0.0
         self.pir_count = 0
+        self.pir_log = deque(maxlen=12)      # แต่ละครั้งที่ OUT เป็น HIGH: เวลา / นานเท่าไหร่ / ทริกไหม
 
     # ---------- การเชื่อมต่อ ----------
     def _find_port(self):
@@ -667,6 +675,9 @@ class Controller:
                 self.hw["reset_reason"] = vals.get("RST", "")
                 self.hw["bird_lamp"] = vals.get("BIRD") == "1"
                 self.hw["pir_warm"] = int(vals.get("PIRW", 0))
+                self.hw["pir_trig"] = int(vals.get("PIRN", 0))
+                self.hw["pir_glitch"] = int(vals.get("PIRG", 0))
+                self.hw["pir_ignored"] = int(vals.get("PIRI", 0))
             except ValueError:
                 pass
 
@@ -702,15 +713,36 @@ class Controller:
         elif line.startswith("EVT BIRDLAMP"):
             with self._hw_lock:
                 self.hw["bird_lamp"] = line.endswith("1")
-        elif line.startswith("EVT PIR"):
+        elif line.startswith("EVT PLVL"):
+            # ระดับ PIR เปลี่ยน (กรองสัญญาณกระตุกแล้ว): "EVT PLVL 1" / "EVT PLVL 0 <HIGH นานกี่ ms>"
+            parts = line.split()
+            high = len(parts) > 2 and parts[2] == "1"
+            with self._hw_lock:
+                self.hw["pir"] = high
+                if high:
+                    self.pir_log.appendleft({"ts": datetime.now().strftime("%H:%M:%S"),
+                                             "held": None, "trig": False})
+                elif self.pir_log and self.pir_log[0]["held"] is None and len(parts) > 3:
+                    self.pir_log[0]["held"] = round(int(parts[3]) / 1000, 1)
+        elif line.startswith("EVT PREADY"):
+            with self._hw_lock:
+                self.hw["pir_warm"] = 0
+        elif line.strip() == "EVT PIR":
             self.last_pir_at = time.time()
             self.pir_count += 1
+            with self._hw_lock:
+                if self.pir_log:
+                    self.pir_log[0]["trig"] = True
+                else:
+                    self.pir_log.appendleft({"ts": datetime.now().strftime("%H:%M:%S"),
+                                             "held": None, "trig": True})
             if PIR_TRIGGER_ENABLED:
                 request_detection("pir")
 
     def snapshot(self):
         with self._hw_lock:
             hw = dict(self.hw)
+            hw["pir_log"] = [dict(e) for e in self.pir_log]
         now = time.time()
         left = REPEL_COOLDOWN_S - (now - self.last_repel_at)
         hw.update({
@@ -1603,6 +1635,20 @@ HTML_PAGE = r"""<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- ---------- PIR ---------- -->
+  <div class="card">
+    <div style="font-size:13px;color:var(--muted);margin-bottom:8px">
+      บันทึก PIR — ใช้หาสาเหตุ PIR หลอน
+    </div>
+    <div class="grid">
+      <div class="stat"><div class="k">ทริก (ส่งให้ตรวจจับ)</div><div class="v" id="pirN">-</div></div>
+      <div class="stat"><div class="k">กระตุก (กรองทิ้ง)</div><div class="v" id="pirG">-</div></div>
+      <div class="stat"><div class="k">ไม่สนใจ (มอเตอร์หมุน)</div><div class="v" id="pirI">-</div></div>
+    </div>
+    <div class="msg" id="pirHint"></div>
+    <div id="pirLog" style="font-size:13px;margin-top:8px;display:flex;flex-direction:column;gap:4px"></div>
+  </div>
+
   <!-- ---------- ควบคุม ---------- -->
   <div class="card">
     <div style="font-size:13px;color:var(--muted);margin-bottom:8px">ชุดขับไล่</div>
@@ -1783,11 +1829,31 @@ async function tick(){
   $('blamp').textContent = bl ? 'ติด' : 'ดับ';
   $('blamp').style.color = bl ? 'var(--warn)' : 'var(--muted)';
   $('pir').textContent = !s.hw.link ? '-'
-      : s.hw.pir_warm > 0 ? 'อุ่นเครื่องอีก ' + s.hw.pir_warm + ' วิ'
+      : s.hw.pir_warm > 0 ? 'อุ่นเครื่อง (ไม่เกิน ' + s.hw.pir_warm + ' วิ)'
       : s.hw.pir ? 'เห็นการเคลื่อนไหว'
       : s.hw.pir_ago != null ? 'ทริกล่าสุด ' + s.hw.pir_ago + ' วิที่แล้ว'
       : 'พร้อม ยังไม่ทริก';
   $('pir').style.color = s.hw.pir ? 'var(--warn)' : '';
+
+  // ---- บันทึก PIR ----
+  $('pirN').textContent = s.hw.pir_trig;
+  $('pirG').textContent = s.hw.pir_glitch;
+  $('pirI').textContent = s.hw.pir_ignored;
+  const log = s.hw.pir_log || [];
+  const holds = log.map(e => e.held).filter(h => h != null);
+  let hint = '';
+  if(s.hw.pir_glitch >= 5) hint = 'กระตุกบ่อย: สัญญาณรบกวนเข้าสาย PIR — เช็กไฟเลี้ยง 5V / ใส่ตัวเก็บประจุที่ PIR / แยกสายออกจากสายมอเตอร์';
+  else if(holds.length && Math.max(...holds) > 20) hint = 'HIGH ค้างนาน: หมุนปุ่ม Tx (หน่วงเวลา) บน PIR ทวนเข็มจนสุด';
+  $('pirHint').textContent = hint;
+  $('pirLog').innerHTML = '';
+  for(const e of log){
+    const d = document.createElement('div');
+    d.textContent = e.ts + ' · ' + (e.held == null ? 'HIGH อยู่' : 'HIGH ' + e.held + ' วิ') +
+                    ' · ' + (e.trig ? 'ทริก ✓' : 'ไม่ทริก (ช่วงพัก/มอเตอร์)');
+    d.style.color = e.trig ? 'var(--txt)' : 'var(--muted)';
+    $('pirLog').appendChild(d);
+  }
+  if(!log.length) $('pirLog').textContent = 'ยังไม่มีการเคลื่อนไหว';
 
   pill($('pillDet'), s.auto_detect, 'ทุก ' + s.auto_interval + ' วิ', 'ปิดอยู่');
   pill($('pillCam'), s.cam_online, 'ออนไลน์', 'ออฟไลน์');

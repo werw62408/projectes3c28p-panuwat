@@ -1,11 +1,23 @@
 /* ==========================================================================
-   บอร์ดควบคุมโหลด  ESP32  —  เฟิร์มแวร์ v7.1
+   บอร์ดควบคุมโหลด  ESP32  —  เฟิร์มแวร์ v7.2
    โครงงาน: เครื่องไล่นกอัตโนมัติ
 
    หน้าที่: รับคำสั่งจาก Raspberry Pi ผ่าน USB Serial แล้วสั่งงานอุปกรณ์
             พร้อมรายงานสถานะกลับ และตัดโหลดเองเมื่อเกิดเหตุผิดปกติ
 
-   เปลี่ยนจาก v7 (รุ่นนี้ — ไฟสถานะแบบใหม่):
+   เปลี่ยนจาก v7.1 (รุ่นนี้ — PIR ไม่หลอน):
+     - อุ่นเครื่องแบบปรับตัวเอง: อย่างน้อย 10 วิ แล้วรอให้ขา OUT นิ่งเป็น LOW 5 วิ
+       ส่วนใหญ่พร้อมใน ~15-20 วิ (เดิมรอตายตัว 60 วิ) / เพดาน 60 วิ เผื่อ OUT ค้าง
+     - กรองสัญญาณกระตุก: ต้อง HIGH ต่อเนื่อง 200 ms ถึงนับ (สัญญาณจริงยาว 2 วิขึ้นไป)
+       ตัวที่สั้นกว่านั้นนับเป็น "กระตุก" ไว้ดูว่าสายมีสัญญาณรบกวนไหม
+     - ไม่สนใจ PIR ตอนมอเตอร์หมุน/รอบไล่ และ 2 วิหลังหยุด (หัวฉีดขยับเอง + สัญญาณรบกวนจากมอเตอร์)
+     - ถ้า OUT ยัง HIGH ค้าง (นกยังอยู่) ทริกซ้ำทุก 5 วิ เดิมทริกครั้งเดียวแล้วเงียบ
+     - พออุ่นเครื่องเสร็จตอน OUT เป็น HIGH อยู่ จะไม่นับเป็นการทริก (เดิมทริกหลอกทันที)
+     - ส่ง EVT PLVL 1/0 ทันทีที่ระดับเปลี่ยน หน้าเว็บจึงเห็นตรงกับเซนเซอร์จริง
+       (เดิมเว็บเห็นผ่าน STAT ทุก 3 วิ สัญญาณสั้น ๆ เลยเห็นบ้างไม่เห็นบ้าง)
+     - STAT เพิ่ม PIRN (ทริก) PIRG (กระตุก) PIRI (ไม่สนใจเพราะมอเตอร์)
+
+   เปลี่ยนจาก v7 (ไฟสถานะแบบใหม่):
      - ไฟเขียว = พร้อมใช้งาน  ขับผ่านรีเลย์ช่อง 2 (GPIO19 เดิม — ย้ายไฟเขียวมาต่อช่องนี้)
      - ไฟส้ม   = เจอนก        ขับผ่านรีเลย์ช่อง 3 (GPIO26 ใหม่)
        Pi สั่ง BIRD 1 เมื่อตรวจเจอนก ไฟส้มติดค้าง BIRD_LAMP_HOLD_MS แล้วดับเอง
@@ -46,7 +58,7 @@
    Arduino IDE: Board = ESP32 Dev Module / ไม่ต้องลงไลบรารีเพิ่ม
    ========================================================================== */
 
-#define FW_ID "BIRDCTRL v7.1"
+#define FW_ID "BIRDCTRL v7.2"
 
 #include <Preferences.h>
 #include <esp_system.h>
@@ -162,9 +174,17 @@ const float VBAT_LOW_V = 11.5;    // ต่ำกว่านี้ = เตื�
    ========================================================================== */
 #define PIR_ENABLED HAS_PIR            // ใช้สวิตช์จากบล็อก 0 ด้านบน
 const unsigned long PIR_LOCKOUT_MS  = 5000;   // ทริกแล้วห้ามทริกซ้ำในกี่ ms
+                                              // ถ้า OUT ยัง HIGH อยู่ จะทริกซ้ำทุกช่วงนี้
+const unsigned long PIR_DEBOUNCE_MS = 200;    // ต้อง HIGH/LOW ต่อเนื่องเท่านี้ถึงจะเชื่อ
+const unsigned long PIR_IGNORE_AFTER_MOVE_MS = 2000;  // หลังมอเตอร์หยุด ไม่สนใจ PIR กี่ ms
 const unsigned long BIRD_LAMP_HOLD_MS = 10000; // ไฟส้มติดค้างกี่ ms หลัง Pi บอกว่าเจอนก
                                                // เจอซ้ำจะนับใหม่ / Pi เงียบไปก็ดับเองไม่ค้าง
-const unsigned long PIR_WARMUP_MS   = 60000;  // HC-SR501 ต้องอุ่นตัว 1 นาที
+// HC-SR501 ช่วงเปิดเครื่องใหม่ ๆ ขา OUT จะกระตุกมั่ว ต้องรอให้นิ่งก่อน
+// ไม่ต้องรอ 60 วิตายตัว: รออย่างน้อย MIN แล้วดูว่า OUT นิ่งเป็น LOW ต่อเนื่อง SETTLE หรือยัง
+// ถ้ามีคนขยับอยู่หน้าเซนเซอร์ตลอด OUT จะไม่นิ่ง ก็รอไปจนถึง MAX
+const unsigned long PIR_WARMUP_MIN_MS = 10000;
+const unsigned long PIR_SETTLE_MS     = 5000;
+const unsigned long PIR_WARMUP_MS     = 60000;  // เพดาน
 
 const unsigned long LINK_TIMEOUT_MS = 15000;  // เงียบจาก Pi เกินนี้ = ตัดโหลด
 
@@ -201,8 +221,16 @@ unsigned long lastWaterMs = 0;
 float vbat = 0.0;
 bool  vbatLow = false;
 
-bool  pirPrev = false;
-unsigned long pirBlockUntil = 0;
+bool  pirWarm = false;          // อุ่นเครื่องเสร็จหรือยัง
+unsigned long pirLowSince = 0;  // ระหว่างอุ่นเครื่อง: OUT เป็น LOW มาตั้งแต่เมื่อไหร่ (0 = ยังไม่ LOW)
+bool  pirLevel = false;         // ระดับหลังกรองสัญญาณกระตุกแล้ว
+bool  pirRawPrev = false;
+unsigned long pirRawChangeAt = 0;
+unsigned long pirHighSince = 0;
+unsigned long pirLastTrig = 0;
+long  pirTrigCount = 0;         // ทริกจริง (ส่ง EVT PIR ให้ Pi)
+long  pirGlitchCount = 0;       // HIGH สั้นกว่า PIR_DEBOUNCE_MS = สัญญาณรบกวน
+long  pirIgnoredCount = 0;      // ทริกตอนมอเตอร์หมุน/เพิ่งหยุด เลยไม่ส่ง
 
 unsigned long lastHostMs = 0;
 bool  linkDown = true;
@@ -237,10 +265,8 @@ void enaWrite(bool on) {
   digitalWrite(PIN_ENA, ENA_ACTIVE_LOW ? (on ? LOW : HIGH) : (on ? HIGH : LOW));
 }
 
-bool pirRaw() {
-  if (!PIR_ENABLED) return false;
-  if (millis() - bootMs < PIR_WARMUP_MS) return false;   // ยังอุ่นตัวไม่เสร็จ
-  return digitalRead(PIN_PIR) == HIGH;
+bool pirActive() {
+  return PIR_ENABLED && pirWarm && pirLevel;
 }
 
 /* ==========================================================================
@@ -568,15 +594,58 @@ void serviceBirdLamp() {
 /* ==========================================================================
    15. PIR
    ========================================================================== */
+// ส่ง EVT PIR ให้ Pi (ถ้าไม่ได้อยู่ช่วงที่มอเตอร์ทำให้หลอน)
+void pirTrigger(unsigned long now) {
+  pirLastTrig = now;
+  bool motorBusy = moving || repelStep != RP_IDLE ||
+                   (long)(now - lastMoveEndMs) < (long)PIR_IGNORE_AFTER_MOVE_MS;
+  if (motorBusy) { pirIgnoredCount++; return; }
+  pirTrigCount++;
+  Serial.println("EVT PIR");
+}
+
 void servicePir() {
   if (!PIR_ENABLED) return;
-  bool v = pirRaw();
   unsigned long now = millis();
-  if (v && !pirPrev && (long)(now - pirBlockUntil) > 0) {   // เทียบแบบนี้ไม่พังตอน millis() วนรอบ
-    pirBlockUntil = now + PIR_LOCKOUT_MS;
-    Serial.println("EVT PIR");
+  bool raw = digitalRead(PIN_PIR) == HIGH;
+
+  // ---- อุ่นเครื่อง ----
+  if (!pirWarm) {
+    if (raw) pirLowSince = 0;
+    else if (pirLowSince == 0) pirLowSince = now;
+    unsigned long up = now - bootMs;
+    bool settled = up >= PIR_WARMUP_MIN_MS && pirLowSince && now - pirLowSince >= PIR_SETTLE_MS;
+    if (settled || up >= PIR_WARMUP_MS) {
+      pirWarm = true;
+      pirLevel = pirRawPrev = raw;        // เริ่มจากระดับปัจจุบัน ไม่นับเป็นการทริก
+      pirRawChangeAt = now;
+      pirHighSince = now;
+      pirLastTrig = now;
+      Serial.printf("EVT PREADY %lu\n", up / 1000);
+    }
+    return;
   }
-  pirPrev = v;
+
+  // ---- กรองสัญญาณกระตุก ----
+  if (raw != pirRawPrev) {
+    // HIGH ที่หายไปก่อนครบเวลากรอง = กระตุก (สัญญาณจริงจาก HC-SR501 ยาวอย่างน้อย ~2 วิ)
+    if (pirRawPrev && !pirLevel && now - pirRawChangeAt < PIR_DEBOUNCE_MS) pirGlitchCount++;
+    pirRawPrev = raw;
+    pirRawChangeAt = now;
+  }
+  if (raw != pirLevel && now - pirRawChangeAt >= PIR_DEBOUNCE_MS) {
+    pirLevel = raw;
+    if (raw) {
+      pirHighSince = now;
+      Serial.println("EVT PLVL 1");
+      if ((long)(now - pirLastTrig) >= (long)PIR_LOCKOUT_MS || pirTrigCount == 0) pirTrigger(now);
+    } else {
+      Serial.printf("EVT PLVL 0 %lu\n", now - pirHighSince);   // HIGH ค้างนานเท่าไหร่
+    }
+  }
+
+  // ---- OUT ยัง HIGH ค้าง (นกยังอยู่ / ยังมีการเคลื่อนไหว) -> ทริกซ้ำเป็นระยะ ----
+  if (pirLevel && (long)(now - pirLastTrig) >= (long)PIR_LOCKOUT_MS) pirTrigger(now);
 }
 
 /* ==========================================================================
@@ -604,7 +673,7 @@ void sendStat() {
   Serial.print(" PUMP=");    Serial.print(pumpOn ? 1 : 0);
   Serial.print(" MOVING=");  Serial.print(moving ? 1 : 0);
   Serial.print(" REPEL=");   Serial.print(repelStep != RP_IDLE ? 1 : 0);
-  Serial.print(" PIR=");     Serial.print(pirRaw() ? 1 : 0);
+  Serial.print(" PIR=");     Serial.print(pirActive() ? 1 : 0);
   Serial.print(" WPCT=");    Serial.print(waterPct);
   Serial.print(" WCM=");     Serial.print(waterCm, 1);
   Serial.print(" WLOW=");    Serial.print(waterLow ? 1 : 0);
@@ -618,8 +687,12 @@ void sendStat() {
   Serial.print(" READY=");   Serial.print(systemReady() ? 1 : 0);
   Serial.print(" BIRD=");    Serial.print(birdLampOn ? 1 : 0);
   unsigned long up_ms = millis() - bootMs;
-  Serial.print(" PIRW=");    Serial.print(HAS_PIR && up_ms < PIR_WARMUP_MS
-                                          ? (long)((PIR_WARMUP_MS - up_ms) / 1000 + 1) : 0L);
+  // PIRW = อุ่นเครื่องอีกไม่เกินกี่วินาที (อาจเสร็จก่อนถ้า OUT นิ่งเร็ว) 0 = พร้อมแล้ว
+  Serial.print(" PIRW=");    Serial.print(HAS_PIR && !pirWarm
+                                          ? (long)((PIR_WARMUP_MS - min(up_ms, PIR_WARMUP_MS)) / 1000 + 1) : 0L);
+  Serial.print(" PIRN=");    Serial.print(pirTrigCount);
+  Serial.print(" PIRG=");    Serial.print(pirGlitchCount);
+  Serial.print(" PIRI=");    Serial.print(pirIgnoredCount);
   Serial.print(" LIM=");     Serial.print(LIMIT_STEPS);
   Serial.print(" SPR=");     Serial.println(STEPS_PER_REV);
 }

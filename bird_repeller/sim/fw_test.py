@@ -85,6 +85,76 @@ def first(lines, prefix):
     return next((l for l in lines if l.startswith(prefix)), None)
 
 
+def has(lines, exact):
+    return any(l == exact for l in lines)
+
+
+def pir_tests():
+    print("  -- PIR --")
+    b = Board()
+    try:
+        t0 = time.time()
+        b.lines(0.5)
+        st = b.stat()
+        check("หลังบูต PIR ยังอุ่นเครื่อง (PIRW > 0, PIR=0)", int(st.get("PIRW", 0)) > 0 and st.get("PIR") == "0", st)
+        b.set_ctl(PIR=1, ECHO_CM=15)                    # ช่วงอุ่นเครื่อง OUT กระตุกมั่ว
+        time.sleep(1.0)
+        b.set_ctl(PIR=0, ECHO_CM=15)
+        seen = []
+        ln = None
+        while time.time() - t0 < 25 and ln is None:
+            ln, more = b.wait_for("EVT PREADY", 1.0)
+            seen += more
+        dt = time.time() - t0
+        check(f"อุ่นเครื่องแบบปรับตัว: พร้อมใน {dt:.0f} วิ (ไม่ต้องรอ 60)", ln is not None and 10 <= dt <= 17, (dt, seen))
+        check("ช่วงอุ่นเครื่องไม่มีการทริก", not has(seen, "EVT PIR"), seen)
+
+        # สัญญาณกระตุกสั้น ๆ (เช่นจากรีเลย์/มอเตอร์) ต้องถูกกรองทิ้ง
+        out = []
+        for _ in range(6):
+            b.set_ctl(PIR=1, ECHO_CM=15)
+            time.sleep(0.12)
+            b.set_ctl(PIR=0, ECHO_CM=15)
+            out += b.lines(0.4)
+        st = b.stat()
+        check("สัญญาณกระตุกสั้น ๆ ไม่ทริก", not has(out, "EVT PIR") and st.get("PIRN") == "0", out)
+        check("นับสัญญาณกระตุกไว้ (PIRG > 0)", int(st.get("PIRG", 0)) > 0, st)
+
+        # การเคลื่อนไหวจริง
+        b.set_ctl(PIR=1, ECHO_CM=15)
+        r = b.lines(0.8)
+        check("เคลื่อนไหวจริง -> EVT PLVL 1 + EVT PIR ภายใน 0.8 วิ", has(r, "EVT PLVL 1") and has(r, "EVT PIR"), r)
+        ln, seen = b.wait_for("^EVT PIR$", 6)
+        check("OUT ยัง HIGH ค้าง -> ทริกซ้ำทุก 5 วิ", ln is not None, seen)
+        b.set_ctl(PIR=0, ECHO_CM=15)
+        ln, seen = b.wait_for("EVT PLVL 0", 1.5)
+        held = int(ln.split()[3]) if ln else 0
+        check(f"OUT กลับเป็น LOW -> EVT PLVL 0 บอกเวลาที่ HIGH ({held} ms)", ln is not None and held >= 5000, seen)
+
+        # ตอนมอเตอร์หมุน ต้องไม่ทริก
+        time.sleep(5.2)
+        b.cmd("MOT R 300", wait=0.02)
+        b.set_ctl(PIR=1, ECHO_CM=15)
+        r = b.lines(1.2)
+        st = b.stat()
+        check("มอเตอร์หมุนอยู่ -> ไม่ทริก (นับเป็น PIRI)", not has(r, "EVT PIR") and int(st.get("PIRI", 0)) >= 1, (r, st))
+        b.set_ctl(PIR=0, ECHO_CM=15)
+        b.lines(0.5)
+    finally:
+        b.close()
+
+    # OUT ค้าง HIGH ตั้งแต่เปิดเครื่อง -> รอถึงเพดาน 60 วิ และไม่ทริกหลอกตอนอุ่นเสร็จ
+    b = Board()
+    try:
+        b.set_ctl(PIR=1, ECHO_CM=15)
+        ln, seen = b.wait_for("EVT PREADY", 63)
+        check("OUT ค้าง HIGH ตลอด -> อุ่นเครื่องจนถึงเพดาน 60 วิ", ln is not None and int(ln.split()[2]) >= 59, (ln, seen[-3:]))
+        r = b.lines(2.0)
+        check("อุ่นเสร็จตอน OUT เป็น HIGH -> ไม่ทริกหลอกทันที", not has(r, "EVT PIR"), r)
+    finally:
+        b.close()
+
+
 def main():
     b = Board()
     try:
@@ -111,8 +181,6 @@ def main():
         check("BIRD ค่าแปลก -> ERR ARG", first(r, "ERR ARG") is not None, r)
         ln, seen = b.wait_for("EVT BIRDLAMP 0", 11.5)
         check("ไฟส้มดับเองหลัง 10 วินาที", ln is not None, seen)
-        st = b.stat()
-        check("STAT บอกว่า PIR ยังอุ่นเครื่อง (PIRW > 0)", int(st.get("PIRW", 0)) > 0, st)
 
         r = b.cmd("X" * 80)
         check("บรรทัดยาวเกิน -> ERR TOOLONG ทั้งบรรทัด", r == ["ERR TOOLONG"], r)
@@ -185,17 +253,14 @@ def main():
         ln, seen = b.wait_for("EVT WATER SENSOR OK", 6)
         check("เซนเซอร์กลับมา -> ปลดล็อก", ln is not None and b.stat().get("WEMPTY") == "0", seen)
 
-        # ---------- PIR ----------
-        b.set_ctl(PIR=1, ECHO_CM=12)
-        ln, seen = b.wait_for("EVT PIR", 2)
-        check("PIR ยังไม่ทริกช่วงอุ่นเครื่อง 60 วิ", ln is None, seen)
-
         # ---------- watchdog ----------
         b.cmd("MOT R 100")
         ln, seen = b.wait_for("EVT SAFE TIMEOUT", 18)
         check("Pi เงียบเกิน 15 วิ -> EVT SAFE TIMEOUT", ln is not None, seen)
     finally:
         b.close()
+
+    pir_tests()
 
     # ---------- รีบูตเพราะไฟตก ----------
     b = Board(reset="BROWNOUT")
