@@ -32,7 +32,8 @@ void delayMicroseconds(unsigned int us) { std::this_thread::sleep_for(std::chron
 
 static const char* pinName(int pin) {
   if (pin == PIN_PUMP) return "PUMP";
-  if (pin == PIN_LAMP) return "LAMP";
+  if (pin == PIN_LAMP) return "LAMP_GREEN";
+  if (pin == PIN_BIRD_LAMP) return "LAMP_ORANGE";
   if (pin == PIN_ENA) return "ENA";
   return nullptr;
 }

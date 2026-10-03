@@ -35,13 +35,21 @@ class Sim:
         self.server = None
         self.fw_log = open(os.path.join(HERE, "build", "fw_pins.log"), "a")
         self.server_log_path = os.path.join(HERE, "build", "server.log")
+        # ค่าเซนเซอร์จำลอง (PIR / HC-SR04) เขียนลงไฟล์นี้ เฟิร์มแวร์อ่านทุก 100 ms
+        self.ctl_path = os.path.join(self.data_dir, "sim.ctl")
+        self.set_sensors(PIR=0, ECHO_CM=15)
+
+    def set_sensors(self, **kv):
+        with open(self.ctl_path, "w") as f:
+            for k, v in kv.items():
+                f.write(f"{k}={v}\n")
 
     @property
     def url(self):
         return f"http://127.0.0.1:{self.port}"
 
     def start_board(self, reset="POWERON"):
-        env = dict(os.environ, SIM_RESET=reset)
+        env = dict(os.environ, SIM_RESET=reset, SIM_CTL=self.ctl_path)
         self.fw_log.write(f"----- board start RST={reset} -----\n")
         self.fw_log.flush()
         self.fw = subprocess.Popen([self.fw_exe], stdin=self.master, stdout=self.master,

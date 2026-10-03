@@ -103,6 +103,17 @@ def main():
         r = b.cmd("CAM x1")
         check("CAM ค่าแปลก -> ERR ARG (เดิมเจอเลข 1 ตรงไหนก็เปิด)", first(r, "ERR ARG") is not None, r)
 
+        # ---------- ไฟส้ม (เจอนก) ----------
+        r = b.cmd("BIRD 1")
+        check("BIRD 1 -> ไฟส้มติด", first(r, "OK BIRD 1") is not None and "EVT BIRDLAMP 1" in r, r)
+        check("STAT รายงาน BIRD=1", b.stat().get("BIRD") == "1")
+        r = b.cmd("BIRD 2")
+        check("BIRD ค่าแปลก -> ERR ARG", first(r, "ERR ARG") is not None, r)
+        ln, seen = b.wait_for("EVT BIRDLAMP 0", 11.5)
+        check("ไฟส้มดับเองหลัง 10 วินาที", ln is not None, seen)
+        st = b.stat()
+        check("STAT บอกว่า PIR ยังอุ่นเครื่อง (PIRW > 0)", int(st.get("PIRW", 0)) > 0, st)
+
         r = b.cmd("X" * 80)
         check("บรรทัดยาวเกิน -> ERR TOOLONG ทั้งบรรทัด", r == ["ERR TOOLONG"], r)
 

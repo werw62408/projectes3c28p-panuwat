@@ -1,11 +1,17 @@
 /* ==========================================================================
-   บอร์ดควบคุมโหลด  ESP32  —  เฟิร์มแวร์ v7
+   บอร์ดควบคุมโหลด  ESP32  —  เฟิร์มแวร์ v7.1
    โครงงาน: เครื่องไล่นกอัตโนมัติ
 
    หน้าที่: รับคำสั่งจาก Raspberry Pi ผ่าน USB Serial แล้วสั่งงานอุปกรณ์
             พร้อมรายงานสถานะกลับ และตัดโหลดเองเมื่อเกิดเหตุผิดปกติ
 
-   เปลี่ยนจาก v6 (รุ่นนี้ — เน้นความปลอดภัยของปั๊มและมอเตอร์):
+   เปลี่ยนจาก v7 (รุ่นนี้ — ไฟสถานะแบบใหม่):
+     - ไฟเขียว = พร้อมใช้งาน  ขับผ่านรีเลย์ช่อง 2 (GPIO19 เดิม — ย้ายไฟเขียวมาต่อช่องนี้)
+     - ไฟส้ม   = เจอนก        ขับผ่านรีเลย์ช่อง 3 (GPIO26 ใหม่)
+       Pi สั่ง BIRD 1 เมื่อตรวจเจอนก ไฟส้มติดค้าง BIRD_LAMP_HOLD_MS แล้วดับเอง
+     - STAT รายงาน BIRD (ไฟส้ม) และ PIRW (PIR ยังอุ่นเครื่องอีกกี่วินาที)
+
+   เปลี่ยนจาก v6 (เน้นความปลอดภัยของปั๊มและมอเตอร์):
      - สั่ง PUMP ซ้ำตอนปั๊มเปิดอยู่จะถูกปฏิเสธ (เดิมยืดเวลาได้ไม่รู้จบ)
      - เพิ่มโควตาเวลาปั๊มต่อ 10 นาที กันปั๊มเดินแห้งตอนยังไม่มีเซนเซอร์น้ำ
      - รอบไล่เช็กก่อนว่าปั๊มเปิดได้จริง ถ้าไม่ได้จะตอบ ERR พร้อมเหตุผล
@@ -40,7 +46,7 @@
    Arduino IDE: Board = ESP32 Dev Module / ไม่ต้องลงไลบรารีเพิ่ม
    ========================================================================== */
 
-#define FW_ID "BIRDCTRL v7"
+#define FW_ID "BIRDCTRL v7.1"
 
 #include <Preferences.h>
 #include <esp_system.h>
@@ -58,7 +64,8 @@
 const bool HAS_MOTOR        = true;    // TB6600 + สเต็ปเปอร์
 const bool HAS_PUMP         = true;    // รีเลย์ + ปั๊มน้ำ
 const bool HAS_WATER_SENSOR = false;   // HC-SR04 วัดระดับน้ำ
-const bool HAS_STATUS_LAMP  = true;    // ไฟส้มผ่านรีเลย์ช่อง 2
+const bool HAS_STATUS_LAMP  = true;    // ไฟเขียว "พร้อม" ผ่านรีเลย์ช่อง 2
+const bool HAS_BIRD_LAMP    = true;    // ไฟส้ม "เจอนก" ผ่านรีเลย์ช่อง 3
 const bool HAS_VBAT_SENSE   = false;   // ตัวแบ่งแรงดันวัดแบต
 const bool HAS_PIR          = true;    // HC-SR501
 
@@ -72,10 +79,10 @@ const int PIN_PUMP  = 18;   // รีเลย์ช่อง 1 -> ปั๊ม�
 const int PIN_PIR   = 21;   // HC-SR501 OUT (3.3V ต่อตรงได้)
 const int PIN_TRIG  = 22;   // HC-SR04 TRIG
 const int PIN_ECHO  = 23;   // HC-SR04 ECHO  <-- ต้องผ่านตัวแบ่งแรงดัน 1k/2k
-const int PIN_LAMP  = 19;   // รีเลย์ช่อง 2 -> ไฟส้ม 12V
+const int PIN_LAMP  = 19;   // รีเลย์ช่อง 2 -> ไฟเขียว 12V (พร้อม)
+const int PIN_BIRD_LAMP = 26;   // รีเลย์ช่อง 3 -> ไฟส้ม 12V (เจอนก)
 
-/*  ไฟเขียวกับไฟแดงไม่มีในผังนี้ เพราะไม่ได้ต่อกับ ESP32 เลย
-    ไฟเขียว : ต่อคร่อมไฟ 12V หลังสวิตช์เปิดเครื่อง ติดทันทีที่มีไฟ
+/*  ไฟแดงไม่ได้ต่อกับ ESP32
     ไฟแดง   : ต่อผ่านหน้าสัมผัส NO ของปุ่มฉุกเฉิน ติดค้างเองจนกว่าจะบิดคลาย  */
 const int PIN_VBAT  = 34;   // ADC วัดแรงดันแบต <-- ผ่านตัวแบ่ง 100k/27k
 
@@ -155,6 +162,8 @@ const float VBAT_LOW_V = 11.5;    // ต่ำกว่านี้ = เตื�
    ========================================================================== */
 #define PIR_ENABLED HAS_PIR            // ใช้สวิตช์จากบล็อก 0 ด้านบน
 const unsigned long PIR_LOCKOUT_MS  = 5000;   // ทริกแล้วห้ามทริกซ้ำในกี่ ms
+const unsigned long BIRD_LAMP_HOLD_MS = 10000; // ไฟส้มติดค้างกี่ ms หลัง Pi บอกว่าเจอนก
+                                               // เจอซ้ำจะนับใหม่ / Pi เงียบไปก็ดับเองไม่ค้าง
 const unsigned long PIR_WARMUP_MS   = 60000;  // HC-SR501 ต้องอุ่นตัว 1 นาที
 
 const unsigned long LINK_TIMEOUT_MS = 15000;  // เงียบจาก Pi เกินนี้ = ตัดโหลด
@@ -199,6 +208,8 @@ unsigned long lastHostMs = 0;
 bool  linkDown = true;
 bool  camOnline = false;      // Pi เป็นคนบอกด้วยคำสั่ง CAM 1 / CAM 0
 bool  lampOn = false;
+bool  birdLampOn = false;
+unsigned long birdLampUntil = 0;
 unsigned long bootMs = 0;
 
 enum RepelStep { RP_IDLE, RP_SWEEP_R, RP_SWEEP_L, RP_HOME };
@@ -520,7 +531,7 @@ void serviceBattery() {
 }
 
 /* ==========================================================================
-   14. ไฟส้มบอกความพร้อม (รีเลย์ช่อง 2)
+   14. ไฟเขียวบอกความพร้อม (รีเลย์ช่อง 2) / ไฟส้มบอกว่าเจอนก (รีเลย์ช่อง 3)
    ========================================================================== */
 // พร้อมใช้งาน = ครบทั้งสามระบบ
 //   1) ESP32 บูตเสร็จ (ถึงบรรทัดนี้ได้ก็คือเสร็จแล้ว)
@@ -538,6 +549,20 @@ void serviceLamp() {
     relayWrite(PIN_LAMP, lampOn);
     Serial.printf("EVT READY %d\n", lampOn ? 1 : 0);
   }
+}
+
+void birdLampSet(bool on) {
+  if (!HAS_BIRD_LAMP) return;
+  if (on) birdLampUntil = millis() + BIRD_LAMP_HOLD_MS;
+  if (on != birdLampOn) {
+    birdLampOn = on;
+    relayWrite(PIN_BIRD_LAMP, on);
+    Serial.printf("EVT BIRDLAMP %d\n", on ? 1 : 0);
+  }
+}
+
+void serviceBirdLamp() {
+  if (birdLampOn && (long)(millis() - birdLampUntil) >= 0) birdLampSet(false);
 }
 
 /* ==========================================================================
@@ -563,6 +588,7 @@ void serviceWatchdog() {
     if (!linkDown) {
       linkDown = true;
       camOnline = false;       // Pi เงียบแล้ว ข้อมูลกล้องที่มีก็เชื่อไม่ได้
+      birdLampSet(false);
       Serial.println("EVT SAFE TIMEOUT");
     }
     if (busy) { repelAbort(); enaWrite(false); }
@@ -590,6 +616,10 @@ void sendStat() {
   Serial.print(" VBAT=");    Serial.print(vbat, 2);
   Serial.print(" CAM=");     Serial.print(camOnline ? 1 : 0);
   Serial.print(" READY=");   Serial.print(systemReady() ? 1 : 0);
+  Serial.print(" BIRD=");    Serial.print(birdLampOn ? 1 : 0);
+  unsigned long up_ms = millis() - bootMs;
+  Serial.print(" PIRW=");    Serial.print(HAS_PIR && up_ms < PIR_WARMUP_MS
+                                          ? (long)((PIR_WARMUP_MS - up_ms) / 1000 + 1) : 0L);
   Serial.print(" LIM=");     Serial.print(LIMIT_STEPS);
   Serial.print(" SPR=");     Serial.println(STEPS_PER_REV);
 }
@@ -608,7 +638,7 @@ void handleLine(String line) {
   if (up == "STAT") { sendStat(); return; }
   if (up == "HELP") {
     Serial.println("OK CMDS PING STAT ABORT REPEL MOT L|R <n> MOT HOME MOT STOP "
-                   "MOT ZERO PUMP <ms> WATER CAM 0|1 VCAL <v>");
+                   "MOT ZERO PUMP <ms> WATER CAM 0|1 BIRD 0|1 VCAL <v>");
     return;
   }
 
@@ -625,6 +655,16 @@ void handleLine(String line) {
     if (arg != "0" && arg != "1") { Serial.println("ERR ARG"); return; }
     camOnline = (arg == "1");
     Serial.printf("OK CAM %d\n", camOnline ? 1 : 0);
+    return;
+  }
+
+  if (up.startsWith("BIRD")) {         // Pi บอกว่าเจอนก: BIRD 1 / BIRD 0
+    String arg = up.substring(4);
+    arg.trim();
+    if (arg != "0" && arg != "1") { Serial.println("ERR ARG"); return; }
+    if (!HAS_BIRD_LAMP) { Serial.println("ERR NO BIRD LAMP"); return; }
+    birdLampSet(arg == "1");
+    Serial.printf("OK BIRD %d\n", birdLampOn ? 1 : 0);
     return;
   }
 
@@ -733,6 +773,10 @@ void setup() {
     pinMode(PIN_LAMP, OUTPUT);
     relayWrite(PIN_LAMP, false);
   }
+  if (HAS_BIRD_LAMP) {
+    pinMode(PIN_BIRD_LAMP, OUTPUT);
+    relayWrite(PIN_BIRD_LAMP, false);
+  }
 
   if (HAS_VBAT_SENSE) analogSetPinAttenuation(PIN_VBAT, ADC_11db);
 
@@ -759,9 +803,9 @@ void setup() {
   // ข้อความตอนบูตขึ้นต้นด้วย EVT ไม่ใช่ OK
   // ไม่งั้น Pi อาจเข้าใจผิดว่าเป็นคำตอบของคำสั่งที่ส่งค้างไว้ตอนบอร์ดรีเซ็ต
   Serial.printf("EVT BOOT %s RST=%s\n", FW_ID, resetReasonText);
-  Serial.printf("EVT HW MOTOR=%d PUMP=%d WATER=%d LAMP=%d VBAT=%d PIR=%d\n",
+  Serial.printf("EVT HW MOTOR=%d PUMP=%d WATER=%d LAMP=%d BIRDLAMP=%d VBAT=%d PIR=%d\n",
                 HAS_MOTOR, HAS_PUMP, HAS_WATER_SENSOR,
-                HAS_STATUS_LAMP, HAS_VBAT_SENSE, HAS_PIR);
+                HAS_STATUS_LAMP, HAS_BIRD_LAMP, HAS_VBAT_SENSE, HAS_PIR);
 }
 
 void loop() {
@@ -787,4 +831,5 @@ void loop() {
   servicePir();
   serviceWatchdog();
   serviceLamp();
+  serviceBirdLamp();
 }

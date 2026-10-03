@@ -2,9 +2,15 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6
- ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.1
+ ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.1
 --------------------------------------------------------------------------
+ เปลี่ยนจาก v6 (รุ่นนี้ — ไฟสถานะแบบใหม่):
+   - ไฟเขียว = พร้อม (บอร์ดจัดการเอง) / ไฟส้ม = เจอนก: ตรวจเจอนกเมื่อไหร่ สั่ง BIRD 1 ทันที
+     ไม่ขึ้นกับโหมดไล่อัตโนมัติ ทดสอบได้แม้อยู่ในโหมดทดสอบ
+   - หน้าเว็บแสดงสถานะ PIR (อุ่นเครื่อง/ทริกล่าสุด) และไฟส้ม มีปุ่มทดสอบไฟส้ม
+   - ข้อความสถานะบอกว่ารอบนั้นมาจาก PIR หรือจากรอบอัตโนมัติ
+
  เปลี่ยนจาก v5-usb (รุ่นนี้):
    การตรวจจับ (แก้อาการ "ติดบ้างไม่ติดบ้าง")
    - เปิด ROI แล้วจะตัดภาพเฉพาะกรอบก่อนส่งเข้า YOLO นกจึงตัวใหญ่ขึ้นในสายตาโมเดล
@@ -17,7 +23,7 @@
    ความปลอดภัย
    - ปุ่มสั่งงานบนหน้าเว็บกันการยิงคำสั่งข้ามเว็บ (CSRF) และตั้ง PIN ได้ (env BIRD_PIN)
    - จำกัดจำนวนครั้งที่ไล่อัตโนมัติต่อชั่วโมง กันน้ำหมดเพราะโมเดลเห็นผิดซ้ำ ๆ
-   - รู้ตัวเมื่อบอร์ด ESP32 รีบูต (เช่นไฟตก) แล้วแจ้งสถานะกล้องให้ใหม่ ไฟส้มไม่ดับค้าง
+   - รู้ตัวเมื่อบอร์ด ESP32 รีบูต (เช่นไฟตก) แล้วแจ้งสถานะกล้องให้ใหม่ ไฟพร้อมไม่ดับค้าง
      และเตือนบนหน้าเว็บว่าตำแหน่งมอเตอร์อาจเพี้ยน
    - ข้อความตอนบอร์ดบูตไม่ถูกนับเป็นคำตอบของคำสั่งอีกต่อไป
    - ถ่ายภาพรอจนมอเตอร์หยุดจริง (เดิมอาจใช้สถานะเก่าได้ถึง 3 วินาที)
@@ -459,6 +465,7 @@ class Controller:
             "water_low": False, "water_empty": False,
             "water_fault": False, "pump_duty_left": None,
             "pos_ok": None, "reset_reason": "", "ready": False,
+            "bird_lamp": False, "pir_warm": 0,
             "vbat": 0.0,
         }
         self.last_error = ""
@@ -470,6 +477,8 @@ class Controller:
         self.resync = threading.Event()      # บอร์ดรีบูต/ขาดการติดต่อ -> ต้องแจ้งสถานะกล้องใหม่
         self.board_boots = 0
         self.motion_until = 0.0              # เพิ่งสั่งหมุน ให้ถือว่ายังหมุนอยู่จนกว่า STAT จะยืนยัน
+        self.last_pir_at = 0.0
+        self.pir_count = 0
 
     # ---------- การเชื่อมต่อ ----------
     def _find_port(self):
@@ -656,13 +665,15 @@ class Controller:
                 self.hw["pump_duty_left"] = int(vals["PDUTY"]) if "PDUTY" in vals else None
                 self.hw["pos_ok"] = (vals["POSOK"] == "1") if "POSOK" in vals else None
                 self.hw["reset_reason"] = vals.get("RST", "")
+                self.hw["bird_lamp"] = vals.get("BIRD") == "1"
+                self.hw["pir_warm"] = int(vals.get("PIRW", 0))
             except ValueError:
                 pass
 
     def _on_event(self, line):
         print(f"[CTRL] {line}", flush=True)
         if line.startswith("EVT BOOT") or line.startswith("OK READY"):
-            # บอร์ดรีบูต: สถานะกล้องบนบอร์ดหาย (ไฟส้มจะดับค้าง) และตำแหน่งมอเตอร์อาจเพี้ยน
+            # บอร์ดรีบูต: สถานะกล้องบนบอร์ดหาย (ไฟเขียวจะดับค้าง) และตำแหน่งมอเตอร์อาจเพี้ยน
             self.board_boots += 1
             self.resync.set()
             if "RST=" in line:
@@ -688,7 +699,12 @@ class Controller:
             self.last_error = "น้ำหมด ปั๊มถูกล็อกไว้"
         elif line.startswith("EVT WATER OK"):
             self.last_error = ""
+        elif line.startswith("EVT BIRDLAMP"):
+            with self._hw_lock:
+                self.hw["bird_lamp"] = line.endswith("1")
         elif line.startswith("EVT PIR"):
+            self.last_pir_at = time.time()
+            self.pir_count += 1
             if PIR_TRIGGER_ENABLED:
                 request_detection("pir")
 
@@ -707,6 +723,8 @@ class Controller:
             "repel_hour_left": REPEL_MAX_PER_HOUR - self._repels_last_hour(now),
             "steps_per_rev": STEPS_PER_REV,
             "busy": hw["moving"] or hw["repel"] or now < self.motion_until,
+            "pir_ago": round(now - self.last_pir_at) if self.last_pir_at else None,
+            "pir_count": self.pir_count,
         })
         return hw
 
@@ -1110,6 +1128,10 @@ def _process(source, requested_at):
 
     h, w = img.shape[:2]
 
+    if count > 0 and CTRL.linked:
+        # ไฟส้ม = เจอนก ติดทันทีไม่ว่าจะเปิดไล่อัตโนมัติหรือไม่ (บอร์ดดับเองหลัง 10 วินาที)
+        CTRL.send("BIRD 1", timeout=2.0)
+
     repel_note = CTRL.maybe_auto_repel(count)
     hw = CTRL.snapshot()
 
@@ -1146,9 +1168,10 @@ def _process(source, requested_at):
         STATE["total_frames"] += 1
         if count > 0:
             STATE["total_detections"] += 1
-        STATE["status"] = (f"พบนก {count} ตัว — {repel_note}" if count
-                           else f"ไม่พบนก (ตรวจ {BURST_FRAMES} เฟรม)" if BURST_FRAMES > 1
-                           else "ไม่พบนก")
+        src = {"pir": "PIR ทริก → ", "manual": "กดถ่ายภาพ → "}.get(source, "")
+        STATE["status"] = src + (f"พบนก {count} ตัว — {repel_note}" if count
+                                 else f"ไม่พบนก (ตรวจ {BURST_FRAMES} เฟรม)" if BURST_FRAMES > 1
+                                 else "ไม่พบนก")
 
     append_log([ts.strftime("%Y-%m-%d %H:%M:%S"), source, count,
                 round(max_conf, 3), infer_ms, shutter_ms, w, h,
@@ -1188,10 +1211,10 @@ def _worker():
 
 
 def _ready_loop():
-    """คอยแจ้ง ESP32 ว่ากล้องออนไลน์ไหม เพื่อให้มันตัดสินใจจุดไฟส้ม
+    """คอยแจ้ง ESP32 ว่ากล้องออนไลน์ไหม เพื่อให้มันตัดสินใจจุดไฟเขียว (พร้อม)
 
     ส่งใหม่เมื่อ: สถานะกล้องเปลี่ยน / บอร์ดรีบูตหรือเพิ่งกลับมาติดต่อได้ / ทุก 30 วินาทีกันพลาด
-    (เดิมส่งเฉพาะตอนเปลี่ยน บอร์ดรีบูตแล้วลืมสถานะกล้อง ไฟส้มเลยดับค้าง)
+    (เดิมส่งเฉพาะตอนเปลี่ยน บอร์ดรีบูตแล้วลืมสถานะกล้อง ไฟเขียวเลยดับค้าง)
     """
     last_sent = None
     last_sent_at = 0.0
@@ -1351,6 +1374,14 @@ def api_repel():
     if ok:
         CTRL.last_repel_at = time.time()
         CTRL.repel_count += 1
+    return jsonify(ok=ok, msg=line)
+
+
+@app.route("/api/bird_lamp", methods=["POST"])
+def api_bird_lamp():
+    """ปุ่มทดสอบไฟส้ม"""
+    data = request.get_json(silent=True) or {}
+    ok, line = CTRL.send(f"BIRD {1 if data.get('on', True) else 0}", timeout=3.0)
     return jsonify(ok=ok, msg=line)
 
 
@@ -1564,7 +1595,9 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <div class="stat"><div class="k">แรงดันแบต</div><div class="v" id="vb">-</div></div>
       <div class="stat"><div class="k">มุมมอเตอร์</div><div class="v" id="deg">-</div></div>
       <div class="stat"><div class="k">บอร์ดควบคุม</div><div class="v" id="brd">-</div></div>
-      <div class="stat"><div class="k">ความพร้อม</div><div class="v" id="rdy">-</div></div>
+      <div class="stat"><div class="k">ไฟเขียว (พร้อม)</div><div class="v" id="rdy">-</div></div>
+      <div class="stat"><div class="k">ไฟส้ม (เจอนก)</div><div class="v" id="blamp">-</div></div>
+      <div class="stat"><div class="k">PIR</div><div class="v" id="pir" style="font-size:16px">-</div></div>
       <div class="stat"><div class="k">โควตาปั๊ม (10 นาที)</div><div class="v" id="duty">-</div></div>
       <div class="stat"><div class="k">ไล่อัตโนมัติได้อีก (ชม.นี้)</div><div class="v" id="rph">-</div></div>
     </div>
@@ -1590,6 +1623,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <button id="bPump">💧 ปั๊มน้ำ 3 วินาที</button>
       <button id="bRepel" class="pri">🚿 สั่งไล่เดี๋ยวนี้</button>
       <button id="bWater">📏 วัดระดับน้ำใหม่</button>
+      <button id="bLamp">💡 ทดสอบไฟส้ม</button>
       <button id="bAbort" class="dan">■ หยุดทุกอย่าง</button>
     </div>
     <div class="row">
@@ -1666,6 +1700,7 @@ const ERR_TH = {
   'ERR PUMP DUTY':'ใช้ปั๊มครบโควตา 10 นาทีแล้ว รอสักพัก',
   'ERR WATER EMPTY':'น้ำหมด (หรือเซนเซอร์น้ำเสีย) ปั๊มถูกล็อก',
   'ERR NO WATER SENSOR':'ยังไม่ได้ต่อเซนเซอร์ระดับน้ำ',
+  'ERR UNKNOWN':'บอร์ดไม่รู้จักคำสั่งนี้ (แฟลชเฟิร์มแวร์ v7.1 หรือยัง?)',
 };
 function thaiMsg(m){ return (m && ERR_TH[m.trim()]) || m || ''; }
 
@@ -1741,9 +1776,18 @@ async function tick(){
   $('deg').textContent = s.hw.deg + '°' + (s.hw.pos_ok === false ? ' ?' : '');
   $('brd').textContent = s.hw.link ? 'เชื่อมต่อแล้ว' : 'ไม่ได้เชื่อมต่อ';
   $('brd').style.color = s.hw.link ? 'var(--ok)' : 'var(--bad)';
-  const ready = s.hw.link && s.hw.ready;          // อ่านจากบอร์ดจริง = ตรงกับไฟส้มจริง
-  $('rdy').textContent = ready ? 'พร้อม (ไฟส้มติด)' : 'กำลังเตรียม';
-  $('rdy').style.color = ready ? 'var(--warn)' : 'var(--muted)';
+  const ready = s.hw.link && s.hw.ready;          // อ่านจากบอร์ดจริง = ตรงกับไฟเขียวจริง
+  $('rdy').textContent = ready ? 'ติด (พร้อม)' : 'ดับ (กำลังเตรียม)';
+  $('rdy').style.color = ready ? 'var(--ok)' : 'var(--muted)';
+  const bl = s.hw.link && s.hw.bird_lamp;
+  $('blamp').textContent = bl ? 'ติด' : 'ดับ';
+  $('blamp').style.color = bl ? 'var(--warn)' : 'var(--muted)';
+  $('pir').textContent = !s.hw.link ? '-'
+      : s.hw.pir_warm > 0 ? 'อุ่นเครื่องอีก ' + s.hw.pir_warm + ' วิ'
+      : s.hw.pir ? 'เห็นการเคลื่อนไหว'
+      : s.hw.pir_ago != null ? 'ทริกล่าสุด ' + s.hw.pir_ago + ' วิที่แล้ว'
+      : 'พร้อม ยังไม่ทริก';
+  $('pir').style.color = s.hw.pir ? 'var(--warn)' : '';
 
   pill($('pillDet'), s.auto_detect, 'ทุก ' + s.auto_interval + ' วิ', 'ปิดอยู่');
   pill($('pillCam'), s.cam_online, 'ออนไลน์', 'ออฟไลน์');
@@ -1822,6 +1866,7 @@ $('bPump').onclick  = () => run('/api/pump', {ms:3000});
 $('bRepel').onclick = () => run('/api/repel');
 $('bWater').onclick = () => run('/api/water');
 $('bAbort').onclick = () => run('/api/abort');
+$('bLamp').onclick  = () => run('/api/bird_lamp', {on: true});
 
 $('roiOn').onchange = e => post('/api/roi', {enabled: e.target.checked});
 $('roiSave').onclick = async () => {

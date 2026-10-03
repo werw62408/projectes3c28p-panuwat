@@ -165,12 +165,53 @@ def main_flow(page, sim):
     check("Pi รู้ว่าบอร์ดรีบูตเพราะไฟตก", s is not None)
     s = wait_state(sim, lambda s: s["hw"]["pos_ok"] is False and s["hw"]["ready"], 15)
     resent = open(sim.server_log_path, encoding="utf-8").read().count("แจ้งบอร์ดว่ากล้องออนไลน์")
-    check("หลังบอร์ดรีบูต Pi แจ้งสถานะกล้องใหม่ -> ไฟส้มกลับมาติด", s is not None and resent >= 2, resent)
+    check("หลังบอร์ดรีบูต Pi แจ้งสถานะกล้องใหม่ -> ไฟเขียวกลับมาติด", s is not None and resent >= 2, resent)
     page.wait_for_timeout(2500)
     warns = page.inner_text("#warns")
     check("หน้าเว็บเตือนว่าบอร์ดรีบูตเองและตำแหน่งมอเตอร์อาจเพี้ยน", "BROWNOUT" in warns and "ตั้งจุดกลาง" in warns, warns)
     page.evaluate("window.scrollTo(0,0)")
     shot(page, "05_brownout_warning.png")
+
+
+def pir_flow(page, sim):
+    """ปิดตรวจอัตโนมัติ -> PIR ทริก -> กล้องจับนก -> ไฟส้มติด -> ดับเอง"""
+    page.goto(sim.url)
+    page.wait_for_function("document.getElementById('brd').textContent === 'เชื่อมต่อแล้ว'", timeout=20000)
+    page.uncheck("#autoDet")
+    page.wait_for_timeout(4000)
+    check("ไฟเขียวติดเมื่อ Pi + กล้องพร้อม", "ติด" in page.inner_text("#rdy"), page.inner_text("#rdy"))
+    check("ไฟส้มดับตอนยังไม่เจอนก", page.inner_text("#blamp") == "ดับ", page.inner_text("#blamp"))
+    check("หน้าเว็บบอกว่า PIR ยังอุ่นเครื่อง", "อุ่นเครื่อง" in page.inner_text("#pir"), page.inner_text("#pir"))
+    shot(page, "06_pir_warmup.png")
+
+    s = wait_state(sim, lambda s: s["hw"]["pir_warm"] == 0, 75)
+    check("PIR อุ่นเครื่องครบ 60 วิ", s is not None)
+    frames = state(sim)["total_frames"]
+    page.wait_for_timeout(5000)
+    check("ปิดตรวจอัตโนมัติแล้ว ไม่มีการถ่ายภาพเอง", state(sim)["total_frames"] == frames)
+
+    t0 = time.time()
+    sim.set_sensors(PIR=1, ECHO_CM=15)
+    s = wait_state(sim, lambda s: s["hw"]["bird_lamp"], 15)
+    lag = time.time() - t0
+    check(f"ขยับหน้า PIR -> ไฟส้มติด (ใช้เวลา {lag:.1f} วิ)", s is not None, state(sim)["status"])
+    st = state(sim)
+    check("รอบนั้นมาจาก PIR และเจอนก", st["last_source"] == "pir" and st["bird_count"] > 0, st["status"])
+    page.wait_for_timeout(1200)
+    check("หน้าเว็บแสดงไฟส้มติด", page.inner_text("#blamp") == "ติด", page.inner_text("#blamp"))
+    check("ข้อความบอกว่ามาจาก PIR", "PIR ทริก" in msg(page), msg(page))
+    page.evaluate("window.scrollTo(0, document.getElementById('cnt').getBoundingClientRect().top - 300)")
+    shot(page, "07_pir_bird_lamp.png")
+    with open(os.path.join(HERE, "build", "fw_pins.log"), encoding="utf-8") as f:
+        check("ขารีเลย์ไฟส้ม (GPIO26) เป็น HIGH จริง", "LAMP_ORANGE HIGH" in f.read())
+
+    sim.set_sensors(PIR=0, ECHO_CM=15)
+    s = wait_state(sim, lambda s: not s["hw"]["bird_lamp"], 14)
+    check("ไม่เจอนกต่อ -> ไฟส้มดับเองใน 10 วิ", s is not None)
+
+    page.click("#bLamp")
+    m = wait_msg(page, "OK BIRD", 3)
+    check("ปุ่มทดสอบไฟส้มใช้ได้", "OK BIRD 1" in m, m)
 
 
 def pin_flow(page, sim):
@@ -197,6 +238,7 @@ def main():
     ap.add_argument("--clip", required=True)
     ap.add_argument("--model", required=True)
     ap.add_argument("--chromium", default=None)
+    ap.add_argument("--bird-clip", default=None, help="คลิปที่มีนกตลอด ใช้กับการทดสอบ PIR")
     a = ap.parse_args()
     os.makedirs(SHOTS, exist_ok=True)
 
@@ -209,6 +251,13 @@ def main():
         sim = Sim(a.clip, a.model, port=5055).start()
         try:
             main_flow(browser.new_page(**phone), sim)
+        finally:
+            sim.stop()
+
+        print("== PIR -> ตรวจจับ -> ไฟส้ม ==")
+        sim = Sim(a.bird_clip or a.clip, a.model, port=5057).start()
+        try:
+            pir_flow(browser.new_page(**phone), sim)
         finally:
             sim.stop()
 
