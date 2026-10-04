@@ -2,7 +2,7 @@
 import base64, json, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 CASE = os.path.join(HERE, "..", "..", "case")   # (v13: next to this folder, not a fixed Windows path)
-BOX = "out_box2"   # the box layout shown: out_box2 = layout 2 (18650 at the bottom end, KY-022, hub board)
+BOX = "out_box3"   # the box layout shown: out_box3 = layout 3, the clear box D384 180 x 100 x 25 (v13.1); out_box2 = layout 2
 sys.path.insert(0, CASE); os.chdir(CASE)
 import make_case as mc
 

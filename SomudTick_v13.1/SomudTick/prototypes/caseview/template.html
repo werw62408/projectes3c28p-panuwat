@@ -151,12 +151,28 @@ function showBox() {
     }
     const m = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false, curveSegments: 24 }), mat(c, op)); m.position.z = z0; grp.add(m);
   };
-  const white = "#e9e6df";
-  plate(B.holes, 0, B.face, white, boxView === "solid" ? 1 : 0.55);
+  // v13.1: a clear box (D384) is drawn as clear plastic, with its hinge (left), latch (right) and the lid's rim
+  const clear = !!B.clear, white = clear ? "#bcd9e6" : "#e9e6df", lidC = clear ? "#a9cddd" : "#d8d4cc";
+  const oFace = clear ? (boxView === "solid" ? 0.6 : 0.2) : (boxView === "solid" ? 1 : 0.55), oWall = clear ? (boxView === "solid" ? 0.5 : 0.14) : o;
+  plate(B.holes, 0, B.face, white, oFace);
   const slab = (cx, cy, w, h, z0, z1, c, op) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, z1 - z0), mat(c, op)); m.position.set(cx, cy, (z0 + z1) / 2); grp.add(m); };
-  slab(-W / 2 + B.wall / 2, 0, B.wall, H, B.face, bodyD, white, o); slab(W / 2 - B.wall / 2, 0, B.wall, H, B.face, bodyD, white, o);
-  slab(0, H / 2 - B.wall / 2, W - 2 * B.wall, B.wall, B.face, bodyD, white, o); slab(0, -H / 2 + B.wall / 2, W - 2 * B.wall, B.wall, B.face, bodyD, white, o);
-  if (boxView !== "open") plate(B.lid_holes || [], bodyD, B.lid, "#d8d4cc", o);   // the lid: only the speaker grille, nothing fixed to it
+  const rim = B.body_rim || bodyD, inset = B.lid_line ? 0.6 : 0;   // (the lid's rim comes down over the body walls)
+  const bw = W - 2 * inset, bh = H - 2 * inset;
+  slab(-bw / 2 + B.wall / 2, 0, B.wall, bh, B.face, rim, white, oWall); slab(bw / 2 - B.wall / 2, 0, B.wall, bh, B.face, rim, white, oWall);
+  slab(0, bh / 2 - B.wall / 2, bw - 2 * B.wall, B.wall, B.face, rim, white, oWall); slab(0, -bh / 2 + B.wall / 2, bw - 2 * B.wall, B.wall, B.face, rim, white, oWall);
+  if (boxView !== "open") {
+    plate(B.lid_holes || [], bodyD, B.lid, lidC, clear ? oWall + 0.06 : o);   // the lid: only the speaker grille, nothing fixed to it
+    if (B.lid_line) {   // the lid's rim, from where it covers the body walls up to its top
+      const z0 = B.lid_line, z1 = bodyD, t = 0.8;
+      slab(-W / 2 + t / 2, 0, t, H, z0, z1, lidC, oWall + 0.06); slab(W / 2 - t / 2, 0, t, H, z0, z1, lidC, oWall + 0.06);
+      slab(0, H / 2 - t / 2, W - 2 * t, t, z0, z1, lidC, oWall + 0.06); slab(0, -H / 2 + t / 2, W - 2 * t, t, z0, z1, lidC, oWall + 0.06);
+    }
+  }
+  if (B.hinge) {   // the hinge along the left long side, the latch in the middle of the right one
+    const hx = (B.hinge === "left" ? -1 : 1) * (W / 2 + 1.0), g = new THREE.CylinderGeometry(1.3, 1.3, H - 40, 16);
+    const hm = new THREE.Mesh(g, mat("#7fa9bb", clear ? 0.7 : 1)); hm.position.set(hx, 0, B.lid_line || bodyD); grp.add(hm);
+    slab(-hx, 0, 2.0, 14, (B.lid_line || bodyD) - 4, (B.lid_line || bodyD) + 3, "#7fa9bb", clear ? 0.75 : 1);
+  }
   for (const [x, y] of B.posts) { const g = new THREE.CylinderGeometry(B.post_r, B.post_r, bodyD - B.face, 24); g.rotateX(Math.PI / 2); const m = new THREE.Mesh(g, mat(white, o)); m.position.set(x, y, (B.face + bodyD) / 2); grp.add(m); }
   for (const it of B.items) {
     const h = it.z1 - it.z0, g = it.k === "box" ? new THREE.BoxGeometry(it.w, it.h, h) : new THREE.CylinderGeometry(it.r, it.r, h, 32);
@@ -187,16 +203,15 @@ function showBox() {
   const tog = (id, on, t) => `<button type="button" id="${id}" aria-pressed="${on}">${t}</button>`;
   const legend = (B.labels || []).map((l, i) => `<li><span class="n">${i + 1}</span><div><b>${l.name}</b><span>${l.where}</span></div></li>`).join("")
     + (B.free || []).map((f, i) => `<li><span class="n free">ว${i + 1}</span><div><b>${f.name}</b><span>${f.size} · เหลือไว้ใส่ของเพิ่มหรือเดินสาย</span></div></li>`).join("");
-  $("info").innerHTML = `<h2>กล่องสำเร็จรูป 177 × 94 × 35 (เจาะเอง)</h2><div class="tabs" id="boxSeg">${btn("see", "โปร่งใส (เห็นข้างใน)")}${btn("solid", "ทึบ")}${btn("open", "เปิดฝาหลัง")}${tog("tMarks", showMarks, "เลขกำกับ")}${tog("tFree", showFree, "พื้นที่ว่าง")}${tog("tWires", showWires, "สายไฟ")}${tog("tBack", viewBack, "มองจากด้านหลัง")}</div>
+  $("info").innerHTML = `<h2>${B.title || "กล่องสำเร็จรูป 177 × 94 × 35 (เจาะเอง)"}</h2><div class="tabs" id="boxSeg">${btn("see", clear ? "กล่องใส (เหมือนจริง)" : "โปร่งใส (เห็นข้างใน)")}${btn("solid", clear ? "ดูทรงกล่อง" : "ทึบ")}${btn("open", clear ? "เปิดฝา" : "เปิดฝาหลัง")}${tog("tMarks", showMarks, "เลขกำกับ")}${tog("tFree", showFree, "พื้นที่ว่าง")}${tog("tWires", showWires, "สายไฟ")}${tog("tBack", viewBack, "มองจากด้านหลัง")}</div>
     <div class="label">อะไรอยู่ตรงไหน (เลขตรงกับบนรูป)</div><ol class="legend">${legend}</ol>
     <details class="cuts"><summary><b>ตารางตัดสาย (${(B.wires || []).length} เส้น)</b> · ทางจริง + ปลอกปลายละ 4 มม. + เผื่อ 15 มม.</summary>
       <div class="tablewrap"><table><thead><tr><th>สาย</th><th>จาก → ถึง</th><th>สัญญาณ</th><th>ขนาด</th><th>ตัด (มม.)</th></tr></thead><tbody>
       ${(B.wires || []).map((w) => `<tr><td><i style="background:${w.c}"></i>${w.id}</td><td>${w.a} → ${w.b}</td><td>${w.sig}</td><td>${w.awg} AWG</td><td class="num">${w.cut}</td></tr>`).join("")}
       </tbody></table></div>
       <ul>${(B.joints || []).map((j) => `<li><b>${j.j}</b> ${j.t}</li>`).join("")}</ul></details>
-    <p>ของทุกชิ้นยึดกับตัวกล่อง (หน้ากล่อง = พื้นเรียบของตัวกล่อง) ฝาหลังไม่มีอะไรติดเลย: ไขน็อตฝา ยกออก ก็เห็นทุกชิ้น</p>
-    <p>จอเล็ก 1.3" มุมขวาบน ขอบขวาตรงกับจอใหญ่ · ตัวรับ IR กับหลอดส่ง IR มองออกผนังบน · สวิตช์กับ USB-C ผนังซ้าย · ลำโพงขวาล่าง: หลังลำโพงแปะกาวติดด้านในหน้ากล่อง รูเสียงเจาะที่ฝาหลัง · แบต นาฬิกา PCF8574 อยู่หลังบอร์ดปุ่ม</p>
-    <p>ของข้างในเป็นกล่องแทนขนาดจริง · หน้ากล่องเจาะรูตามแม่แบบ <span class="path" style="display:inline-block">case\\out_box2\\drill_template.pdf</span></p>`;
+    ${(B.notes || ["ของทุกชิ้นยึดกับตัวกล่อง (หน้ากล่อง = พื้นเรียบของตัวกล่อง) ฝาหลังไม่มีอะไรติดเลย"]).map((t) => `<p>${t}</p>`).join("")}
+    <p>ของข้างในเป็นกล่องแทนขนาดจริง · หน้ากล่องเจาะรูตามแม่แบบ <span class="path" style="display:inline-block">${B.template || "case/out_box2/drill_template.pdf"}</span></p>`;
   document.querySelectorAll("#boxSeg button[data-v]").forEach((b) => b.onclick = () => { boxView = b.dataset.v; showBox(); });
   $("tMarks").onclick = () => { showMarks = !showMarks; showBox(); };
   $("tFree").onclick = () => { showFree = !showFree; showBox(); };
@@ -218,7 +233,7 @@ function updateMarks() {
     m.el.style.left = ((tmpV.x + 1) / 2 * w) + "px"; m.el.style.top = ((1 - tmpV.y) / 2 * h) + "px"; m.el.hidden = tmpV.z > 1;
   }
 }
-const TABS = [{ tab: "กล่องสำเร็จรูป", box: true }, { tab: "เคสพิมพ์ 3D", asm: true }, ...PARTS];
+const TABS = [{ tab: (BOX && BOX.tab) || "กล่องสำเร็จรูป", box: true }, { tab: "เคสพิมพ์ 3D", asm: true }, ...PARTS];
 function show(i) {
   document.querySelectorAll("#tabs button").forEach((b, k) => b.setAttribute("aria-pressed", String(k === i)));
   clearMarks();

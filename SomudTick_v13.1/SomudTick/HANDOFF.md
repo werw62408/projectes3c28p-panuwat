@@ -126,8 +126,8 @@
 บทเรียน: เซฟเก่าในเบราว์เซอร์ผู้ใช้ทำให้เห็นบั๊กที่ผมไม่เห็น → เปลี่ยนกติกาโลกเมื่อไหร่ต้องเปลี่ยนคีย์เซฟ/เลข `GEN`
 
 ### 3.3 ตัวดูเคส 3 มิติ `prototypes/caseview/`
-ลิงก์ (v13, กล่องแบบ 2): https://claude.ai/artifact/QHp9WYyrmArYY3hwHa9M4r (ลิงก์เดิม BTNaYSXUALyYV5CDXBHCuf เปิดจากบัญชีนี้ไม่ได้)
-`python prototypes/caseview/build.py` → รวม `template.html` + STL ใน `case/out/` + `case/out_box2/box_asm.json` + `box_wires.json` เป็น `index.html` (เปลี่ยนแบบกล่องที่ตัวแปร `BOX`)
+ลิงก์ (v13.1, กล่องใส D384 แบบ 3): https://claude.ai/artifact/TyWyqEshBGRMKvejsAUkwW (ลิงก์ของ v13 QHp9WYyrmArYY3hwHa9M4r และ BTNaYSXUALyYV5CDXBHCuf อยู่ในอีกบัญชี เปิดจากเครื่องนี้ไม่ได้)
+`python prototypes/caseview/build.py` → รวม `template.html` + STL ใน `case/out/` + `case/out_box3/box_asm.json` + `box_wires.json` เป็น `index.html` (เปลี่ยนแบบกล่องที่ตัวแปร `BOX`; กล่องใส: `clear`, บานพับ, ขอบฝา มาจาก `make_box3.py`)
 แท็บ: กล่องสำเร็จรูป (เลขกำกับ, พื้นที่ว่าง, สายไฟ, มองจากด้านหลัง) · เคสพิมพ์ 3D · ชิ้นส่วนแต่ละชิ้น
 
 ### 3.4 PICK & PLACE (เกมเรียงอะไหล่) `prototypes/pickplace/index.html`
