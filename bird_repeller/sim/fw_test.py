@@ -124,8 +124,10 @@ def pir_tests():
         b.set_ctl(PIR=1, ECHO_CM=15)
         r = b.lines(0.8)
         check("เคลื่อนไหวจริง -> EVT PLVL 1 + EVT PIR ภายใน 0.8 วิ", has(r, "EVT PLVL 1") and has(r, "EVT PIR"), r)
-        ln, seen = b.wait_for("^EVT PIR$", 6)
-        check("OUT ยัง HIGH ค้าง -> ทริกซ้ำทุก 5 วิ", ln is not None, seen)
+        ln, seen = b.wait_for("^EVT PIR REP$", 6)
+        check("OUT ยัง HIGH ค้าง -> ทริกซ้ำทุก 5 วิ (EVT PIR REP)", ln is not None, seen)
+        st = b.stat()
+        check("ตัวนับแยก: ทริกใหม่ PIRN=1 / ทริกซ้ำ PIRR=1", st.get("PIRN") == "1" and st.get("PIRR") == "1", st)
         b.set_ctl(PIR=0, ECHO_CM=15)
         ln, seen = b.wait_for("EVT PLVL 0", 1.5)
         held = int(ln.split()[3]) if ln else 0
@@ -140,6 +142,36 @@ def pir_tests():
         check("มอเตอร์หมุนอยู่ -> ไม่ทริก (นับเป็น PIRI)", not has(r, "EVT PIR") and int(st.get("PIRI", 0)) >= 1, (r, st))
         b.set_ctl(PIR=0, ECHO_CM=15)
         b.lines(0.5)
+    finally:
+        b.close()
+
+    # OUT ค้าง HIGH นานโดยไม่เจอนก -> เลิกทริกซ้ำ / เจอนกระหว่างค้าง -> ทริกซ้ำต่อ
+    b = Board()
+    try:
+        b.wait_for("EVT PREADY", 25)
+        b.lines(0.3)
+        b.set_ctl(PIR=1, ECHO_CM=15)
+        t0 = time.time()
+        ln, seen = b.wait_for("EVT PSTUCK 1", 33)
+        dt = time.time() - t0
+        reps = sum(1 for l in seen if l == "EVT PIR REP")
+        check(f"ค้าง HIGH ไม่เจอนก -> EVT PSTUCK 1 หลัง {dt:.0f} วิ (ทริกซ้ำไป {reps} รอบ)",
+              ln is not None and 29 <= dt <= 32 and reps == 5, seen)
+        r = b.lines(11)
+        st = b.stat()
+        check("ค้างแล้วเลิกทริกซ้ำ (11 วิไม่มี EVT PIR REP) / STAT PSTK=1",
+              not has(r, "EVT PIR REP") and st.get("PSTK") == "1", (r, st))
+        b.cmd("BIRD 1", wait=0)                         # กล้องกลับมาเจอนก
+        seen = b.lines(1.0)
+        ln, ln2 = has(seen, "EVT PSTUCK 0") or None, has(seen, "EVT PIR REP") or None
+        check("กล้องเจอนกระหว่างค้าง -> PSTUCK 0 และทริกซ้ำต่อทันที", ln is not None and ln2 is not None, seen)
+        r = b.lines(31)
+        check("30 วิหลังเจอนกครั้งสุดท้าย ถ้ายังค้าง -> PSTUCK 1 อีก", has(r, "EVT PSTUCK 1") or
+              any(l.startswith("EVT PSTUCK 1") for l in r), r)
+        b.set_ctl(PIR=0, ECHO_CM=15)
+        r = b.lines(1.0)
+        st = b.stat()
+        check("OUT กลับเป็น LOW -> PSTUCK 0", any(l == "EVT PSTUCK 0" for l in r) and st.get("PSTK") == "0", (r, st))
     finally:
         b.close()
 

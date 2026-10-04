@@ -2,10 +2,16 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.2
- ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.2
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.3
+ ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.3
 --------------------------------------------------------------------------
- เปลี่ยนจาก v6.1 (รุ่นนี้ — PIR):
+ เปลี่ยนจาก v6.2 (รุ่นนี้ — PIR ค้าง):
+   - แยกตัวนับ "ทริกใหม่" (EVT PIR) กับ "ทริกซ้ำระหว่าง OUT ค้าง" (EVT PIR REP)
+     บันทึก PIR บอกว่าแต่ละครั้งทริกซ้ำไปกี่รอบ
+   - บอร์ดเลิกทริกซ้ำเองเมื่อ OUT ค้าง HIGH เกิน 30 วิ และกล้องไม่เจอนก (EVT PSTUCK)
+     หน้าเว็บขึ้นเตือนให้เช็กปุ่ม Sx/Tx
+
+ เปลี่ยนจาก v6.1 (PIR):
    - สถานะ PIR บนเว็บมาจาก EVT PLVL ทันทีที่เปลี่ยน ไม่ใช่สุ่มดูจาก STAT ทุก 3 วิ
    - เพิ่มบันทึก PIR: แต่ละครั้ง HIGH นานเท่าไหร่ ทริกจริงไหม พร้อมตัวนับ
      ทริก / กระตุก (สัญญาณรบกวน) / ไม่สนใจเพราะมอเตอร์ ไว้หาสาเหตุ PIR หลอน
@@ -472,7 +478,8 @@ class Controller:
             "water_fault": False, "pump_duty_left": None,
             "pos_ok": None, "reset_reason": "", "ready": False,
             "bird_lamp": False, "pir_warm": 0,
-            "pir_trig": 0, "pir_glitch": 0, "pir_ignored": 0,
+            "pir_trig": 0, "pir_rep": 0, "pir_stuck": False,
+            "pir_glitch": 0, "pir_ignored": 0,
             "vbat": 0.0,
         }
         self.last_error = ""
@@ -486,6 +493,7 @@ class Controller:
         self.motion_until = 0.0              # เพิ่งสั่งหมุน ให้ถือว่ายังหมุนอยู่จนกว่า STAT จะยืนยัน
         self.last_pir_at = 0.0
         self.pir_count = 0
+        self.pir_rep_count = 0
         self.pir_log = deque(maxlen=12)      # แต่ละครั้งที่ OUT เป็น HIGH: เวลา / นานเท่าไหร่ / ทริกไหม
 
     # ---------- การเชื่อมต่อ ----------
@@ -676,6 +684,8 @@ class Controller:
                 self.hw["bird_lamp"] = vals.get("BIRD") == "1"
                 self.hw["pir_warm"] = int(vals.get("PIRW", 0))
                 self.hw["pir_trig"] = int(vals.get("PIRN", 0))
+                self.hw["pir_rep"] = int(vals.get("PIRR", 0))
+                self.hw["pir_stuck"] = vals.get("PSTK") == "1"
                 self.hw["pir_glitch"] = int(vals.get("PIRG", 0))
                 self.hw["pir_ignored"] = int(vals.get("PIRI", 0))
             except ValueError:
@@ -721,21 +731,34 @@ class Controller:
                 self.hw["pir"] = high
                 if high:
                     self.pir_log.appendleft({"ts": datetime.now().strftime("%H:%M:%S"),
-                                             "held": None, "trig": False})
+                                             "held": None, "trig": False, "reps": 0, "stuck": False})
                 elif self.pir_log and self.pir_log[0]["held"] is None and len(parts) > 3:
                     self.pir_log[0]["held"] = round(int(parts[3]) / 1000, 1)
         elif line.startswith("EVT PREADY"):
             with self._hw_lock:
                 self.hw["pir_warm"] = 0
-        elif line.strip() == "EVT PIR":
-            self.last_pir_at = time.time()
-            self.pir_count += 1
+        elif line.startswith("EVT PSTUCK"):
+            # OUT ค้าง HIGH นานโดยกล้องไม่เจอนก บอร์ดเลิกทริกซ้ำแล้ว: "EVT PSTUCK 1 <วิ>" / "EVT PSTUCK 0"
+            stuck = line.split()[2:3] == ["1"]
             with self._hw_lock:
-                if self.pir_log:
-                    self.pir_log[0]["trig"] = True
-                else:
+                self.hw["pir_stuck"] = stuck
+                if stuck and self.pir_log:
+                    self.pir_log[0]["stuck"] = True
+        elif line.strip() in ("EVT PIR", "EVT PIR REP"):
+            repeat = line.strip() == "EVT PIR REP"
+            self.last_pir_at = time.time()
+            if repeat:
+                self.pir_rep_count += 1
+            else:
+                self.pir_count += 1
+            with self._hw_lock:
+                if not self.pir_log:
                     self.pir_log.appendleft({"ts": datetime.now().strftime("%H:%M:%S"),
-                                             "held": None, "trig": True})
+                                             "held": None, "trig": False, "reps": 0, "stuck": False})
+                if repeat:
+                    self.pir_log[0]["reps"] += 1
+                else:
+                    self.pir_log[0]["trig"] = True
             if PIR_TRIGGER_ENABLED:
                 request_detection("pir")
 
@@ -757,6 +780,7 @@ class Controller:
             "busy": hw["moving"] or hw["repel"] or now < self.motion_until,
             "pir_ago": round(now - self.last_pir_at) if self.last_pir_at else None,
             "pir_count": self.pir_count,
+            "pir_rep_count": self.pir_rep_count,
         })
         return hw
 
@@ -1641,7 +1665,8 @@ HTML_PAGE = r"""<!DOCTYPE html>
       บันทึก PIR — ใช้หาสาเหตุ PIR หลอน
     </div>
     <div class="grid">
-      <div class="stat"><div class="k">ทริก (ส่งให้ตรวจจับ)</div><div class="v" id="pirN">-</div></div>
+      <div class="stat"><div class="k">ทริกใหม่</div><div class="v" id="pirN">-</div></div>
+      <div class="stat"><div class="k">ทริกซ้ำ (OUT ค้าง)</div><div class="v" id="pirR">-</div></div>
       <div class="stat"><div class="k">กระตุก (กรองทิ้ง)</div><div class="v" id="pirG">-</div></div>
       <div class="stat"><div class="k">ไม่สนใจ (มอเตอร์หมุน)</div><div class="v" id="pirI">-</div></div>
     </div>
@@ -1807,6 +1832,9 @@ async function tick(){
   if(s.hw.link && s.hw.pump_duty_left === 0) w.push(['w', 'ใช้ปั๊มครบโควตา 10 นาทีแล้ว ปั๊มจะกลับมาใช้ได้เอง']);
   if(s.hw.repel_hour_left <= 0) w.push(['w', 'ไล่อัตโนมัติครบโควตาชั่วโมงนี้แล้ว (กันน้ำหมดเพราะโมเดลเห็นผิดซ้ำ ๆ)']);
   if(!s.cam_online) w.push(['b', 'กล้องออฟไลน์ — เช็กสาย USB ของเว็บแคม']);
+  if(s.hw.link && s.hw.pir_stuck)
+    w.push(['w', 'PIR ค้าง HIGH เกิน 30 วิ และกล้องไม่เจอนก — หยุดสั่งถ่ายซ้ำไว้ก่อน ' +
+                 'ลองลดปุ่ม Sx (ความไว) หรือ Tx (หน่วงเวลา) และเช็กว่ามีแดด/ลมร้อน/ใบไม้ไหวหน้าเซนเซอร์ไหม']);
   warnBox(w);
 
   // ---- สถานะเครื่อง ----
@@ -1830,6 +1858,7 @@ async function tick(){
   $('blamp').style.color = bl ? 'var(--warn)' : 'var(--muted)';
   $('pir').textContent = !s.hw.link ? '-'
       : s.hw.pir_warm > 0 ? 'อุ่นเครื่อง (ไม่เกิน ' + s.hw.pir_warm + ' วิ)'
+      : s.hw.pir_stuck ? 'ค้าง HIGH (หยุดถ่ายซ้ำ)'
       : s.hw.pir ? 'เห็นการเคลื่อนไหว'
       : s.hw.pir_ago != null ? 'ทริกล่าสุด ' + s.hw.pir_ago + ' วิที่แล้ว'
       : 'พร้อม ยังไม่ทริก';
@@ -1837,20 +1866,25 @@ async function tick(){
 
   // ---- บันทึก PIR ----
   $('pirN').textContent = s.hw.pir_trig;
+  $('pirR').textContent = s.hw.pir_rep;
   $('pirG').textContent = s.hw.pir_glitch;
   $('pirI').textContent = s.hw.pir_ignored;
   const log = s.hw.pir_log || [];
   const holds = log.map(e => e.held).filter(h => h != null);
   let hint = '';
   if(s.hw.pir_glitch >= 5) hint = 'กระตุกบ่อย: สัญญาณรบกวนเข้าสาย PIR — เช็กไฟเลี้ยง 5V / ใส่ตัวเก็บประจุที่ PIR / แยกสายออกจากสายมอเตอร์';
+  else if(s.hw.pir_stuck || log.some(e => e.stuck))
+    hint = 'เคยค้าง HIGH จนต้องหยุดถ่ายซ้ำ: ลด Sx (ความไว) ทีละนิด ถ้ายังค้างให้หมุน Tx (หน่วงเวลา) ทวนเข็มจนสุด';
   else if(holds.length && Math.max(...holds) > 20) hint = 'HIGH ค้างนาน: หมุนปุ่ม Tx (หน่วงเวลา) บน PIR ทวนเข็มจนสุด';
   $('pirHint').textContent = hint;
   $('pirLog').innerHTML = '';
   for(const e of log){
     const d = document.createElement('div');
     d.textContent = e.ts + ' · ' + (e.held == null ? 'HIGH อยู่' : 'HIGH ' + e.held + ' วิ') +
-                    ' · ' + (e.trig ? 'ทริก ✓' : 'ไม่ทริก (ช่วงพัก/มอเตอร์)');
-    d.style.color = e.trig ? 'var(--txt)' : 'var(--muted)';
+                    ' · ' + (e.trig ? 'ทริก ✓' : 'ไม่ทริก (ช่วงพัก/มอเตอร์)') +
+                    (e.reps ? ' · ซ้ำ ' + e.reps + ' รอบ' : '') +
+                    (e.stuck ? ' · ค้าง! หยุดถ่ายซ้ำ' : '');
+    d.style.color = e.stuck ? 'var(--warn)' : (e.trig || e.reps ? 'var(--txt)' : 'var(--muted)');
     $('pirLog').appendChild(d);
   }
   if(!log.length) $('pirLog').textContent = 'ยังไม่มีการเคลื่อนไหว';

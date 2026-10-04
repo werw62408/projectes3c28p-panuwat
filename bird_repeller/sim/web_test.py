@@ -218,6 +218,56 @@ def pir_flow(page, sim):
     check("ปุ่มทดสอบไฟส้มใช้ได้", "OK BIRD 1" in m, m)
 
 
+def empty_clip():
+    """คลิปภาพว่าง ๆ ไม่มีนก ไว้ทดสอบ PIR ค้าง"""
+    import cv2
+    import numpy as np
+    path = os.path.join(HERE, "build", "empty.mp4")
+    if not os.path.exists(path):
+        vw = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), 10, (640, 480))
+        rng = np.random.default_rng(1)
+        for _ in range(30):
+            vw.write((np.full((480, 640, 3), 120) + rng.integers(0, 6, (480, 640, 3))).astype("uint8"))
+        vw.release()
+    return path
+
+
+def pir_stuck_flow(page, sim):
+    """PIR ค้าง HIGH และกล้องไม่เจอนก -> บอร์ดเลิกทริกซ้ำ หน้าเว็บเตือน"""
+    page.goto(sim.url)
+    page.wait_for_function("document.getElementById('brd').textContent === 'เชื่อมต่อแล้ว'", timeout=20000)
+    page.uncheck("#autoDet")
+    s = wait_state(sim, lambda s: s["hw"]["pir_warm"] == 0, 30)
+    check("PIR พร้อม", s is not None)
+    sim.set_sensors(PIR=1, ECHO_CM=15)
+    page.wait_for_timeout(12000)
+    st = state(sim)["hw"]
+    check(f"ช่วงค้าง: ทริกใหม่ {st['pir_trig']} / ทริกซ้ำ {st['pir_rep']} นับแยกกัน",
+          st["pir_trig"] == 1 and st["pir_rep"] >= 1, st)
+    check("หน้าเว็บแสดงช่องทริกซ้ำ", page.inner_text("#pirR") == str(st["pir_rep"]) or
+          int(page.inner_text("#pirR")) >= 1, page.inner_text("#pirR"))
+    s = wait_state(sim, lambda s: s["hw"]["pir_stuck"], 25)
+    check("ค้างเกิน 30 วิไม่เจอนก -> บอร์ดแจ้งค้าง", s is not None)
+    frames = state(sim)["total_frames"]
+    page.wait_for_timeout(11000)
+    check("ค้างแล้วไม่ถ่ายซ้ำอีก", state(sim)["total_frames"] == frames, (frames, state(sim)["total_frames"]))
+    warns = page.inner_text("#warns")
+    check("หน้าเว็บเตือน PIR ค้าง ให้เช็ก Sx/Tx", "PIR ค้าง" in warns and "Sx" in warns, warns)
+    check("ช่อง PIR บอกว่าค้าง", "ค้าง" in page.inner_text("#pir"), page.inner_text("#pir"))
+    check("บันทึก PIR บอกจำนวนรอบซ้ำและว่าค้าง", "ซ้ำ" in page.inner_text("#pirLog") and "ค้าง!" in page.inner_text("#pirLog"),
+          page.inner_text("#pirLog"))
+    page.evaluate("window.scrollTo(0,0)")
+    shot(page, "09_pir_stuck_warning.png")
+    page.evaluate("document.getElementById('pirLog').scrollIntoView({block:'center'})")
+    shot(page, "10_pir_stuck_log.png")
+    sim.set_sensors(PIR=0, ECHO_CM=15)
+    s = wait_state(sim, lambda s: not s["hw"]["pir_stuck"], 6)
+    check("OUT กลับเป็น LOW -> หายค้าง", s is not None)
+    page.wait_for_timeout(1500)
+    check("คำเตือนหายไป เหลือคำแนะนำในบันทึก", "PIR ค้าง" not in page.inner_text("#warns") and
+          "Sx" in page.inner_text("#pirHint"), page.inner_text("#pirHint"))
+
+
 def pin_flow(page, sim):
     code = raw_post(sim.url + "/api/pump", b"{}", {"Content-Type": "application/json", "X-Bird-UI": "1"})
     check("ตั้ง PIN แล้ว สั่งโดยไม่มี PIN -> 401", code == 401, code)
@@ -262,6 +312,13 @@ def main():
         sim = Sim(a.bird_clip or a.clip, a.model, port=5057).start()
         try:
             pir_flow(browser.new_page(**phone), sim)
+        finally:
+            sim.stop()
+
+        print("== PIR ค้าง (ไม่มีนก) ==")
+        sim = Sim(empty_clip(), a.model, port=5058).start()
+        try:
+            pir_stuck_flow(browser.new_page(**phone), sim)
         finally:
             sim.stop()
 

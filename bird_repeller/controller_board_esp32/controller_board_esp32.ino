@@ -5,7 +5,14 @@
    หน้าที่: รับคำสั่งจาก Raspberry Pi ผ่าน USB Serial แล้วสั่งงานอุปกรณ์
             พร้อมรายงานสถานะกลับ และตัดโหลดเองเมื่อเกิดเหตุผิดปกติ
 
-   เปลี่ยนจาก v7.1 (รุ่นนี้ — PIR ไม่หลอน):
+   เปลี่ยนจาก v7.2 (รุ่นนี้ — PIR ค้าง):
+     - แยกการทริก: "EVT PIR" = เคลื่อนไหวครั้งใหม่ / "EVT PIR REP" = ทริกซ้ำระหว่าง OUT ค้าง HIGH
+       STAT เพิ่ม PIRR (นับทริกซ้ำ) แยกจาก PIRN (ทริกใหม่)
+     - OUT ค้าง HIGH เกิน 30 วิ และ Pi ไม่ได้บอกว่าเจอนก (BIRD 1) ใน 30 วิล่าสุด
+       = เลิกทริกซ้ำ ส่ง EVT PSTUCK 1 <วินาที> / STAT PSTK=1
+       ถ้ากล้องกลับมาเจอนก หรือ OUT กลับเป็น LOW จะกลับมาปกติ (EVT PSTUCK 0)
+
+   เปลี่ยนจาก v7.1 (PIR ไม่หลอน):
      - อุ่นเครื่องแบบปรับตัวเอง: อย่างน้อย 10 วิ แล้วรอให้ขา OUT นิ่งเป็น LOW 5 วิ
        ส่วนใหญ่พร้อมใน ~15-20 วิ (เดิมรอตายตัว 60 วิ) / เพดาน 60 วิ เผื่อ OUT ค้าง
      - กรองสัญญาณกระตุก: ต้อง HIGH ต่อเนื่อง 200 ms ถึงนับ (สัญญาณจริงยาว 2 วิขึ้นไป)
@@ -58,7 +65,7 @@
    Arduino IDE: Board = ESP32 Dev Module / ไม่ต้องลงไลบรารีเพิ่ม
    ========================================================================== */
 
-#define FW_ID "BIRDCTRL v7.2"
+#define FW_ID "BIRDCTRL v7.3"
 
 #include <Preferences.h>
 #include <esp_system.h>
@@ -175,6 +182,8 @@ const float VBAT_LOW_V = 11.5;    // ต่ำกว่านี้ = เตื�
 #define PIR_ENABLED HAS_PIR            // ใช้สวิตช์จากบล็อก 0 ด้านบน
 const unsigned long PIR_LOCKOUT_MS  = 5000;   // ทริกแล้วห้ามทริกซ้ำในกี่ ms
                                               // ถ้า OUT ยัง HIGH อยู่ จะทริกซ้ำทุกช่วงนี้
+const unsigned long PIR_STUCK_MS = 30000;     // OUT ค้าง HIGH นานเกินนี้ + ไม่เจอนกช่วงนี้
+                                              // = ถือว่าเซนเซอร์ค้าง เลิกทริกซ้ำ
 const unsigned long PIR_DEBOUNCE_MS = 200;    // ต้อง HIGH/LOW ต่อเนื่องเท่านี้ถึงจะเชื่อ
 const unsigned long PIR_IGNORE_AFTER_MOVE_MS = 2000;  // หลังมอเตอร์หยุด ไม่สนใจ PIR กี่ ms
 const unsigned long BIRD_LAMP_HOLD_MS = 10000; // ไฟส้มติดค้างกี่ ms หลัง Pi บอกว่าเจอนก
@@ -228,7 +237,10 @@ bool  pirRawPrev = false;
 unsigned long pirRawChangeAt = 0;
 unsigned long pirHighSince = 0;
 unsigned long pirLastTrig = 0;
-long  pirTrigCount = 0;         // ทริกจริง (ส่ง EVT PIR ให้ Pi)
+long  pirTrigCount = 0;         // ทริกใหม่ (ส่ง EVT PIR ให้ Pi)
+long  pirRepCount = 0;          // ทริกซ้ำระหว่าง OUT ค้าง HIGH (ส่ง EVT PIR REP)
+bool  pirStuck = false;         // OUT ค้าง HIGH นานเกิน PIR_STUCK_MS โดยไม่เจอนก
+unsigned long lastBirdMs = 0;   // Pi สั่ง BIRD 1 ครั้งล่าสุดเมื่อไหร่ (0 = ยังไม่เคย)
 long  pirGlitchCount = 0;       // HIGH สั้นกว่า PIR_DEBOUNCE_MS = สัญญาณรบกวน
 long  pirIgnoredCount = 0;      // ทริกตอนมอเตอร์หมุน/เพิ่งหยุด เลยไม่ส่ง
 
@@ -594,14 +606,22 @@ void serviceBirdLamp() {
 /* ==========================================================================
    15. PIR
    ========================================================================== */
-// ส่ง EVT PIR ให้ Pi (ถ้าไม่ได้อยู่ช่วงที่มอเตอร์ทำให้หลอน)
-void pirTrigger(unsigned long now) {
+// ส่ง EVT PIR (ครั้งใหม่) / EVT PIR REP (ซ้ำระหว่างค้าง) ให้ Pi
+// ถ้าไม่ได้อยู่ช่วงที่มอเตอร์ทำให้หลอน
+void pirTrigger(unsigned long now, bool repeat) {
   pirLastTrig = now;
   bool motorBusy = moving || repelStep != RP_IDLE ||
                    (long)(now - lastMoveEndMs) < (long)PIR_IGNORE_AFTER_MOVE_MS;
   if (motorBusy) { pirIgnoredCount++; return; }
-  pirTrigCount++;
-  Serial.println("EVT PIR");
+  if (repeat) { pirRepCount++;  Serial.println("EVT PIR REP"); }
+  else        { pirTrigCount++; Serial.println("EVT PIR"); }
+}
+
+void pirSetStuck(bool stuck, unsigned long now) {
+  if (stuck == pirStuck) return;
+  pirStuck = stuck;
+  if (stuck) Serial.printf("EVT PSTUCK 1 %lu\n", (now - pirHighSince) / 1000);
+  else       Serial.println("EVT PSTUCK 0");
 }
 
 void servicePir() {
@@ -638,14 +658,21 @@ void servicePir() {
     if (raw) {
       pirHighSince = now;
       Serial.println("EVT PLVL 1");
-      if ((long)(now - pirLastTrig) >= (long)PIR_LOCKOUT_MS || pirTrigCount == 0) pirTrigger(now);
+      if ((long)(now - pirLastTrig) >= (long)PIR_LOCKOUT_MS || pirTrigCount == 0) pirTrigger(now, false);
     } else {
       Serial.printf("EVT PLVL 0 %lu\n", now - pirHighSince);   // HIGH ค้างนานเท่าไหร่
+      pirSetStuck(false, now);
     }
   }
 
   // ---- OUT ยัง HIGH ค้าง (นกยังอยู่ / ยังมีการเคลื่อนไหว) -> ทริกซ้ำเป็นระยะ ----
-  if (pirLevel && (long)(now - pirLastTrig) >= (long)PIR_LOCKOUT_MS) pirTrigger(now);
+  // แต่ถ้าค้างนานเกิน PIR_STUCK_MS และกล้องไม่เจอนกเลยช่วงนั้น = เซนเซอร์ค้าง เลิกทริกซ้ำ
+  // (กล้องยังตรวจตามรอบอัตโนมัติ ถ้ากลับมาเจอนก Pi สั่ง BIRD 1 แล้วจะทริกซ้ำต่อ)
+  if (pirLevel) {
+    bool birdRecent = lastBirdMs != 0 && now - lastBirdMs < PIR_STUCK_MS;
+    pirSetStuck(now - pirHighSince >= PIR_STUCK_MS && !birdRecent, now);
+    if (!pirStuck && (long)(now - pirLastTrig) >= (long)PIR_LOCKOUT_MS) pirTrigger(now, true);
+  }
 }
 
 /* ==========================================================================
@@ -691,6 +718,8 @@ void sendStat() {
   Serial.print(" PIRW=");    Serial.print(HAS_PIR && !pirWarm
                                           ? (long)((PIR_WARMUP_MS - min(up_ms, PIR_WARMUP_MS)) / 1000 + 1) : 0L);
   Serial.print(" PIRN=");    Serial.print(pirTrigCount);
+  Serial.print(" PIRR=");    Serial.print(pirRepCount);
+  Serial.print(" PSTK=");    Serial.print(pirStuck ? 1 : 0);
   Serial.print(" PIRG=");    Serial.print(pirGlitchCount);
   Serial.print(" PIRI=");    Serial.print(pirIgnoredCount);
   Serial.print(" LIM=");     Serial.print(LIMIT_STEPS);
@@ -735,6 +764,7 @@ void handleLine(String line) {
     String arg = up.substring(4);
     arg.trim();
     if (arg != "0" && arg != "1") { Serial.println("ERR ARG"); return; }
+    if (arg == "1") lastBirdMs = millis() | 1;   // | 1 กันค่า 0 ที่ใช้แทน "ยังไม่เคย"
     if (!HAS_BIRD_LAMP) { Serial.println("ERR NO BIRD LAMP"); return; }
     birdLampSet(arg == "1");
     Serial.printf("OK BIRD %d\n", birdLampOn ? 1 : 0);
