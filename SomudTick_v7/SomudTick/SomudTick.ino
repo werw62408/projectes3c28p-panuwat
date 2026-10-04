@@ -4,7 +4,7 @@
 
   Screen text is in simple English. (The web page on the phone stays in Thai.)
   Tabs:  Log | Stats | Apps | Settings
-  Apps:  Hours (heat map) | Files (SD photos/videos) | AC Remote (Panasonic IR) | Game (Pixel Swim)
+  Apps:  Files (SD photos/videos) | AC Remote (Panasonic IR) | Games (Pixel Swim, Sudoku, Cave Swarm) | Internet
 
   Extra parts (optional):
     Joystick  VRX -> IO2, VRY -> IO3, SW -> IO14, +5V -> 3.3V (not 5V!), GND -> GND
@@ -74,7 +74,6 @@ uint8_t themeDark = 0, textColIdx = 0, rot = 0;
 
 const int HDR_H = 30;
 int W = 240, H = 320, FTR_Y = 290, CONT_H = 260;   // เปลี่ยนตามการหมุนจอ
-bool land() { return W > H; }
 
 // ---------------- ข้อมูล ----------------
 struct Act {
@@ -101,8 +100,12 @@ uint8_t brightIdx = 3;
 const uint8_t BRIGHT[] = {30, 70, 130, 200, 255};
 
 // ---------------- UI state ----------------
-enum Screen { S_HOME, S_STATS, S_APPS, S_SET, S_KEYPAD, S_HEAT, S_FILES, S_AC, S_GAME, S_SUDOKU, S_NET, S_WIFI, S_KBD, S_BT, S_GAMES };
+enum Screen { S_HOME, S_STATS, S_APPS, S_SET, S_KEYPAD, S_HEAT, S_FILES, S_AC, S_GAME, S_SUDOKU, S_NET, S_WIFI, S_KBD, S_BT, S_GAMES, S_CAVE };
 Screen scr = S_HOME;
+// Arduino IDE writes function prototypes above the first function in this file,
+// so the first function must come after every type those prototypes use.
+struct KpGeo;
+bool land() { return W > H; }
 bool dirty = true;
 int scrollY = 0, heatScroll = 0, setScroll = 0, setMax = 0, filesScroll = 0, acScroll = 0, acMax = 0;
 int8_t volIdx = 2;   // sound volume 0..4, -1 = off
@@ -1106,11 +1109,11 @@ void drawKeypadFooter() {
 }
 
 // ---------------- Apps menu ----------------
-// 4 big tiles. "Games" opens a second page where you pick Pixel Swim or Sudoku.
-enum AppIcon { IC_FILES, IC_AC, IC_GAMES, IC_NET, IC_SWIM, IC_SUDOKU };
+// 4 big tiles. "Games" opens a second page where you pick Pixel Swim, Sudoku or Cave Swarm.
+enum AppIcon { IC_FILES, IC_AC, IC_GAMES, IC_NET, IC_SWIM, IC_SUDOKU, IC_CAVE };
 const int N_APPS = 4;
 const char* APP_NAMES[N_APPS] = {"Files", "AC Remote", "Games", "Internet"};
-const char* APP_SUBS[N_APPS] = {"Photos, clips", "Air con", "2 games", "Weather"};
+const char* APP_SUBS[N_APPS] = {"Photos, clips", "Air con", "3 games", "Weather"};
 const AppIcon APP_ICONS[N_APPS] = {IC_FILES, IC_AC, IC_GAMES, IC_NET};
 void appTileRect(int i, int& x, int& y, int& w, int& h) {
   int cols = 2, rows = 2, gap = 6;
@@ -1138,6 +1141,11 @@ void drawAppIcon(int ic, int cx, int cy, uint32_t c) {
       const char* d[3] = {"5", "3", "8"}; const int px[3] = {0, 2, 1}, py[3] = {0, 1, 2};
       for (int k = 0; k < 3; k++) spr.drawString(d[k], x0 + px[k] * cs + cs / 2 + 1, y0 + py[k] * cs + cs / 2 + 1);
       break; }
+    case IC_CAVE: {   // a bug with legs
+      for (int k = -1; k <= 1; k++) { spr.drawLine(cx + k * 6, cy, cx + k * 9, cy - 11, C(c)); spr.drawLine(cx + k * 6, cy, cx + k * 9, cy + 11, C(c)); }
+      spr.fillCircle(cx - 7, cy, 7, C(blend(CARD, c, 0.6f))); spr.fillCircle(cx + 4, cy, 9, C(c));
+      spr.fillCircle(cx + 8, cy - 3, 2, C(CARD)); spr.fillCircle(cx + 8, cy + 3, 2, C(CARD));
+      break; }
   }
 }
 void drawAppTile(int x, int y, int w, int h, int icon, const String& name, const String& sub) {
@@ -1151,23 +1159,26 @@ void drawAppTile(int x, int y, int w, int h, int icon, const String& name, const
 void drawApps() {
   for (int i = 0; i < N_APPS; i++) { int x, y, w, h; appTileRect(i, x, y, w, h); drawAppTile(x, y, w, h, APP_ICONS[i], APP_NAMES[i], APP_SUBS[i]); }
 }
-// Games page: 2 tiles under a title bar
+// Games page: 3 tiles under a title bar
+const int N_GAMES = 3;
 void gamesTileRect(int i, int& x, int& y, int& w, int& h) {
   int top = HDR_H + 38, gap = 6;
-  if (land()) { w = (W - 12 - gap) / 2; h = FTR_Y - top - 6; x = 6 + i * (w + gap); y = top; }
-  else { w = W - 12; h = (FTR_Y - top - 6 - gap) / 2; x = 6; y = top + i * (h + gap); }
+  if (land()) { w = (W - 12 - gap * (N_GAMES - 1)) / N_GAMES; h = FTR_Y - top - 6; x = 6 + i * (w + gap); y = top; }
+  else { w = W - 12; h = (FTR_Y - top - 6 - gap * (N_GAMES - 1)) / N_GAMES; x = 6; y = top + i * (h + gap); }
 }
 String gameSub(int i);   // (in the game files) a short line: best score / saved game
 void drawGames() {
   drawAppTitle("Games");
-  const char* n[2] = {"Pixel Swim", "Sudoku"};
-  for (int i = 0; i < 2; i++) { int x, y, w, h; gamesTileRect(i, x, y, w, h); drawAppTile(x, y, w, h, i ? IC_SUDOKU : IC_SWIM, n[i], gameSub(i)); }
+  const char* n[N_GAMES] = {"Pixel Swim", "Sudoku", "Cave Swarm"};
+  const AppIcon ic[N_GAMES] = {IC_SWIM, IC_SUDOKU, IC_CAVE};
+  for (int i = 0; i < N_GAMES; i++) { int x, y, w, h; gamesTileRect(i, x, y, w, h); drawAppTile(x, y, w, h, ic[i], n[i], gameSub(i)); }
 }
 
 // ---------------- Apps ----------------
 #include "app_media.h"
 #include "app_ac.h"
 #include "app_game.h"
+#include "app_cave.h"
 #include "app_sudoku.h"
 #include "app_net.h"
 #include "app_connect.h"
@@ -1265,9 +1276,9 @@ void onTap(int x, int y) {
       break;
     case S_GAMES:
       if (backHit(x, y)) { scr = S_APPS; dirty = true; break; }
-      for (int i = 0; i < 2; i++) {
+      for (int i = 0; i < N_GAMES; i++) {
         int ax, ay, aw, ah; gamesTileRect(i, ax, ay, aw, ah);
-        if (hitR(x, y, ax, ay, aw, ah)) { if (i == 0) gameOpen(); else sudokuOpen(); }
+        if (hitR(x, y, ax, ay, aw, ah)) { if (i == 0) gameOpen(); else if (i == 1) sudokuOpen(); else caveOpen(); }
       }
       break;
     case S_FILES: filesTap(x, y); break;
@@ -1730,6 +1741,12 @@ void loop() {
   if (scr == S_GAME) {   // the game draws itself, ~30 times a second
     touchTask(); ledTask(); gameLoop();
     if (scr != S_GAME) render();
+    delay(1);
+    return;
+  }
+  if (scr == S_CAVE) {   // Cave Swarm reads the touch screen itself (drag = move)
+    ledTask(); caveLoop();
+    if (scr != S_CAVE) { tDown = false; tHandled = true; render(); }
     delay(1);
     return;
   }

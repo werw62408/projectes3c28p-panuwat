@@ -325,6 +325,7 @@ void sudokuJoyTask() {
 
 // line under each tile on the Games page
 String gameSub(int i) {
+  if (i == 2) return caveSub();
   if (i == 0) { int b = prefs.getInt("best", 0); return b ? "Best " + String(b) + " - joystick" : String("Joystick game"); }
   if (!sdkHave) sdkHave = prefs.getBytes("sdk", &sg, sizeof sg) == sizeof sg;
   if (sdkHave && !sg.done) return String("Go on: ") + SDK_LEVEL_N[sg.level] + " " + mmss(sg.secs);
