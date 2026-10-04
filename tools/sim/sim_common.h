@@ -19,7 +19,6 @@ MDNSClass MDNS;
 bool g_simOffline = false;
 std::string g_simLogsRoot;
 std::vector<SimBle> g_simBle;
-bool g_simTaskFail = false;
 std::vector<int16_t> g_simI2S;
 int g_simIrMsgs = 0; int g_simDriveCap[64] = {0};   // IR messages sent, pin drive strength (tests)
 int g_simAnalog[64], g_simDigital[64];
@@ -28,6 +27,13 @@ bool g_simTouch = false; int g_simTouchX = 0, g_simTouchY = 0;   // a finger on 
 bool g_simTaskFail = false;       // the next background task fails to start
 bool g_simBleOn = false; int g_simBleDeinits = 0;   // BLE stack state
 bool g_simRtcOn = false;           // a DS3231 clock module on the I2C wires
+std::vector<SimIrMsg> g_simIrIn;   // v13: IR messages "received" by the KY-022 (tests push them)
+std::vector<SimIrSent> g_simIrOut; // v13: everything sent by the IR LED through IRsend
+bool g_simIrRxOn = false;
+SimOled g_simOled; bool g_simOledOn = false;   // v13: small screen at 0x3C
+bool g_simPadOn = false; uint8_t g_simPadAddr = 0x20, g_simPadDown = 0;   // v13: PCF8574 button board (bit = button held)
+int g_simI2cFail = 0;
+void (*g_simDelayHook)() = nullptr;
 uint8_t g_simRtc[19] = {0};        // its registers
 
 #include "SomudTick.ino"
@@ -45,6 +51,17 @@ static void savePng(LovyanGFX& g, const std::string& name, int w, int h) {
   printf("saved %s\n", p.c_str());
 }
 static void shot(const std::string& name) { dirty = true; render(); savePng(spr, name, W, H); }
+// v13: what the small screen really shows (its memory, as the chip got it), 4x bigger. chip 0 = SH1106 (columns 2..129)
+static void oledPng(const std::string& name, int chip = 0) {
+  LGFX_Sprite big; big.setColorDepth(16); big.createSprite(128 * 4 + 8, 64 * 4 + 8); big.fillScreen(0x2104);
+  int off = chip == 0 ? 2 : 0;
+  for (int y = 0; y < 64; y++) for (int x = 0; x < 128; x++) {
+    bool on = g_simOled.ram[y >> 3][x + off] & (1 << (y & 7));
+    uint16_t c = !g_simOled.dispOn ? 0x0000 : on ? (g_simOled.contrast < 0x10 ? 0x630C : 0xDFFF) : 0x0841;
+    big.fillRect(4 + x * 4, 4 + y * 4, 3, 3, c);
+  }
+  savePng(big, name, big.width(), big.height());
+}
 static void shotLcd(const std::string& name) { savePng(lcd, name, lcd.width(), lcd.height()); }
 static void tick(int n = 1) { for (int i = 0; i < n; i++) { g_simMs += 200; loop(); } }
 static void tap(int x, int y) { onTap(x, y); }

@@ -41,14 +41,29 @@ int main() {
 
   // ================= the 6 fixes =================
   // F1 reminder sound: after the last note there is at least 90 ms of silence (what the sound chip still holds)
+#ifdef HAS_PIXSWIM
+  // (v11.9+: every sound plays in a background task on the board. The simulator only counts what is asked for; the task
+  // itself writes silence after the notes and keeps the amp on 250 ms after the last sound, longer than the 90 ms the
+  // sound chip holds, so the end is not cut. That part can only be heard on the board.)
+  { volIdx = 2; uint32_t c0 = sfxCount[SFX_REMIND];
+    remindBeep();
+    printf("F1 reminder sound asked for once (played by the background task) %s\n", R(sfxCount[SFX_REMIND] == c0 + 1)); }
+#else
   { i2sOn = true; codecOk = true; volIdx = 2; g_simI2S.clear();
     remindBeep();
     int last = -1; for (int i = 0; i < (int)g_simI2S.size(); i++) if (g_simI2S[i]) last = i;
     int tail = (int)g_simI2S.size() - 1 - last;
     printf("F1 reminder sound: %d samples of silence after the last note (need >= 1440 = 90 ms) %s\n", tail, R(tail >= 1440)); }
+#endif
   // F2 Dragon after 26 days switched on: no dash by itself, a press dashes
+#ifdef HAS_PIXSWIM
+  // (v11.9+: the Dragon became Pixel Swim, which has no dash. Same idea: after 26 days on, nothing starts by itself, a press starts)
+  { g_simMs = 26ULL * DAY; gameOpen(); run(100); bool before = gs == G_PLAY; press(); run(300); bool during = gs == G_PLAY;
+    printf("F2 game after 26 days on: playing without a press=%d, a press starts=%d %s\n", before, during, R(!before && during));
+#else
   { g_simMs = 26ULL * DAY; gameOpen(); run(100); press(); run(300); bool before = dashing(); press(); run(40); bool during = dashing(); run(1500);
     printf("F2 Dragon after 26 days on: dashing without a press=%d, a press dashes=%d %s\n", before, during, R(!before && during));
+#endif
     g_simDigital[JOY_SW] = LOW; run(1500); g_simDigital[JOY_SW] = HIGH; run(200); g_simMs = DAY / 2; }
   // F3 Bluetooth: the scan ends while another page is open -> the memory is given back at once
   { btPageOpen(); dirty = true; run(100); btScan(); goScreen(S_APPS); dirty = true; run(100); btDone = true; run(500);

@@ -1,0 +1,1334 @@
+<meta charset="utf-8">
+<title>SomudTick Fire Ants</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap">
+<style>
+/* Layout: the board's 240x320 screen (pixel-exact, scaled up) on the left, the colony's numbers and the time controls on the right. */
+:root {
+  --bg: #120d0a;         /* dark soil */
+  --panel: #1c1511;
+  --line: #3a2a20;
+  --ink: #f4e9df;
+  --dim: #b39c8b;
+  --sand: #c2461e;       /* fire ant red */
+  --egg: #fff5e6;
+  --leaf: #9bd35a;       /* food */
+  --gold: #f2c94c;
+  --f-ui: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --f-num: "Space Mono", ui-monospace, "Cascadia Mono", monospace;
+  color-scheme: dark;
+}
+html, body { background: var(--bg); color: var(--ink); }
+body { font-family: var(--f-ui); font-size: 15px; line-height: 1.45; padding-inline: 16px; padding-block: 16px 28px; }
+.wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 14px; }
+header { display: grid; gap: 2px; }
+h1 { font-weight: 700; font-size: clamp(22px, 3.6vw, 30px); margin: 0; letter-spacing: .02em; text-wrap: balance; }
+h1 span { color: var(--sand); }
+.sub { color: var(--dim); font-size: 13.5px; }
+.main { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 820px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.device { background: #050403; border: 1px solid var(--line); border-radius: 14px; padding: 10px; justify-self: center; max-width: 100%; }
+canvas { display: block; width: 560px; max-width: 100%; aspect-ratio: 3 / 4; image-rendering: pixelated; image-rendering: crisp-edges; border-radius: 4px; cursor: pointer; }
+canvas:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+.hint { color: var(--dim); font-size: 12px; text-align: center; margin-top: 6px; }
+.side { display: grid; gap: 12px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; min-width: 0; }
+.label { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+.stage { font-size: 20px; font-weight: 700; }
+.stage small { font-size: 13px; color: var(--dim); font-weight: 400; margin-left: 6px; }
+.nums { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 460px) { .nums { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.num { background: #140f0c; border-radius: 8px; padding: 8px 10px; }
+.num b { display: block; font-family: var(--f-num); font-size: 20px; font-variant-numeric: tabular-nums; }
+.num span { font-size: 11px; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
+.brood { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13.5px; }
+.brood i { display: inline-block; width: 8px; height: 6px; border-radius: 3px; margin-right: 6px; background: var(--c); vertical-align: middle; }
+.meter { display: grid; gap: 4px; font-size: 13px; }
+.meter .track { height: 8px; background: #140f0c; border-radius: 4px; overflow: hidden; }
+.meter .fill { height: 100%; background: var(--sand); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button { font-family: var(--f-ui); font-size: 14px; color: var(--ink); background: #2a1f18; border: 1px solid #4a372b; border-radius: 7px; padding: 8px 12px; cursor: pointer; min-height: 40px; }
+button:hover:not(:disabled) { border-color: var(--dim); }
+button:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+button:disabled { opacity: .4; cursor: not-allowed; }
+button.on { background: var(--sand); border-color: var(--sand); color: #1a0a02; font-weight: 700; }
+button.go { background: var(--gold); border-color: var(--gold); color: #1a1202; font-weight: 700; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg button { min-width: 44px; font-family: var(--f-num); }
+.note { font-size: 13px; color: #d7c6b8; }
+.note strong { color: var(--ink); }
+.confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: #ffb4a0; }
+.danger { background: #5a1d12; border-color: #8a2e1c; }
+.scroll { justify-content: center; margin-top: 8px; }
+.scroll button { flex: 1 1 0; min-width: 0; }
+.brain { display: grid; gap: 6px; font-size: 13px; }
+.need { display: grid; grid-template-columns: 6.5em minmax(0, 1fr) 5.5em; gap: 8px; align-items: center; }
+.need .track { height: 7px; background: #140f0c; border-radius: 4px; overflow: hidden; }
+.need .fill { height: 100%; background: var(--c); }
+.need .v { font-family: var(--f-num); font-size: 11.5px; color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; }
+.castes { color: var(--dim); font-size: 12.5px; }
+.castes b { color: var(--ink); font-family: var(--f-num); font-weight: 400; }
+.why { margin: 4px 0 0; padding-left: 18px; color: #d7c6b8; display: grid; gap: 3px; }
+.finds { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13.5px; }
+.finds li { display: grid; grid-template-columns: 4.2em minmax(0, 1fr); gap: 8px; }
+.finds li span { font-family: var(--f-num); font-size: 11.5px; color: var(--dim); }
+.finds li.empty { display: block; color: var(--dim); }
+footer { color: var(--dim); font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>SomudTick <span>Fire Ant Colony</span></h1>
+    <div class="sub">The Ants game from the board with red imported fire ants (<i>Solenopsis invicta</i>): minors, medias and big-headed majors, a queen, winged alates, a soil mound.</div>
+  </header>
+
+  <div class="main">
+    <div class="device">
+      <canvas id="cv" width="480" height="640" tabindex="0" aria-label="Ant farm: tap to show the room names"></canvas>
+      <div class="hint">Drag or scroll the farm to go deeper · tap it for room names</div>
+      <div class="row scroll">
+        <button id="up" title="Up (↑)">▲ Top</button>
+        <button id="face" title="Jump to where they dig">⛏ Digging face</button>
+        <button id="down" title="Down (↓)">▼ Deeper</button>
+      </div>
+      <div class="row scroll">
+        <button id="zoom" title="Zoom (Z)">Zoom ×2</button>
+        <button id="scentBtn" title="Show the scent trails (S)">Scent trails: off</button>
+      </div>
+      <div class="row scroll">
+        <button id="poke" title="Or tap the mound">👆 Poke the mound</button>
+        <button id="flight" title="The winged ants leave for the mating flight">🌧 Warm rain</button>
+      </div>
+    </div>
+
+    <div class="side">
+      <section class="card" aria-live="polite">
+        <div class="label">Colony</div>
+        <div class="stage" id="stage"></div>
+        <div class="nums" id="nums"></div>
+        <div class="brood" id="brood"></div>
+        <div class="meter" id="meter"></div>
+      </section>
+
+      <section class="card">
+        <div class="label">Colony brain · what the ants are doing, and why</div>
+        <div class="brain" id="brain"></div>
+      </section>
+
+      <section class="card">
+        <div class="label">Found in the soil</div>
+        <ul class="finds" id="finds"></ul>
+        <div class="note" id="soil"></div>
+      </section>
+
+      <section class="card">
+        <div class="label">Today (instead of the Log page)</div>
+        <div class="row"><span class="note">Goals set per day</span><div class="seg" id="goalsSeg"></div></div>
+        <div class="row"><span class="note">Reached today</span><div class="seg" id="doneSeg"></div></div>
+        <div class="note">Each goal reached = food today (ants bring crumbs down) and <strong>1 egg at midnight</strong>. Egg 3 days → larva 3 days → pupa 2 days → a new worker. Half the goals or more = streak +1.</div>
+      </section>
+
+      <section class="card">
+        <div class="label">Time</div>
+        <div class="row">
+          <button class="go" id="endDay">End the day (midnight)</button>
+          <button id="week">Skip 7 days</button>
+          <button id="away">Away 8 hours</button>
+        </div>
+        <div class="row"><span class="note">Speed</span><div class="seg" id="speedSeg"></div></div>
+        <div class="row"><span class="note">Sky</span><div class="seg" id="skySeg"></div></div>
+        <div class="row">
+          <button id="labels">Room names: off</button>
+          <button class="danger" id="reset">New colony</button>
+        </div>
+        <div class="confirm" id="confirm" hidden>Start over? The farm, the ants and the brood are cleared.
+          <button class="danger" id="yes">Yes, new colony</button><button id="no">Keep it</button></div>
+        <div class="note" id="msg"></div>
+      </section>
+    </div>
+  </div>
+  <footer>The colony is kept in this browser only (a new save: colonies from older versions start over). It starts with a 7-day sample of goals so there is brood to see. The farm is 12 cm wide and 28 cm deep (1 pixel = 0.5 mm). Tap the mound to poke it.</footer>
+</div>
+
+<script>
+(() => {
+"use strict";
+// ======================= the farm (same sizes and rules as app_ants.h) =======================
+// the farm is 2 screens deep: 240 x 592 (the board's screen shows 296 rows of it; drag / scroll to see the rest). 1 px = 0.5 mm.
+const AF_W = 240, AF_H = 592, AF_SKY = 24, AG_W = AF_W / 2, AG_H = AF_H / 2, AN_MAXROOM = 64, AN_HATCH = 8, AN_BAR = 24;
+const SW = 240, SH = 320, PI = Math.PI, VIEW_H = SH - AN_BAR, MM = 0.5;
+const AK_QUEEN = 0, AK_BROOD = 1, AK_FOOD = 2, AK_ROOM = 3;
+const AJ_WANDER = 0, AJ_NURSE = 1, AJ_TO_FACE = 2, AJ_DIG = 3, AJ_CARRY = 4, AJ_FOOD = 5, AJ_OUT = 6, AJ_IN = 7, AJ_SURF = 8,
+      AJ_FETCH = 9, AJ_DELIVER = 10, AJ_ITEM = 11, AJ_GOTO = 12, AJ_REST = 13,
+      AJ_MOVE = 14, AJ_MOVE2 = 15, AJ_GUARD = 16, AJ_FLY = 17;   // fetch brood to move / carry it, defend the mound, alate to the mating flight
+// red imported fire ant (Solenopsis invicta): polymorphic workers (minor, media, major with a big head), winged males and queens
+const C_MINOR = 0, C_MEDIA = 1, C_MAJOR = 2, C_MALE = 3, C_GYNE = 4, C_QUEEN = 5;
+const CASTE = ["minor", "media", "major", "male", "winged queen", "queen"];
+const GEN = 4;   // world format: an older save (made by older digging rules) starts a new colony
+const MAX_SHOWN = 80;   // ants drawn at once (the rest of the colony is "somewhere else")
+const AN_WALK_Y = AF_SKY / 2 - 1;
+
+let an, bits = new Uint8Array(AF_W * AF_H), anFounding = false, viewY = 0;
+const digSrc = new Uint8Array(AF_W * AF_H); let digBy = 0;   // (self-check: which part of the digging opened each pixel)
+const DIG_SRC = ["?", "tunnel", "room", "junction", "side-end", "founding"];
+// ---------------- what is in the ground (made once from the colony's world seed) ----------------
+// mat: 0 soil, 1 stone, 2 root (ants dig around both). itemId / itemCol: things buried in the soil, seen through the glass.
+const mat = new Uint8Array(AF_W * AF_H), itemId = new Int16Array(AF_W * AF_H), itemCol = new Uint32Array(AF_W * AF_H);
+// layers from the top: dark humus with roots, loam, red clay (fire ants love clay), gravel, deep clay. hard = how slow to dig.
+// dark earth, so the red-brown fire ants stand out
+const LAYERS = [
+  { name: "humus",     a: 0x2E2119, b: 0x251A13, hard: 1.0, grain: 9 },
+  { name: "loam",      a: 0x4A3527, b: 0x3E2C20, hard: 1.0, grain: 9 },
+  { name: "red clay",  a: 0x553628, b: 0x482D21, hard: 1.8, grain: 23 },
+  { name: "gravel",    a: 0x574839, b: 0x4A3D30, hard: 2.4, grain: 5 },
+  { name: "deep clay", a: 0x3C2A20, b: 0x33241B, hard: 2.0, grain: 29 },
+];
+const ITEMS = {
+  seed:   { name: "a seed",           food: 1, where: [0, 1] },
+  grub:   { name: "a beetle grub",    food: 4, where: [0, 1] },
+  beetle: { name: "a dead beetle",    food: 6, where: [0] },
+  shell:  { name: "a snail shell",    food: 0, where: [1, 2] },
+  fungus: { name: "fungus threads",   food: 0, where: [0, 1] },
+  water:  { name: "a drop of water",  food: 0, where: [2, 3] },
+  fossil: { name: "a fossil shell",   food: 0, where: [4] },
+};
+let simMs = 0, anStepMs = 0, anDigMs = 0, anFoodMs = 0, speed = 1, sky = "auto", labels = false;
+let anToday = 2, anGoals = 3, alarmEnd = 0;   // alarmEnd: the mound was disturbed, defenders are out until then
+let ants = [], anDist = null, anFace = null, anFoodF = null, anFoodRoom = -1;
+let anQueenF = null, anNurseF = null, itemF = null, itemTask = null, crumbs = [], surf = [], surfMs = 0, layMs = 0, layPulse = 0;
+// scent trails (pheromone): foragers carrying food home mark the way, others follow it out; it fades by itself
+const scent = new Float32Array(AG_W * AG_H);
+const smell = (gx, gy) => (gx < 0 || gx >= AG_W || gy < 0 || gy >= AG_H) ? 0 : scent[gy * AG_W + gx];
+// the colony brain (no ant is in charge): every ant compares how strong each need is with its own threshold
+let brain = { t: 0, need: { nurse: 0, forage: 0, dig: 0, store: 0 }, count: {}, why: [] };
+let rx0 = AF_W, ry0 = AF_H, rx1 = -1, ry1 = -1, bgNeed = true, groundNeed = true;
+
+const px = (x, y) => { if (x < 0 || x >= AF_W || y < 0 || y >= AF_H) return false; if (y < AF_SKY) return true; return bits[y * AF_W + x] === 1; };
+function rnd32() { an.rng = (Math.imul(an.rng, 1664525) + 1013904223) >>> 0; return an.rng >>> 8; }
+const rf = () => (rnd32() & 0xFFFF) / 65535;
+const rnd = (n) => n > 0 ? rnd32() % n : 0;
+function hash(x, y) { let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return (h ^ (h >>> 16)) >>> 0; }
+function blend(a, b, t) { t = Math.max(0, Math.min(1, t)); const ch = (s) => Math.round(((a >> s) & 255) * (1 - t) + ((b >> s) & 255) * t) & 255; return (ch(16) << 16) | (ch(8) << 8) | ch(0); }
+
+// ---------------- the ground: layers, stones, roots, buried things ----------------
+function layerAt(x, y) {   // wavy borders between the layers
+  const d = y - AF_SKY;
+  if (d < 14 + noise(x / 26, 0, 3) * 8) return 0;
+  if (d < 190 + noise(x / 40, 0, 4) * 18) return 1;
+  if (d < 318 + noise(x / 36, 0, 5) * 18) return 2;
+  if (d < 410 + noise(x / 44, 0, 6) * 20) return 3;
+  return 4;
+}
+function genWorld() {
+  mat.fill(0); itemId.fill(0); itemCol.fill(0);
+  let s = (an.world >>> 0) || 1;
+  const wr = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return (s >>> 8) / 16777216; };
+  const clear = (x, y) => (x > an.door - 8 && x < an.door + 44 && y < AF_SKY + 44) || x < 3 || x > AF_W - 4 || y < AF_SKY + 2 || y > AF_H - 3;
+  // stones: a few in the sand, many in the gravel, lumps in the clay
+  const want = [0, 26, 14, 70, 18];
+  for (let L = 1; L < 5; L++) for (let n = 0, t = 0; n < want[L] && t < 4000; t++) {
+    const x = 6 + wr() * (AF_W - 12), y = AF_SKY + 16 + wr() * (AF_H - AF_SKY - 20);
+    if (layerAt(x | 0, y | 0) !== L || clear(x, y)) continue;
+    const r = L === 3 ? 1.2 + wr() * 3.2 : 1.5 + wr() * 4.5, sq = 0.6 + wr() * 0.5, rot = wr() * PI;
+    for (let yy = Math.floor(y - r - 1); yy <= y + r + 1; yy++) for (let xx = Math.floor(x - r - 1); xx <= x + r + 1; xx++) {
+      const dx = xx - x, dy = yy - y, u = dx * Math.cos(rot) + dy * Math.sin(rot), v = (-dx * Math.sin(rot) + dy * Math.cos(rot)) / sq;
+      const edge = r * (0.85 + 0.25 * noise(xx / 2, yy / 2, n));
+      if (u * u + v * v <= edge * edge && !clear(xx, yy)) mat[yy * AF_W + xx] = 1;
+    }
+    n++;
+  }
+  // roots: grass and weed roots in the top soil, thin, winding, branching; they end in the loam (4-6 cm down),
+  // so the ants can always dig under them
+  const root = (x, y, a, len, w) => {
+    for (let i = 0; i < len; i++) {
+      a += (wr() - 0.5) * 0.4; a = Math.max(0.45, Math.min(PI - 0.45, a));
+      x += Math.cos(a); y += Math.sin(a);
+      if (y > AF_SKY + 110 || x < 4 || x > AF_W - 5) return;
+      const ww = Math.max(0.5, w * (1 - i / len));
+      for (let k = -1; k <= 1; k++) for (let j = -1; j <= 1; j++) if (k * k + j * j <= ww * ww * 1.6 && !clear(x + k, y + j)) mat[((y + j) | 0) * AF_W + ((x + k) | 0)] = 2;
+      if (wr() < 0.035 && len > 24) root(x, y, a + (wr() < 0.5 ? -0.9 : 0.9), len * 0.35, ww * 0.7);
+    }
+  };
+  for (let n = 0; n < 6; n++) { const x = 8 + wr() * (AF_W - 16); if (Math.abs(x - an.door) < 12) continue; root(x, AF_SKY, PI / 2 + (wr() - 0.5) * 0.6, 28 + wr() * 70, 1.1 + wr() * 0.6); }
+  // buried things (only made once: their state is saved with the colony)
+  if (!an.items) {
+    an.items = []; const count = { seed: 14, grub: 8, beetle: 3, shell: 6, fungus: 6, water: 6, fossil: 5 };
+    for (const [type, n] of Object.entries(count)) for (let k = 0, t = 0; k < n && t < 3000; t++) {
+      const x = 8 + wr() * (AF_W - 16), y = AF_SKY + 8 + wr() * (AF_H - AF_SKY - 14);
+      if (!ITEMS[type].where.includes(layerAt(x | 0, y | 0)) || clear(x, y) || mat[(y | 0) * AF_W + (x | 0)]) continue;
+      an.items.push({ type, x: x | 0, y: y | 0, seed: (wr() * 65536) | 0, found: false, portions: ITEMS[type].food, taken: 0 }); k++;
+    }
+  }
+  an.items.forEach((it, i) => rasterItem(it, i + 1));
+}
+function rasterItem(it, id) {   // draw a buried thing into the ground map (its pixels in a fixed order; eaten portions remove the first ones)
+  const pix = [], add = (x, y, c) => { x |= 0; y |= 0; if (x < 2 || x >= AF_W - 2 || y < AF_SKY || y >= AF_H - 2) return; pix.push([y * AF_W + x, c]); };
+  const { x, y } = it, h = (k) => hash(it.seed, k);
+  switch (it.type) {
+    case "seed": add(x, y, 0xD9B477); add(x + 1, y, 0xC9A060); add(x + 2, y, 0xB08448); add(x + 1, y - 1, 0xE8CC96); break;
+    case "grub": for (let a = 0.3; a < 4.6; a += 0.35) { const cx = x + Math.cos(a) * 2.6, cy = y + Math.sin(a) * 2.2; add(cx, cy, 0xF2E7CA); add(cx + 0.6, cy + 0.6, 0xE4D4AE); }
+                 add(x + 2.4, y - 0.5, 0xC0602A); add(x + 2.9, y - 0.2, 0x9A4A20); break;
+    case "beetle": for (let j = -1; j <= 1; j++) for (let i = -2; i <= 2; i++) add(x + i, y + j, 0x1E1614); add(x + 3, y, 0x2A201C); add(x - 1, y - 1, 0x4A3C36);
+                   for (let i = -1; i <= 1; i++) { add(x + i, y - 2, 0x1E1614); add(x + i, y + 2, 0x1E1614); } break;
+    case "shell": for (let yy = -3; yy <= 3; yy++) for (let xx = -3; xx <= 3; xx++) { const d = Math.hypot(xx, yy); if (d <= 3.2) add(x + xx, y + yy, ((Math.atan2(yy, xx) + d * 1.4) % 1.6) < 0.8 ? 0xE9DCC6 : 0xB6946E); } break;
+    case "fungus": for (let k = 0; k < 7; k++) { let a = (h(k) % 628) / 100, cx = x, cy = y; for (let j = 0; j < 5; j++) { cx += Math.cos(a); cy += Math.sin(a); a += ((h(k * 9 + j) % 7) - 3) * 0.2; add(cx, cy, 0xECE7DA); } } add(x, y, 0xFFFFFF); break;
+    case "water": for (let yy = -2; yy <= 2; yy++) for (let xx = -2; xx <= 2; xx++) if (xx * xx + yy * yy <= 4.5) add(x + xx, y + yy, xx + yy < -1 ? 0xD8F2FF : 0x6FB7E0); break;
+    case "fossil": for (let a = -1.3; a <= 1.3; a += 0.12) for (let r = 0; r <= 4; r += 0.8) add(x + Math.sin(a) * r * 1.2, y - Math.cos(a) * r, (Math.round(a * 4) & 1) ? 0xCDBB9C : 0xA99676); break;
+  }
+  it.pix = pix.map((p) => p[0]); it.col = pix.map((p) => p[1]);
+  const gone = Math.floor(pix.length * (it.taken / Math.max(1, ITEMS[it.type].food)));
+  pix.forEach(([i, c], k) => { if (k < gone || mat[i]) return; itemId[i] = id; itemCol[i] = c; });
+}
+function takePortion(it) {   // an ant bites a piece off an edible thing
+  it.portions--; it.taken++;
+  const gone = Math.floor(it.pix.length * (it.taken / ITEMS[it.type].food));
+  for (let k = 0; k < gone; k++) { const i = it.pix[k]; if (itemCol[i]) { itemCol[i] = 0; itemId[i] = 0; dirtyPx(i % AF_W, (i / AF_W) | 0); } }
+}
+function dirtyPx(x, y) { rx0 = Math.min(rx0, x); ry0 = Math.min(ry0, y); rx1 = Math.max(rx1, x); ry1 = Math.max(ry1, y); }
+
+// ---------------- digging ----------------
+function openPx(x, y) {
+  x |= 0; y |= 0;
+  if (x < 2 || x >= AF_W - 2 || y < AF_SKY || y >= AF_H - 2) return;
+  const i = y * AF_W + x; if (bits[i] || mat[i]) return;   // stones and roots stay: the tunnel goes around them
+  bits[i] = 1; an.dug++; digSrc[i] = anFounding ? 5 : digBy;
+  rx0 = Math.min(rx0, x); ry0 = Math.min(ry0, y); rx1 = Math.max(rx1, x); ry1 = Math.max(ry1, y);
+  if (itemId[i]) { const it = an.items[itemId[i] - 1]; if (!it.found) found1(it); }
+}
+function found1(it) {   // the diggers reached something buried
+  it.found = true;
+  if (anFounding || !an.finds) return;
+  const depth = ((it.y - AF_SKY) * MM / 10).toFixed(1);
+  an.finds.unshift({ day: an.day - 6, text: `found ${ITEMS[it.type].name} ${depth} cm down${ITEMS[it.type].food ? " (food!)" : ""}` });
+  an.finds.length = Math.min(an.finds.length, 12);
+  newsFlag = true;
+}
+let newsFlag = false;
+function blocked(x, y, r) { for (let yy = Math.floor(y - r); yy <= y + r; yy++) for (let xx = Math.floor(x - r); xx <= x + r; xx++) if (xx >= 0 && xx < AF_W && yy >= 0 && yy < AF_H && mat[yy * AF_W + xx]) return true; return false; }
+const hardAt = (x, y) => LAYERS[layerAt(x | 0, y | 0)].hard;
+function disk(cx, cy, rx, ry) {
+  for (let y = Math.trunc(cy - ry - 1); y <= Math.trunc(cy + ry + 1); y++) for (let x = Math.trunc(cx - rx - 1); x <= Math.trunc(cx + rx + 1); x++) {
+    const dx = (x + 0.5 - cx) / rx, dy = (y + 0.5 - cy) / ry; if (dx * dx + dy * dy <= 1) openPx(x, y);
+  }
+}
+// chambers come in shapes like a real nest: the queen, brood and food are kept in round chambers (a dome roof,
+// a bowl floor the piles sit in); other rooms are long flat galleries or taller halls
+const roomStyle = (r) => r.kind !== AK_ROOM ? 2 : hash(r.seed, 17) % 3 === 0 ? 1 : 0;   // 0 gallery, 1 hall, 2 round
+const bulbRX = (r) => Math.min(r.r, 13), bulbRY = (r) => bulbRX(r) * 0.78;
+const roomRX = (r) => roomStyle(r) === 2 ? bulbRX(r) : r.r;   // half the width of the room as dug
+const tilt = (r) => roomStyle(r) === 2 ? 0 : ((hash(r.seed, 31) % 21) - 10) * 0.016;
+const roomH = (r) => { const s = roomStyle(r); return s === 2 ? bulbRY(r) * 0.9 : s === 1 ? 3.6 + (hash(r.seed, 47) % 4) * 0.5 : 2.2 + (hash(r.seed, 47) % 4) * 0.45; };
+const bowl = (r, x) => { const u = (x - r.x) / (bulbRX(r) + 0.01); return Math.sqrt(Math.max(0, 1 - u * u)); };
+const floorY = (r, x) => roomStyle(r) === 2 ? r.y + bulbRY(r) * 0.5 * bowl(r, x) + 1 : r.y + (x - r.x) * tilt(r) + roomH(r) * 0.9;
+function digRoom(r, prog) {
+  const style = roomStyle(r), half = (style === 2 ? bulbRX(r) : r.r) * prog / 8, t = tilt(r), hh = style === 2 ? Math.max(2, bulbRY(r) * prog / 8) : roomH(r);
+  const column = (dx) => {   // one column of the chamber: its top and bottom
+    const cx = Math.round(r.x + dx), cy = r.y + dx * t, end = 1 - Math.abs(dx) / (half + 0.01);
+    const lump = (noise((r.x + dx) / 5, r.seed, 9) - 0.5) * (style === 2 ? 1.4 : 1.6);
+    if (style === 2) {   // round: a dome above the middle line, a shallow bowl below it
+      const s = Math.sqrt(Math.max(0, 1 - (dx / (half + 0.01)) ** 2));
+      return [cx, Math.floor(cy - hh * s * 1.25 - 1 + lump), Math.ceil(cy + hh * s * 0.5 + 1)];
+    }
+    // a domed, uneven roof (lumps from smooth noise), a flat floor that dips a little in the middle
+    const roof = hh * (0.5 + 0.5 * Math.sqrt(Math.max(0, end))) * (style === 1 ? 1.5 : 1) + lump;
+    return [cx, Math.floor(cy - roof), Math.ceil(cy + hh * 0.9 + Math.max(0, end) * 0.8)];
+  };
+  // dug from the middle outward; a stone or a root in a column ends the chamber on that side (it becomes the wall)
+  for (const side of [1, -1]) for (let d = side > 0 ? 0 : 1; d <= half; d++) {
+    const [cx, y0, y1] = column(side * d);
+    let stop = false; for (let y = y0 - 1; y <= y1 + 1 && !stop; y++) for (let xx = cx - 1; xx <= cx + 1; xx++) if (xx >= 0 && xx < AF_W && y >= 0 && y < AF_H && mat[y * AF_W + xx]) { stop = true; break; }
+    if (stop) break;
+    for (let y = y0; y <= y1; y++) openPx(cx, y);
+  }
+}
+function roomFree(x, y, r) {
+  if (x - r < 6 || x + r > AF_W - 6 || y < AF_SKY + 16 || y > AF_H - 10) return false;
+  if (blocked(x, y, 3)) return false;   // not on a stone
+  for (let i = 0; i < an.nRooms; i++) { const o = an.room[i]; if (Math.abs(o.x - x) < o.r + r + 10 && Math.abs(o.y - y) < 26) return false; }   // (a round room is up to 20 px tall)
+  return true;
+}
+function nearestOpen(tx, ty) {
+  let bd = Infinity, ox = -1, oy = -1;
+  for (let y = AF_SKY + 1; y < AF_H; y += 2) for (let x = 1; x < AF_W; x += 2) {
+    if (!px(x, y)) continue; const d = (x - tx) * (x - tx) + (y - ty) * (y - ty) * 2; if (d < bd) { bd = d; ox = x; oy = y; }
+  }
+  return ox >= 0 ? [ox, oy] : null;
+}
+const joined = (x, y) => !anDist || anDist[(y >> 1) * AG_W + (x >> 1)] !== 0xFFFF;   // this open place is linked to the door
+function lineClear(x0, y0, x1, y1) {   // no stone or root on the straight way (a tunnel wiggles, but won't have to cross a root)
+  const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0));
+  for (let i = 3; i <= n; i += 2) { const t = i / n; if (blocked(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, 3)) return false; }
+  return true;
+}
+function dropPlan() {   // a tunnel that could not get through: its room is not dug at all (never a chamber cut off from the nest)
+  const p = an.plan;
+  if (p.room > 0 && p.room === an.nRooms - 1 && an.room[p.room].prog === 0) an.nRooms--;
+  p.on = 0;
+}
+function newPlan() {   // the colony brain: a new gallery (deeper as it grows), or now and then a side tunnel
+  const p = an.plan;
+  const side = () => {   // a side tunnel from anywhere in the nest (it also finds ways around roots that block the rooms)
+    for (let t = 0; t < 200; t++) {
+      const x = 4 + rnd(AF_W - 8), y = AF_SKY + 10 + rnd(AF_H - AF_SKY - 14);
+      if (!px(x, y) || !joined(x, y)) continue;
+      const a = (rnd(2) ? 0 : PI) + (rf() - 0.3) * 1.1, len = 20 + rnd(26);
+      const tx = Math.trunc(x + Math.cos(a) * len), ty = Math.trunc(y + Math.abs(Math.sin(a)) * len);
+      if (tx < 8 || tx > AF_W - 8 || ty > AF_H - 8 || !lineClear(x, y, tx, ty)) continue;
+      Object.assign(p, { hx: x, hy: y, ha: Math.atan2(ty - y, tx - x), room: -1, tx, ty, steps: 0, on: 1 }); return true;
+    }
+    return false;
+  };
+  if (an.nRooms >= 2 && rnd(4) === 0 && side()) return true;
+  if (an.nRooms >= AN_MAXROOM) return side();
+  let nb = 0, nf = 0; for (let i = 0; i < an.nRooms; i++) { nb += an.room[i].kind === AK_BROOD; nf += an.room[i].kind === AK_FOOD; }
+  const nr = an.room.slice(0, an.nRooms).filter((o) => o.kind === AK_ROOM).length;   // brood, food and plain rooms by turns
+  const kind = nb <= nf && nb <= nr ? AK_BROOD : nf <= nr ? AK_FOOD : AK_ROOM;
+  // the open places of the nest (made once for this plan): a tunnel starts from one with a clear way to the new room
+  const open = []; if (an.nRooms) for (let y = AF_SKY + 1; y < AF_H; y += 2) for (let x = 1; x < AF_W; x += 2) if (px(x, y) && joined(x, y)) open.push(x, y);
+  let tries = 0;
+  for (let t = 0; t < 160 && tries < 40; t++) {
+    const r = kind !== AK_ROOM ? 9 + rnd(5) : t < 90 ? 20 + rnd(24) : 10 + rnd(8), deepest = Math.min(AF_H - 10, AF_SKY + 44 + an.nRooms * 14);
+    const x = 8 + r + rnd(AF_W - 16 - 2 * r), y = AF_SKY + 16 + rnd(Math.max(1, deepest - AF_SKY - 16));
+    if (!roomFree(x, y, r)) continue;
+    let s = null;
+    if (!an.nRooms) s = nearestOpen(x, y);
+    else {   // the 12 nearest open places, nearest first
+      tries++; const near = [];
+      for (let k = 0; k < open.length; k += 2) {
+        const d = (open[k] - x) ** 2 + (open[k + 1] - y) ** 2 * 2;
+        if (near.length < 12 || d < near[near.length - 1][0]) { near.push([d, open[k], open[k + 1]]); near.sort((a, b) => a[0] - b[0]); if (near.length > 12) near.pop(); }
+      }
+      for (const [, sx, sy] of near) if (lineClear(sx, sy, x, y)) { s = [sx, sy]; break; }
+    }
+    if (!s) continue;
+    an.room[an.nRooms] = { x, y, r, kind, prog: 0, seed: rnd(256) };
+    Object.assign(p, { hx: s[0], hy: s[1], ha: Math.atan2(y - s[1], x - s[0]), room: an.nRooms, tx: x, ty: y, steps: 0, on: 1 });
+    an.nRooms++; return true;
+  }
+  return side();
+}
+const digGoal = () => Math.min(Math.floor((AF_H - AF_SKY) * AF_W / 3), 260 + an.workers * 120);
+function digStep() {
+  if (!anFounding && an.dug >= digGoal()) return false;
+  const p = an.plan;
+  if (!p.on && !newPlan()) return false;
+  if (p.room >= 0) {
+    const r = an.room[p.room], dx = r.x - p.hx, dy = (r.y - p.hy) * 3;
+    if ((Math.abs(dx) < roomRX(r) * 0.6 && Math.abs(r.y + (p.hx - r.x) * tilt(r) - p.hy) < 3) || dx * dx + dy * dy < 25) {
+      // the chamber is dug out from the end of the tunnel (its middle moves there), so it always opens onto the tunnel
+      if (r.prog === 0 && p.room > 0) { r.x = Math.round(p.hx); r.y = Math.round(p.hy); }
+      r.prog = Math.min(8, r.prog + 1); digBy = 2; digRoom(r, r.prog); if (r.prog >= 8) p.on = 0; return true;
+    }
+    if (p.steps > 500) { dropPlan(); return true; }
+  } else if (p.steps > 40 || (Math.abs(p.tx - p.hx) < 3 && Math.abs(p.ty - p.hy) < 3)) { digBy = 4; if (!blocked(p.hx, p.hy, 3.4)) disk(p.hx, p.hy, 2.2, 1.8); p.on = 0; return true; }
+  const want = Math.atan2(p.ty - p.hy, p.tx - p.hx); let d = want - p.ha;
+  while (d > PI) d -= 2 * PI; while (d < -PI) d += 2 * PI;
+  p.ha += d * 0.3 + (rf() - 0.5) * 0.45;
+  let nx = p.hx + Math.cos(p.ha) * 1.7, ny = p.hy + Math.sin(p.ha) * 1.7;
+  if (nx < 5 || nx > AF_W - 5 || ny < AF_SKY + 3 || ny > AF_H - 5) { p.ha = want; nx = p.hx + Math.cos(want) * 1.7; ny = p.hy + Math.sin(want) * 1.7; }
+  // the width of the tunnel here (main shafts wide, side tunnels narrow; it swells and pinches along the way)
+  const main = p.room >= 0, base = main ? 1.75 + Math.min(0.6, an.workers / 200) : 1.15;
+  const w = base + (main ? 0.45 : 0.25) * Math.sin((p.steps + 1) * 0.29 + p.room * 1.3) + rf() * 0.3;
+  const clearR = w + 1.2;   // the whole tunnel plus a wall of soil must fit: stones and roots are never cut
+  if (blocked(nx, ny, clearR)) {   // a stone or a root in the way: feel along it, left or right, and go around
+    let ok = false;
+    for (const turn of [0.45, -0.45, 0.9, -0.9, 1.4, -1.4, 2.0, -2.0, 2.6, -2.6]) {
+      const a = p.ha + turn * (p.steps & 1 ? 1 : -1), tx = p.hx + Math.cos(a) * 1.7, ty = p.hy + Math.sin(a) * 1.7;
+      if (tx < 5 || tx > AF_W - 5 || ty < AF_SKY + 3 || ty > AF_H - 5 || blocked(tx, ty, clearR)) continue;
+      p.ha = a; nx = tx; ny = ty; ok = true; break;
+    }
+    if (!ok) { dropPlan(); return true; }   // boxed in: give this tunnel up, the brain picks another
+  }
+  p.hx = nx; p.hy = ny; p.steps++;
+  digBy = 1; disk(p.hx, p.hy, w, w * (main ? 0.95 : 0.9));
+  digBy = 3; if (p.steps === 2 && main && !blocked(p.hx, p.hy, w + 2.4)) disk(p.hx, p.hy, w + 1.2, w + 0.8);   // a small widening where it leaves the old tunnel (a junction)
+  return true;
+}
+function catchUp(hours) {   // digging while nobody looked: (10 + 10 per worker) pixels an hour
+  let budget = hours * (10 + an.workers * 10);   // pixels in soft sand; clay and gravel cost more
+  for (let k = 0; k < 40000 && budget > 0; k++) {
+    const d0 = an.dug, h = hardAt(an.plan.hx || an.door, an.plan.hy || AF_SKY);
+    if (!digStep()) break;
+    if (!an.plan.on && anDist) field(anDist, an.door / 2, AN_WALK_Y);   // a room or tunnel finished: new places to start from
+    budget -= (an.dug - d0) * h;
+  }
+}
+function found() {   // a new colony: the queen digs a shaft and one gallery, 3 small workers
+  an = { rng: ((Math.random() * 0xFFFFFFFF) | 1) >>> 0, workers: 3, streak: 0, best: 0, nRooms: 0, brood: new Array(AN_HATCH).fill(0),
+         dug: 0, born: 3, mound: 0, door: AF_W / 2, day: 0, foundDay: 0, room: [], plan: {},
+         world: ((Math.random() * 0xFFFFFFFF) | 1) >>> 0, items: null, finds: null, food: 12, laid: 0, loose: 0, placed: 0,
+         gen: GEN, up: 0, alates: 0, flown: 0 };   // up: brood lying in the top chambers; alates: winged males / queens in the nest
+  bits.fill(0); digSrc.fill(0); anDist = null; genWorld();
+  an.room[0] = { x: an.door + 16, y: AF_SKY + 32, r: 12, kind: AK_QUEEN, prog: 0, seed: rnd(256) };
+  an.nRooms = 1;
+  an.plan = { hx: an.door, hy: AF_SKY, ha: PI / 2, room: 0, tx: an.room[0].x, ty: an.room[0].y, steps: 0, on: 1 };
+  anFounding = true; for (let k = 0; k < 400 && an.plan.on; k++) digStep(); anFounding = false;
+  an.dug = 0; an.mound = 30; an.finds = [];
+  // a 7-day sample of goals (the board counts the last 7 days of real logs the first time)
+  [2, 3, 1, 3, 2, 3, 2].forEach((d) => endDay(d, true));
+  an.food = 12;
+  catchUp(12);
+  bgNeed = true;
+}
+// a day ends: food -> eggs, eggs get older, 8 days old -> workers
+function endDay(done, quiet) {
+  an.workers += an.brood[AN_HATCH - 1]; an.born += an.brood[AN_HATCH - 1];
+  const hatched = an.brood[AN_HATCH - 1];
+  for (let i = AN_HATCH - 1; i > 0; --i) an.brood[i] = an.brood[i - 1];
+  an.brood[0] = done;
+  if (anGoals && done * 2 >= anGoals) { an.streak++; an.best = Math.max(an.best, an.streak); } else an.streak = 0;
+  an.day++;
+  // a big colony (about 120 workers and up) also raises winged males and queens; they wait in the nest for a warm rainy day
+  if (an.workers >= 120 && an.day % 2 === 0) an.alates = Math.min(16, (an.alates || 0) + 1);
+  an.laid = an.loose = an.placed = 0;                                // the queen starts a new day of laying
+  an.food = Math.max(0, (an.food || 0) - Math.ceil(an.workers / 15));   // the colony eats from its store every night
+  if (!quiet) catchUp(24 - 8);   // the rest of the day the page was closed (a guess: 16 hours)
+  return hatched;
+}
+const broodTotal = () => { let b = an.placed + an.loose; for (const x of an.brood) b += x; return b; };
+function nextHatch() { for (let i = AN_HATCH - 1; i >= 0; --i) if (an.brood[i]) return AN_HATCH - i; return anToday ? AN_HATCH + 1 : 0; }
+const stageName = () => { const w = an.workers; return w < 10 ? "Founding" : w < 40 ? "Young" : w < 120 ? "Growing" : w < 300 ? "Big" : "Super"; };
+
+// ---------------- the ants you see (at most 40, each with a job) ----------------
+function walk(gx, gy) {
+  if (gx < 0 || gy < 0 || gx >= AG_W || gy >= AG_H) return false;
+  if (gy * 2 < AF_SKY) return gy === AN_WALK_Y;
+  return px(gx * 2 + 1, gy * 2 + 1) || px(gx * 2, gy * 2 + 1);
+}
+const Q = new Int32Array(AG_W * AG_H);
+function field(d, sx, sy) {
+  d.fill(0xFFFF); let qn = 0;
+  const push = (x, y, v) => { if (!walk(x, y)) return; const i = y * AG_W + x; if (d[i] !== 0xFFFF) return; d[i] = v; Q[qn++] = i; };
+  push(sx, sy, 0);
+  for (let k = 1; k < 4 && !qn; k++) for (let dy = -k; dy <= k; dy++) for (let dx = -k; dx <= k; dx++) push(sx + dx, sy + dy, 0);
+  for (let h = 0; h < qn; h++) { const i = Q[h], x = i % AG_W, y = (i / AG_W) | 0, v = d[i] + 1; push(x - 1, y, v); push(x + 1, y, v); push(x, y - 1, v); push(x, y + 1, v); }
+}
+function fields() {
+  anDist = anDist || new Uint16Array(AG_W * AG_H); anFace = anFace || new Uint16Array(AG_W * AG_H); anFoodF = anFoodF || new Uint16Array(AG_W * AG_H);
+  field(anDist, an.door / 2, AN_WALK_Y);
+  const dig = an.dug < digGoal() && (an.plan.on || newPlan());
+  if (dig) field(anFace, (an.plan.hx / 2) | 0, (an.plan.hy / 2) | 0); else anFace.fill(0xFFFF);
+  anFoodRoom = -1;
+  for (let i = 0; i < an.nRooms; i++) if (an.room[i].kind === AK_FOOD && an.room[i].prog >= 8) { anFoodRoom = i; break; }
+  if (anFoodRoom < 0) anFoodRoom = 0;
+  field(anFoodF, (an.room[anFoodRoom].x / 2) | 0, ((an.room[anFoodRoom].y + 2) / 2) | 0);
+  anQueenF = anQueenF || new Uint16Array(AG_W * AG_H); anNurseF = anNurseF || new Uint16Array(AG_W * AG_H);
+  const q = an.room[0]; field(anQueenF, ((q.x - 2) / 2) | 0, ((q.y + 1) / 2) | 0);
+  const nr = an.room[nurseRoom()]; field(anNurseF, ((nr.x + 6) / 2) | 0, ((nr.y + 1) / 2) | 0);
+  if (itemTask) { itemF = itemF || new Uint16Array(AG_W * AG_H); field(itemF, (itemTask.x / 2) | 0, (itemTask.y / 2) | 0); }
+  roomF.clear();   // the tunnels changed: the ways to the rooms are counted again when needed
+}
+// ---- every ant has a room it belongs to for a while: they spread over the whole nest, like a real colony ----
+const roomF = new Map();
+function roomField(i) {   // steps to room i (made when first needed, kept until the tunnels change)
+  let f = roomF.get(i); if (f) return f;
+  const r = an.room[i]; f = new Uint16Array(AG_W * AG_H);
+  const fy = floorAt(r, r.x); field(f, (r.x / 2) | 0, (((fy > 0 ? fy : r.y) - 1) / 2) | 0);
+  roomF.set(i, f); return f;
+}
+const doneRooms = () => { const l = []; for (let i = 0; i < an.nRooms; i++) if (an.room[i].prog >= 8 || an.room[i].kind === AK_QUEEN) l.push(i); return l; };
+function pickRoom(kind) {   // a room for this ant: of a kind if asked, deeper rooms as likely as the top ones
+  const l = doneRooms().filter((i) => kind === undefined || an.room[i].kind === kind || (kind === AK_BROOD && an.room[i].kind === AK_QUEEN));
+  return l.length ? l[rnd(l.length)] : 0;
+}
+function sendTo(a, room, restAfter) { a.home = room; a.job = AJ_GOTO; a.after = restAfter; }
+function inRoom(a) { const r = an.room[a.home]; return Math.abs(a.tx * 2 - r.x) <= roomRX(r) + 2 && Math.abs(a.ty * 2 - r.y) <= Math.max(6, roomH(r) * 2 + 3); }
+// ---- fire ants move their brood with the temperature: up under the sun-warmed mound by day, deep down at night ----
+function broodRooms() {   // finished brood chambers, shallowest first: the top half is "up", the rest "deep"
+  const l = []; for (let i = 0; i < an.nRooms; i++) if (an.room[i].kind === AK_BROOD && an.room[i].prog >= 8) l.push(i);
+  if (!l.length) return { up: [0], deep: [0], split: false };
+  l.sort((a, b) => an.room[a].y - an.room[b].y);
+  const h = Math.ceil(l.length / 2);
+  return l.length < 2 ? { up: l, deep: l, split: false } : { up: l.slice(0, h), deep: l.slice(h), split: true };
+}
+const broodShown = () => Math.min(160, an.placed + an.brood.reduce((s, x) => s + x, 0));
+const warm = () => !isNight() && simMs >= alarmEnd;   // (a disturbed colony takes its brood down, whatever the weather)
+const broodTarget = (n) => Math.round(n * (warm() ? 0.85 : 0.1));
+function pileRooms(top) {   // the rooms that hold the top (or the deep) brood piles: filled 22 at a time, shallowest (or deepest) first
+  const b = broodRooms(), n = broodShown(), up = Math.min(an.up || 0, n), set = top ? b.up : b.deep.slice().reverse();
+  return set.slice(0, Math.max(1, Math.min(set.length, Math.ceil((top ? up : n - up) / 22))));
+}
+function broodHome() { const set = pileRooms((an.up || 0) * 2 >= broodShown()); return set[rnd(set.length)]; }
+const canDig = () => anFace && anFace[AN_WALK_Y * AG_W + an.door / 2] !== 0xFFFF && an.plan.on && an.dug < digGoal();
+function nurseRoom() { for (let i = 0; i < an.nRooms; i++) if (an.room[i].kind === AK_BROOD && an.room[i].prog >= 8) return i; return 0; }
+// the mound is made of all the soil the colony dug out (pellets carried up on screen, and everything dug while away)
+const moundH = () => Math.min(14, 2 +Math.trunc(Math.sqrt(an.mound + (an.dug || 0) / 25) / 3));
+const pileHalf = () => ((moundH() * 3 + 6) / 2) | 0;
+const pileX = () => an.door + 6 + pileHalf();
+const moundTop = (x) => { const u = (x - pileX()) / (pileHalf() + 0.5); return u * u >= 1 ? 0 : Math.round(moundH() * (1 - u * u) ** 0.8); };   // height of the dome at x
+function placeAnt(a, gx, gy) { a.x = gx * 2 + 1; a.y = gy * 2 + 1; a.tx = gx; a.ty = gy; }
+function spawnAnts() {
+  ants = []; const n = Math.min(MAX_SHOWN, an.workers), open = [];
+  for (let gy = AF_SKY / 2; gy < AG_H; gy++) for (let gx = 0; gx < AG_W; gx++) if (walk(gx, gy)) open.push(gy * AG_W + gx);
+  if (!open.length) return;
+  // fire ant workers come in sizes (polymorphism): many small minors, medium medias, a few big-headed majors.
+  // A young colony has only tiny "nanitic" minors. Size decides the work more than age does:
+  // minors nurse the brood, medias dig and forage, majors cut up big food, keep the store and defend.
+  const young = an.workers < 15;
+  for (let k = 0; k < n; k++) {
+    const a = { a: rf() * 2 * PI, wait: 0, id: k, sp: 0.8 + rf() * 0.45, meet: 0, restT: 100 + rnd(600) };   // each ant has its own pace
+    const cr = rnd(100); a.caste = young ? C_MINOR : cr < 10 ? C_MAJOR : cr < 45 ? C_MEDIA : C_MINOR;
+    a.size = young ? 0.85 : [0.95, 1.15, 1.4][a.caste];
+    if (a.caste === C_MAJOR) a.sp *= 0.85;
+    // age (days as a worker) and response thresholds (low = reacts first): young ants stay with the brood, old ants go out
+    a.age = rnd(70); const old = Math.min(1, a.age / 45), j = () => rf() * 0.2;
+    a.th = a.caste === C_MINOR ? { nurse: 0.08 + 0.4 * old + j(), forage: 0.8 - 0.35 * old + j(), dig: 0.5 + j(), store: 0.7 + j(), guard: 0.6 + j() }
+         : a.caste === C_MEDIA ? { nurse: 0.5 + 0.3 * old + j(), forage: 0.5 - 0.4 * old + j(), dig: 0.2 + j(), store: 0.55 + j(), guard: 0.3 + j() }
+         :                       { nurse: 0.95 + j(), forage: 0.6 + j(), dig: 0.45 + j(), store: 0.12 + j(), guard: 0.05 + j() };
+    const roll = k < 3 ? "dig" : a.caste === C_MAJOR ? (k % 3 ? "store" : "rest") : a.caste === C_MEDIA ? (k % 6 === 1 ? "forage" : k % 6 === 3 ? "dig" : "rest")
+               : k % 5 < 2 ? "nurse" : "rest";
+    if (roll === "dig") { a.job = AJ_TO_FACE; a.home = 0; }
+    else if (roll === "forage") { a.job = AJ_SURF; a.forager = true; a.home = 0; }
+    else if (roll === "nurse") { a.job = AJ_NURSE; a.home = broodHome(); }
+    else if (roll === "store") { a.job = AJ_REST; a.home = pickRoom(AK_FOOD); a.tender = true; }
+    else { a.job = AJ_REST; a.home = pickRoom(); }
+    let i = open[rnd(open.length)];
+    if (a.job === AJ_SURF) i = AN_WALK_Y * AG_W + rnd(AG_W);
+    else if (a.job === AJ_NURSE || a.job === AJ_REST) {   // start inside its room
+      const r = an.room[a.home];
+      for (let t = 0; t < 20; t++) { const gx = ((r.x + (rnd(2 * roomRX(r) + 1) - roomRX(r)) * 0.8) / 2) | 0, fy = floorAt(r, gx * 2), gy = (((fy > 0 ? fy : r.y) - 1) / 2) | 0; if (walk(gx, gy)) { i = gy * AG_W + gx; break; } }
+    }
+    placeAnt(a, i % AG_W, (i / AG_W) | 0); ants.push(a);
+  }
+  // the winged ones (no work: they are fed and wait for the mating flight), in the top chambers under the mound
+  for (let k = 0; k < (an.alates || 0); k++) {
+    const b = broodRooms().up, home = b[rnd(b.length)], r = an.room[home];
+    const a = { a: rf() * 2 * PI, wait: 0, id: n + k, sp: 0.7 + rf() * 0.2, meet: 0, restT: 300 + rnd(900), caste: k % 2 ? C_MALE : C_GYNE, job: AJ_REST, home };
+    a.size = a.caste === C_GYNE ? 1.45 : 1.15;
+    let i = open[rnd(open.length)];
+    for (let t = 0; t < 20; t++) { const gx = ((r.x + (rnd(2 * roomRX(r) + 1) - roomRX(r)) * 0.7) / 2) | 0, fy = floorAt(r, gx * 2), gy = (((fy > 0 ? fy : r.y) - 1) / 2) | 0; if (walk(gx, gy)) { i = gy * AG_W + gx; break; } }
+    placeAnt(a, i % AG_W, (i / AG_W) | 0); ants.push(a);
+  }
+}
+const D8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+function nextCell(a) {
+  if (a.job === AJ_FOOD) { const i = a.ty * AG_W + a.tx; scent[i] = Math.min(1.5, scent[i] + 0.35); }   // carrying food home: mark the way
+  const ok = (k) => { const nx = a.tx + D8[k][0], ny = a.ty + D8[k][1]; if (!walk(nx, ny)) return false; return k < 4 || (walk(a.tx + D8[k][0], a.ty) && walk(a.tx, a.ty + D8[k][1])); };
+  if (a.job === AJ_SURF) {
+    // a forager only knows about food it can smell (about 3 cm away); else it follows a scent trail out, else it searches
+    const near = surf.filter((s) => Math.abs(s.x / 2 - a.tx) <= 30);
+    if (!near.length) {
+      const L = smell(a.tx - 1, a.ty), R = smell(a.tx + 1, a.ty), away = a.tx * 2 >= an.door ? 1 : -1;
+      if (Math.max(L, R) > 0.04) {   // on a trail: keep walking along it, away from the nest (out to the food)
+        const dir = Math.abs(L - R) < 0.02 ? away : (R > L ? 1 : -1);
+        if (walk(a.tx + dir, a.ty)) a.tx += dir; a.a = dir > 0 ? 0 : PI; return;
+      }
+    }
+    if (near.length) {   // it smells food: walk to it, bite off a piece, take it home (marking the way)
+      const src = near.reduce((b, s) => Math.abs(s.x / 2 - a.tx) < Math.abs(b.x / 2 - a.tx) ? s : b), gx = (src.x / 2) | 0;
+      if (Math.abs(gx - a.tx) <= 1) {
+        src.portions--; a.job = AJ_FOOD; a.carryCol = src.col; a.wait = 8 + rnd(10); a.forager = true;   // (a moment to cut a piece)
+        if (src.portions <= 0) surf.splice(surf.indexOf(src), 1);
+        return;
+      }
+      const dir = gx > a.tx ? 1 : -1; if (walk(a.tx + dir, a.ty)) a.tx += dir; a.a = dir > 0 ? 0 : PI;
+      if (rnd(25) === 0) a.wait = 3 + rnd(8);   // stop, feel the air
+      return;
+    }
+    if (rnd(14) === 0) { a.wait = 6 + rnd(30); return; }
+    let dir = Math.cos(a.a) >= 0 ? 1 : -1; if (rnd(10) === 0) dir = -dir;
+    if (!walk(a.tx + dir, a.ty)) dir = -dir; if (walk(a.tx + dir, a.ty)) a.tx += dir; return;
+  }
+  if (a.job === AJ_GUARD) {   // defending: run over the mound in quick zigzags, stopping to wave the gaster (the sting ready)
+    // each one runs to a spot somewhere on the mound, then picks another
+    if (a.gx == null || Math.abs(a.gx - a.tx) < 1 || rnd(40) === 0) a.gx = ((pileX() - pileHalf() - 6 + rnd(2 * pileHalf() + 13)) / 2) | 0;
+    if (rnd(10) === 0) { a.wait = 2 + rnd(6); return; }
+    const dir = a.gx > a.tx ? 1 : -1;
+    if (walk(a.tx + dir, a.ty)) a.tx += dir; a.a = dir > 0 ? 0 : PI; return;
+  }
+  if (a.job === AJ_OUT) {
+    const pxx = (pileX() / 2 | 0) + (hash(a.id, 3) % 5) - 2;
+    if (a.tx !== pxx && walk(a.tx + (pxx > a.tx ? 1 : -1), a.ty)) { a.tx += pxx > a.tx ? 1 : -1; return; }
+    an.mound++; groundNeed = true; a.job = AJ_IN; a.wait = 4 + rnd(8); return;
+  }
+  const f = a.job === AJ_TO_FACE ? anFace : (a.job === AJ_CARRY || a.job === AJ_IN || a.job === AJ_FLY) ? anDist : a.job === AJ_FOOD ? anFoodF
+          : a.job === AJ_FETCH ? anQueenF : a.job === AJ_DELIVER ? anNurseF : a.job === AJ_ITEM ? itemF
+          : (a.job === AJ_GOTO || a.job === AJ_MOVE || a.job === AJ_MOVE2) ? roomField(a.home) : null;
+  if (f) {
+    let best = -1, bv = f[a.ty * AG_W + a.tx]; const s = rnd(8);
+    if (a.job === AJ_FLY && bv === 0) { a.flying = true; a.wait = 0; return; }   // out on the mound: open the wings and go
+    if (a.job === AJ_IN && bv === 0) {   // at the door: defenders and foragers go out, soil carriers back to the face, the rest to a room
+      if (a.guard && simMs < alarmEnd) a.job = AJ_GUARD;
+      else if (a.forager) a.job = AJ_SURF; else if (a.digger && canDig()) a.job = AJ_TO_FACE; else { a.digger = a.guard = false; sendTo(a, pickRoom(), AJ_REST); }
+      return;
+    }
+    for (let j = 0; j < 8; j++) { const k = (j + s) & 7; if (!ok(k)) continue; const v = f[(a.ty + D8[k][1]) * AG_W + a.tx + D8[k][0]]; if (v < bv) { bv = v; best = k; } }
+    if (best >= 0) { a.tx += D8[best][0]; a.ty += D8[best][1]; return; }
+    if (a.job === AJ_GOTO) { a.job = a.after || AJ_REST; a.restT = 150 + rnd(700); a.wait = 5 + rnd(20); }   // arrived: settle in
+    else if (a.job === AJ_TO_FACE) { a.job = AJ_DIG; a.wait = 0; }
+    else if (a.job === AJ_CARRY) a.job = AJ_OUT;
+    else if (a.job === AJ_FOOD) {   // into the store; a forager back from food still lying out there brings others (mass recruitment)
+      an.food = (an.food || 0) + 1; a.job = a.forager ? AJ_IN : AJ_WANDER; a.wait = 10 + rnd(20); dirtySave = true;
+      if (a.forager && surf.length) recruit();
+    }
+    else if (a.job === AJ_MOVE) {   // at the brood pile to be moved: pick up one egg, larva or pupa
+      const b = broodRooms(), n = broodShown(), inHand = ants.filter((o) => o.job === AJ_MOVE2).length;
+      const have = a.mdir > 0 ? n - (an.up || 0) - inHand : (an.up || 0);
+      if (b.split && have > 0) {
+        if (a.mdir < 0) an.up--;
+        a.job = AJ_MOVE2; a.carryCol = [0xFFFFFF, 0xF6EEDC, 0xE2C9A0][rnd(3)]; a.wait = 6 + rnd(6);
+        const to = pileRooms(a.mdir > 0); a.home = to[rnd(to.length)];
+      } else { a.job = AJ_NURSE; a.mdir = 0; }
+    } else if (a.job === AJ_MOVE2) {   // put it down on the pile in this chamber
+      if (a.mdir > 0) an.up = (an.up || 0) + 1;
+      a.job = AJ_NURSE; a.mdir = 0; a.wait = 8 + rnd(10); dirtySave = true;
+    }
+    else if (a.job === AJ_FETCH) {   // at the queen: take a fresh egg
+      if (an.loose > 0) { an.loose--; a.job = AJ_DELIVER; a.carryCol = 0xFFFFFF; a.wait = 6; } else a.job = AJ_NURSE;
+    } else if (a.job === AJ_DELIVER) { an.placed++; a.job = AJ_NURSE; a.home = nurseRoom(); a.wait = 10 + rnd(10); dirtySave = true; }
+    else if (a.job === AJ_ITEM) {    // at the buried food: bite a piece off
+      if (itemTask && itemTask.portions > 0 && itemF[a.ty * AG_W + a.tx] <= 3) {   // (really next to it, not stuck far away)
+        takePortion(itemTask); a.job = AJ_FOOD; a.carryCol = itemTask.col[0]; a.wait = 10 + rnd(10);
+        if (itemTask.portions <= 0) { itemTask = null; fields(); }
+      } else a.job = AJ_WANDER;
+    }
+    return;
+  }
+  if (a.job === AJ_DIG) return;
+  if (rnd(a.job === AJ_REST ? 5 : 18) === 0) { a.wait = a.job === AJ_REST ? 20 + rnd(90) : 5 + rnd(25); return; }   // resting ants mostly stand, clean themselves
+  let best = -1, bs = -9;
+  for (let k = 0; k < 8; k++) {
+    if (!ok(k)) continue;
+    const nx = a.tx + D8[k][0], ny = a.ty + D8[k][1];
+    if (a.job === AJ_NURSE || a.job === AJ_REST) { const r = an.room[a.home]; if (Math.abs(nx * 2 - r.x) > roomRX(r) + 2 || Math.abs(ny * 2 - r.y) > Math.max(6, roomH(r) * 2 + 3)) continue; }   // stay in the room
+    if (a.job === AJ_WANDER && ny * 2 < AF_SKY) continue;
+    let da = Math.atan2(D8[k][1], D8[k][0]) - a.a; while (da > PI) da -= 2 * PI; while (da < -PI) da += 2 * PI;
+    const sc = Math.cos(da) * 1.2 + rf(); if (sc > bs) { bs = sc; best = k; }
+  }
+  if (best >= 0) { a.tx += D8[best][0]; a.ty += D8[best][1]; }
+}
+function antStep() {
+  const dig = canDig(); let diggers = 0; for (const a of ants) diggers += a.job === AJ_TO_FACE || a.job === AJ_DIG;
+  for (const a of ants) {
+    if (a.flying) {   // an alate in the air: up and away, fluttering (it never comes back to this nest)
+      a.y -= a.caste === C_MALE ? 1.2 : 0.9; a.x += Math.sin(simMs / 260 + a.id) * 0.7; a.a = -PI / 2; if (a.y < -6) a.gone = true; continue;
+    }
+    if (a.guard && simMs >= alarmEnd && (a.job === AJ_GUARD || a.job === AJ_IN)) { a.guard = false; sendTo(a, pickRoom(), AJ_REST); }   // calm again: back inside
+    if ((a.job === AJ_TO_FACE || a.job === AJ_DIG) && !dig) a.job = AJ_WANDER;
+    if (a.job === AJ_WANDER && rnd(30) === 0) sendTo(a, pickRoom(), AJ_REST);            // after a trip: to some room of the nest
+    if (a.job === AJ_REST && --a.restT <= 0) sendTo(a, a.tender ? pickRoom(AK_FOOD) : pickRoom(), AJ_REST);   // rested enough: move to another room (store keepers stay with the food)
+    if ((a.job === AJ_NURSE || a.job === AJ_REST) && !a.wait && !inRoom(a)) sendTo(a, a.home, a.job);   // not in its room (yet): walk there
+    if (a.meet) a.meet--;
+    if (a.wait) { a.wait--; if (rnd(4) === 0) a.a += (rf() - 0.5) * 0.8; continue; }
+    if (a.job === AJ_DIG) { a.a += (rf() - 0.5) * 0.5; continue; }
+    const loaded = a.job === AJ_CARRY || a.job === AJ_OUT || a.job === AJ_FOOD || a.job === AJ_DELIVER;
+    const gx = a.tx * 2 + 1, gy = a.ty * 2 + 1, dx = gx - a.x, dy = gy - a.y, d = Math.hypot(dx, dy);
+    const angry = a.job === AJ_GUARD || (a.guard && a.job === AJ_IN);   // alarmed fire ants run
+    const SPEED = 1.1 * (a.sp || 1) * (loaded ? 0.8 : 1) * (Math.abs(dy) > Math.abs(dx) ? 0.85 : 1) * (angry ? 1.6 : 1);   // a load and a climb slow them down
+    if (d < SPEED) { a.x = gx; a.y = gy; nextCell(a); continue; }
+    let da = Math.atan2(dy, dx) - a.a; while (da > PI) da -= 2 * PI; while (da < -PI) da += 2 * PI;
+    a.a += da * 0.5; a.x += dx / d * SPEED; a.y += dy / d * SPEED;
+  }
+  // two ants meeting head-on stop for a moment and touch feelers (they check each other's smell)
+  for (let i = 0; i < ants.length; i++) for (let j = i + 1; j < ants.length; j++) {
+    const a = ants[i], b = ants[j];
+    if (a.meet || b.meet || a.wait || b.wait || a.job === AJ_DIG || b.job === AJ_DIG || a.flying || b.flying) continue;
+    if (Math.abs(a.x - b.x) > 4 || Math.abs(a.y - b.y) > 4 || Math.cos(a.a - b.a) > -0.3) continue;
+    a.wait = b.wait = 6 + rnd(10); a.meet = b.meet = 60; a.a = Math.atan2(b.y - a.y, b.x - a.x); b.a = a.a + PI;
+  }
+  const gone = ants.filter((a) => a.gone).length;
+  if (gone) { ants = ants.filter((a) => !a.gone); an.alates = Math.max(0, (an.alates || 0) - gone); an.flown = (an.flown || 0) + gone; dirtySave = true; newsFlag = true; }
+  // brood by temperature: the target share in the top chambers; a free nurse picks up one piece at a time and carries it
+  const bR = broodRooms();
+  if (bR.split) {
+    const n = broodShown(); an.up = Math.max(0, Math.min(an.up || 0, n));
+    let pend = 0, movers = 0, nurses = 0;
+    for (const a of ants) {
+      if (a.job === AJ_MOVE || a.job === AJ_MOVE2) { movers++; if (a.mdir > 0) pend++; else if (a.job === AJ_MOVE) pend--; }
+      else if (a.job === AJ_NURSE) nurses++;
+    }
+    const diff = broodTarget(n) - an.up - pend;
+    if (Math.abs(diff) >= 1 && movers < Math.min(6, 1 + (nurses >> 1))) {
+      const a = ants.find((o) => o.job === AJ_NURSE && !o.wait);
+      if (a) { a.mdir = diff > 0 ? 1 : -1; const from = pileRooms(a.mdir < 0); a.home = from[rnd(from.length)]; a.job = AJ_MOVE; }
+    }
+  }
+  // the queen lays today's eggs one by one (one for every goal reached), a nurse fetches each to the brood room
+  if (an.laid < anToday && simMs - layMs > 14000) { layMs = simMs; an.laid++; an.loose++; layPulse = 1200; dirtySave = true; }
+  if (an.loose > 0 && !ants.some((a) => a.job === AJ_FETCH)) {
+    const n = ants.find((a) => a.job === AJ_NURSE && !a.wait) || ants.find((a) => a.job === AJ_WANDER);
+    if (n) n.job = AJ_FETCH;
+  }
+  // buried food the diggers found: a worker goes to cut it up and carry it to the store
+  if (!itemTask) { const it = an.items.find((t) => t.found && t.portions > 0); if (it) { itemTask = it; fields(); } }
+  if (itemTask && !ants.some((a) => a.job === AJ_ITEM) && itemF) {
+    let best = null, bv = 0xFFFF;
+    for (const a of ants) if (a.job === AJ_WANDER || a.job === AJ_TO_FACE) { const v = itemF[a.ty * AG_W + a.tx]; if (v < bv) { bv = v; best = a; } }
+    if (best) best.job = AJ_ITEM;   // (nobody near yet: tried again next step)
+  }
+  // food shows up on the ground now and then (more on a day with goals reached): a seed, a crumb, a dead insect
+  // (fire ants are mostly hunters and scavengers: a dead cricket is a feast that brings out a crowd)
+  if (anToday > 0 && surf.length < 2 && simMs - surfMs > 22000 / anToday) {
+    surfMs = simMs; const kinds = [["seed", 0xD9B477, 2], ["crumb", 0xFFF1A8, 3], ["dead fly", 0x2A2A2A, 6], ["sugar drop", 0xFFF6D0, 4], ["dead cricket", 0x4A3A22, 14]];
+    const k = kinds[rnd(kinds.length)]; let x = 6 + rnd(AF_W - 12); if (Math.abs(x - an.door) < 20 || Math.abs(x - pileX()) < pileHalf() + 6) x = (x + 60) % (AF_W - 12) + 6;
+    surf.push({ x, kind: k[0], col: k[1], portions: k[2], max: k[2] });
+  }
+  for (let i = 0; i < scent.length; i++) if (scent[i]) scent[i] = scent[i] < 0.01 ? 0 : scent[i] * 0.996;   // trails fade (about a minute)
+  if (simMs - brain.t > 1500) { brain.t = simMs; colonyBrain(); }
+}
+// ---------------- the colony brain: response thresholds (how real colonies share work, with no boss) ----------------
+// Each need has a strength 0..1. An idle ant takes a job with a chance s²/(s²+θ²), θ = its own threshold for that job:
+// ants with a low threshold react first; when a need is met, its ants drift back to rest. Young ants have a low
+// threshold for the brood, old ants for foraging, so the young stay deep in the nest and the old go outside.
+// Fire ants add their own ways: the worker's SIZE sets its thresholds (minors nurse, medias dig and forage, majors keep the
+// food and defend), a scout that finds food brings a crowd (mass recruitment), a disturbed mound boils over with defenders,
+// and the brood is carried up and down the nest after the warmth.
+function roleOf(a) {
+  if (a.caste >= C_MALE) return "alate";
+  if (a.guard) return "guard";
+  if (a.job === AJ_NURSE || a.job === AJ_FETCH || a.job === AJ_DELIVER || a.job === AJ_MOVE || a.job === AJ_MOVE2) return "nurse";
+  if (a.forager && (a.job === AJ_SURF || a.job === AJ_FOOD || a.job === AJ_IN)) return "forage";
+  if (a.job === AJ_TO_FACE || a.job === AJ_DIG || a.job === AJ_CARRY || a.job === AJ_OUT) return "dig";
+  if (a.job === AJ_REST && a.tender) return "store";   // (only ants given the store to keep, not ants that just rest there)
+  if (a.job === AJ_ITEM) return "busy";
+  return "rest";
+}
+function colonyBrain() {
+  const count = { nurse: 0, forage: 0, dig: 0, store: 0, rest: 0, busy: 0, guard: 0, alate: 0 };
+  for (const a of ants) count[roleOf(a)]++;
+  const n = Math.max(1, ants.length - count.alate), food = an.food || 0, enough = an.workers * 0.6 + 8, clamp = (v) => Math.max(0, Math.min(1, v));
+  const big = surf.some((s) => s.max >= 10);
+  const brood = broodTotal() + an.loose * 2;
+  const need = {
+    nurse: clamp(brood / (count.nurse * 5 + 3)),                                          // brood per nurse
+    forage: surf.length ? clamp(0.55 + 0.45 * (1 - food / enough)) : clamp(0.3 * (1 - food / enough)),   // food outside / a low store
+    dig: canDig() ? clamp((digGoal() - an.dug) / 300) : 0,                                // the colony wants more room
+    store: food > 0 ? 0.25 : 0,
+  };
+  // how many a job can use: with no food found yet only a few scouts search (about 1 in 16), with food up to 3 in 10
+  // (a big find such as a dead cricket: up to 45% pour out)
+  const cap = { nurse: n * 0.5, forage: surf.length ? Math.max(2, n * (big ? 0.45 : 0.3)) : Math.max(1, Math.round(n * 0.06)), dig: Math.min(8, 3 + an.workers / 25), store: Math.max(1, n * 0.12) };
+  for (const a of ants) {
+    if (a.wait > 30 || !a.th) continue;
+    const r = roleOf(a);
+    if (r === "guard" || r === "alate") continue;
+    const tooMany = r in cap && count[r] > cap[r];
+    if (r in need && (need[r] < a.th[r] * 0.45 || tooMany) && rnd(3) === 0) {   // this job is not needed now (or has too many): back to rest
+      a.tender = false;
+      if (r === "forage") { a.forager = false; if (a.job === AJ_SURF) a.job = AJ_IN; }
+      if (r === "nurse" && a.job !== AJ_NURSE) continue;         // (finish carrying the egg first)
+      if (r === "dig" && a.job !== AJ_TO_FACE && a.job !== AJ_DIG) continue;
+      if (a.job !== AJ_IN) sendTo(a, pickRoom(), AJ_REST); count[r]--; count.rest++; continue;
+    }
+    if (r !== "rest") continue;
+    const tasks = ["nurse", "forage", "dig", "store"].sort(() => rf() - 0.5);
+    for (const t of tasks) {
+      const s = need[t], th = a.th[t], p = s * s / (s * s + th * th + 1e-6);
+      if (count[t] >= cap[t] || rf() > p * 0.3) continue;
+      if (t === "nurse") sendTo(a, broodHome(), AJ_NURSE);
+      else if (t === "forage") { a.forager = true; a.job = AJ_IN; }            // to the door, then out
+      else if (t === "dig") a.job = AJ_TO_FACE;
+      else { sendTo(a, pickRoom(AK_FOOD), AJ_REST); a.tender = true; }
+      count[t]++; count.rest--; break;
+    }
+  }
+  const why = [];
+  if (simMs < alarmEnd) why.push(`The mound was disturbed: majors and medias boil out to defend it, stings ready; nurses carry the brood deep down. They calm down in ${Math.ceil((alarmEnd - simMs) / 1000)} s.`);
+  if (need.nurse > 0.6) why.push(`Lots of brood (${brood}): small minors (the lowest brood threshold) become nurses.`);
+  const b = broodRooms(), bn = broodShown();
+  if (b.split && bn) {
+    const tgt = broodTarget(bn), up = an.up || 0;
+    if (Math.abs(tgt - up) > 2) why.push(warm() ? `The sun warms the soil under the mound: nurses carry the brood UP to the top chambers (${up}/${bn} there now).`
+                                                : `${simMs < alarmEnd ? "Danger" : "Night: the top soil cools"}: nurses carry the brood DOWN to the deep chambers (${bn - up}/${bn} there now).`);
+  }
+  if (surf.length) why.push(big ? `A dead cricket outside: mass recruitment. Every forager back with a piece brings more nestmates out along its scent trail, majors first to cut it up.`
+                                : `Food on the ground: foragers that smell it cut pieces and mark a scent trail home; each one back brings a few more out.`);
+  else if (need.forage > 0.1) why.push(`The store is low (${food}): older medias go out as scouts to search.`);
+  if (need.dig > 0.5) why.push(`The colony has grown and wants more room: medias extend the tunnels; the soil goes onto the mound.`);
+  if (count.alate) why.push(`${count.alate} winged ${count.alate > 1 ? "alates wait" : "alate waits"} in the nest for a warm day after rain (the mating flight).`);
+  if (!why.length) why.push(`Nothing urgent: most ants rest in the chambers (a real nest is mostly ants standing still).`);
+  brain.need = need; brain.count = count; brain.why = why; brainPanel();
+}
+function recruit() {   // back with food that is still lying out there: nestmates follow her out (majors first for big prey)
+  const big = surf.some((s) => s.max >= 10), n = ants.length; let out = ants.filter((b) => b.forager).length;
+  const pool = ants.filter((b) => b.th && roleOf(b) === "rest" && !b.wait)
+    .sort((p, q) => ((big && q.caste === C_MAJOR) - (big && p.caste === C_MAJOR)) || p.th.forage - q.th.forage);
+  for (const b of pool.slice(0, big ? 5 : 3)) { if (out >= n * (big ? 0.45 : 0.3)) break; b.forager = true; b.tender = false; b.job = AJ_IN; out++; }
+}
+function poke() {   // tap the mound: fire ants pour out to defend it (majors first), the brood goes deep
+  alarmEnd = simMs + 18000;
+  const cx = pileX(), hw = pileHalf();
+  for (let k = 0; k < 16; k++) crumbs.push({ x: cx - hw + rnd(2 * hw + 1), y: AF_SKY - 2 - rnd(6), vy: -0.25 - rf() * 0.3, t: 700, c: 0x5A4232 });
+  let out = 0; const n = ants.length;
+  for (const a of ants.slice().sort((p, q) => (p.th ? p.th.guard : 9) - (q.th ? q.th.guard : 9))) {
+    if (!a.th || a.guard || out >= n * 0.6) continue;
+    const r = roleOf(a); if (r === "nurse") continue;
+    if (rf() > 1 - a.th.guard * 0.8) continue;
+    a.guard = true; a.forager = a.tender = a.digger = false; a.job = AJ_IN; a.wait = 0; out++;
+  }
+  colonyBrain(); say(`You poked the mound: <strong>${out} defenders</strong> pour out (big-headed majors first) and nurses take the brood deep. They calm down in about 18 s.`);
+}
+function flight() {   // warm rain: the winged males and queens leave for their mating flight, workers guard the mound
+  const al = ants.filter((a) => a.caste >= C_MALE && !a.flying);
+  if (!al.length) { say(`No alates yet. A colony raises winged males and queens once it has about 120 workers (keep reaching goals, or skip some days).`); return; }
+  for (const a of al) { a.job = AJ_FLY; a.wait = rnd(60); }
+  alarmEnd = Math.max(alarmEnd, simMs + 12000);
+  for (const a of ants) if (a.caste === C_MAJOR && !a.guard && rnd(2)) { a.guard = true; a.forager = a.tender = a.digger = false; a.job = AJ_IN; }
+  say(`Warm rain: <strong>${al.length} alates</strong> climb out onto the mound and fly off to start new colonies; majors guard the mound meanwhile.`);
+}
+function digTick() {
+  if (!canDig()) return;
+  let at = 0; for (const a of ants) at += a.job === AJ_DIG; if (!at) return;
+  const need = Math.max(200, 1000 - Math.min(800, an.workers * 6)) / at * hardAt(an.plan.hx, an.plan.hy);   // clay and gravel: slower
+  if (simMs - anDigMs < need) return;
+  anDigMs = simMs;
+  if (!digStep()) return;
+  for (const a of ants) if (a.job === AJ_DIG) {   // crumbs fall where they work; one of them takes a pellet of soil out
+    for (let k = 0; k < 3; k++) crumbs.push({ x: a.x + Math.cos(a.a) * 4, y: a.y + Math.sin(a.a) * 4, vy: 0, t: 400 + rnd(400), c: LAYERS[layerAt(a.x | 0, a.y | 0)].a });
+  }
+  for (const a of ants) if (a.job === AJ_DIG) { a.job = AJ_CARRY; a.digger = true; a.pellet = LAYERS[layerAt(a.x | 0, a.y | 0)].a; break; }
+  fields(); dirtySave = true;
+}
+
+// ======================= drawing: pixel-exact into a 240x320 frame =======================
+// the pixel farm is drawn into a hidden 240x320 frame (like the board), then shown scaled on the big canvas
+const cv = document.getElementById("cv"), vis = cv.getContext("2d");
+const fb = document.createElement("canvas"); fb.width = SW; fb.height = SH; const g = fb.getContext("2d");
+let zoom = 1, panX = 0, showScent = false;
+const img = g.createImageData(SW, SH), frame = new Uint32Array(img.data.buffer);
+const bg = new Uint32Array(AF_W * AF_H);
+const rgbA = (c) => (0xFF000000 | ((c & 0xFF) << 16) | (c & 0xFF00) | ((c >> 16) & 0xFF)) >>> 0;
+function isNight() { if (sky === "day") return false; if (sky === "night") return true; const h = new Date().getHours() + new Date().getMinutes() / 60; return h < 6 || h >= 19; }
+function noise(x, y, s) {
+  const ix = Math.floor(x), iy = Math.floor(y); let fx = x - ix, fy = y - iy;
+  const v = (a, b) => (hash(a * 7 + s, b * 13 - s) & 1023) / 1023;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  const a = v(ix, iy) + (v(ix + 1, iy) - v(ix, iy)) * fx, b = v(ix, iy + 1) + (v(ix + 1, iy + 1) - v(ix, iy + 1)) * fx;
+  return a + (b - a) * fy;
+}
+function color(x, y, night) {
+  const h = hash(x, y); let c;
+  if (y < AF_SKY) { const t = night ? 0x1C2028 : 0xDCE0E2, b = night ? 0x2A2E38 : 0xC4C8CB; c = blend(t, b, y / AF_SKY); }
+  else if (!px(x, y)) {
+    const i = y * AF_W + x, L = LAYERS[layerAt(x, y)], depth = (y - AF_SKY) / (AF_H - AF_SKY);
+    let soil = blend(L.a, L.b, noise(x / 30, y / 24, 1) * 0.7);
+    soil = blend(soil, 0x0A0503, depth * 0.22);                                   // deeper = darker and damper
+    if (mat[i] === 1) {   // a stone: grey, lit from the top left, a dark rim below
+      const up = y > 0 && mat[i - AF_W] === 1, dn = mat[i + AF_W] === 1, lf = mat[i - 1] === 1;
+      c = blend(0x8C8A84, 0x6A6862, noise(x / 3, y / 3, 7)); if (h % 5 === 0) c = blend(c, 0xC8C4BA, 0.4);
+      if (!up || !lf) c = blend(c, 0xE0DCD2, 0.35); if (!dn) c = blend(c, 0x2A2420, 0.45);
+    } else if (mat[i] === 2) {   // a root: brown with a lighter middle
+      const edge = mat[i - 1] !== 2 || mat[i + 1] !== 2; c = edge ? 0x5A3C24 : 0x8A6440; if (h % 7 === 0) c = 0xA07A50;
+    } else {
+      c = soil;
+      const gr = h % L.grain; if (gr === 0) c = blend(c, 0xB09478, 0.35); else if (gr === 1) c = blend(c, 0x7A5E48, 0.3); else if (gr === 2) c = blend(c, 0x0C0604, 0.35);
+      if (L.name === "gravel" && h % 17 === 3) c = blend(c, 0x8A847C, 0.6);          // small pebbles in the gravel
+      if (L.name === "humus" && h % 13 === 4) c = blend(c, 0x0E0A06, 0.5);           // bits of old leaves
+      if (y === AF_SKY && (h & 3)) c = blend(c, 0x6A4E3A, 0.3);
+      let near = 0;
+      for (let k = 1; k <= 2 && !near; k++) if ((y - k >= AF_SKY && px(x, y - k)) || px(x, y + k) || px(x - k, y) || px(x + k, y)) near = k;
+      if (near === 1) c = blend(c, 0x6A5040, 0.22); else if (near === 2) c = blend(c, 0x6A5040, 0.1);   // the packed wall, smoothed by the ants (a little lighter)
+    }
+    if (itemCol[i]) { const it = an.items[itemId[i] - 1]; c = it.found ? itemCol[i] : blend(itemCol[i], c, 0.35); }   // buried things show through the glass
+  } else {
+    const i = y * AF_W + x, fl = !px(x, y + 1), ce = !px(x, y - 1), ce2 = !px(x, y - 2), L = LAYERS[layerAt(x, y)];
+    c = (h & 7) ? 0x140D09 : 0x100A07;
+    if (fl) c = blend(L.a, 0x0C0806, (h & 3) ? 0.55 : 0.4);                          // loose crumbs on the floor, the colour of this layer
+    else if (ce) c = 0x070504; else if (ce2) c = 0x0B0806;                            // the roof throws a soft shadow
+    c = blend(c, 0x040201, (y - AF_SKY) / (AF_H - AF_SKY) * 0.3);
+    if (itemCol[i]) c = itemCol[i];                                                    // something lying in the tunnel
+  }
+  return c;   // (the glass shine is drawn over the scaled picture, see glass())
+}
+function drawRect(x0, y0, x1, y1) {
+  const night = isNight(); x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(AF_W - 1, x1); y1 = Math.min(AF_H - 1, y1);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) bg[y * AF_W + x] = rgbA(color(x, y, night));
+}
+function drawGround() {
+  drawRect(0, 0, AF_W - 1, AF_SKY - 1);
+  // the fire ant mound: a dome of worked, crumbly soil with no hole on top (the ways out open at its foot);
+  // lit from the top left, darker lumps of fresh pellets, the shaded right side
+  const half = pileHalf(), cx = pileX();
+  for (let x = cx - half; x <= cx + half; x++) {
+    if (x < 0 || x >= AF_W) continue; const top = moundTop(x);
+    for (let y = 0; y < top; y++) { const h = hash(x, y + 999), side = (x - cx) / half, lit = side < -0.2 && y > top - 4, shade = side > 0.35;
+      let c = (h % 5) ? (h % 3 ? 0x4A3526 : 0x3E2C20) : 0x5E4634; if ((h >> 4) % 9 === 0) c = 0x2A1E16;   // pellets
+      if (lit) c = blend(c, 0x8A6E56, 0.35); if (shade) c = blend(c, 0x1A120C, 0.3); if (y === top - 1 && (h & 1)) c = blend(c, 0x8A6E56, 0.25);
+      bg[(AF_SKY - 1 - y) * AF_W + x] = rgbA(c); }
+  }
+  for (let x = 0; x < AF_W; x++) {
+    if (Math.abs(x - cx) <= half || Math.abs(x - an.door) <= 2) continue;
+    const h = hash(x, 7); if (h % 3 === 0) bg[(AF_SKY - 1) * AF_W + x] = rgbA(0x3E2C20); if (h % 11 === 0) bg[(AF_SKY - 2) * AF_W + x] = rgbA(0x4E3A2A);
+    if (h % 23 === 5) { bg[(AF_SKY - 2) * AF_W + x] = rgbA(0x5E8A3A); bg[(AF_SKY - 3) * AF_W + x] = rgbA(0x6E9A44); }   // a blade of grass
+  }
+  for (let x = an.door - 2; x <= an.door + 2; x++) bg[(AF_SKY - 1) * AF_W + x] = rgbA(0x0A0604);
+  groundNeed = false;
+}
+let lastNight = null;
+function updateBg() {
+  const n = isNight(); if (n !== lastNight) { lastNight = n; bgNeed = true; }
+  if (bgNeed) { drawRect(0, AF_SKY, AF_W - 1, AF_H - 1); rx1 = -1; groundNeed = true; }
+  else if (rx1 >= 0) { drawRect(rx0 - 3, ry0 - 3, rx1 + 3, ry1 + 3); rx1 = -1; }
+  if (groundNeed) drawGround();
+  rx0 = AF_W; ry0 = AF_H; bgNeed = false;
+}
+// pixel helpers on the frame (farm coords + offset)
+const OY = AN_BAR;
+let oyv = OY;   // where farm row 0 is on the screen (moves when you scroll)
+function pset(x, y, c) { x |= 0; y |= 0; if (x < 0 || x >= SW || y < OY || y >= SH) return; frame[y * SW + x] = c; }
+function line(x0, y0, x1, y1, c) { let dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1, dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1, e = dx + dy; for (;;) { pset(x0, y0, c); if (x0 === x1 && y0 === y1) break; const e2 = 2 * e; if (e2 >= dy) { e += dy; x0 += sx; } if (e2 <= dx) { e += dx; y0 += sy; } } }
+function rect(x, y, w, h, c) { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) pset(x + i, y + j, c); }
+function ellipse(cx, cy, rx, ry, c) { for (let y = -ry; y <= ry; y++) for (let x = -rx; x <= rx; x++) if ((x * x) / (rx * rx + 0.5) + (y * y) / (ry * ry + 0.5) <= 1) pset(cx + x, cy + y, c); }
+// fire ant colours: a copper-red head and thorax, a dark brown gaster with a small shine, darker legs
+const LEG = rgbA(0x4A1C0C), RED = rgbA(0xB2481E), RED2 = rgbA(0x94381A), GAS = rgbA(0x2E160C), SHINE = rgbA(0x7A4A34),
+      BLK = rgbA(0x16110E), WING = rgbA(0xC9D6DE), WING2 = rgbA(0x9FB2BE);
+function drawAnt(x, y, a, s, moving, carry, caste) {
+  const c = Math.cos(a), sn = Math.sin(a), male = caste === C_MALE, winged = caste === C_MALE || caste === C_GYNE;
+  const P = (d, side) => [Math.round(x + (c * d - sn * side) * s), oyv + Math.round(y + (sn * d + c * side) * s)];
+  const step = moving ? ((Math.floor(simMs / 90) + Math.trunc(x)) & 1) : 0;
+  const legC = male ? BLK : LEG, bodyC = male ? BLK : RED, headC = male ? BLK : caste === C_MAJOR ? RED2 : RED, gasC = male ? BLK : GAS;
+  for (let k = -1; k <= 1; k++) for (let side = -1; side <= 1; side += 2) {
+    const sw = (((k + 2 + (side > 0 ? 1 : 0)) & 1) === step) ? 0.9 : -0.9;
+    const [p1, p2] = P(k * 0.9, 0), [q1, q2] = P(k * 1.3 + (moving ? sw : 0), side * 2.2); line(p1, p2, q1, q2, legC);
+  }
+  const hx = caste === C_MAJOR ? 2.5 : 2.1;   // majors: a big square head with strong jaws
+  let [p1, p2] = P(hx + 0.7, 0), [q1, q2] = P(hx + 2.3, 1.6); line(p1, p2, q1, q2, legC); [q1, q2] = P(hx + 2.3, -1.6); line(p1, p2, q1, q2, legC);
+  const gq = caste === C_QUEEN || caste === C_GYNE ? 1.15 : 1;   // queens: a long heavy gaster
+  [p1, p2] = P(-2.6 * gq, 0); ellipse(p1, p2, Math.max(1, Math.trunc(1.7 * s * gq)), Math.max(1, Math.trunc(1.35 * s)), gasC);
+  [q1, q2] = P(-2.9 * gq, -0.6); pset(q1, q2, male ? GAS : SHINE);
+  [p1, p2] = P(0, 0); const big = s > 1.2; rect(p1 - (big ? 1 : 0), p2 - (big ? 1 : 0), big ? 3 : 2, big ? 3 : 2, bodyC);
+  [p1, p2] = P(hx, 0);
+  if (caste === C_MAJOR) { rect(p1 - 1, p2 - 1, 3, 3, headC); [q1, q2] = P(hx + 1.6, 0); pset(q1, q2, BLK); }
+  else rect(p1, p2, male ? 1 : 2, male ? 1 : 2, headC);
+  if (winged) {   // wings folded over the back (spread and flapping in the air)
+    const fl = moving && ((simMs / 60 | 0) & 1), spread = moving ? (fl ? 3.4 : 1.6) : 0.9;
+    for (const sd of [-1, 1]) { [p1, p2] = P(0, 0); [q1, q2] = P(-4.6, sd * spread); line(p1, p2, q1, q2, WING); [q1, q2] = P(-3.4, sd * (spread + 0.9)); line(p1, p2, q1, q2, WING2); }
+  }
+  if (carry) { [p1, p2] = P(hx + 1.6, 0); rect(p1, p2 - 1, 2, 2, rgbA(carry)); }   // what is in the jaws: a soil pellet, food, an egg
+}
+function floorAt(r, x) { let y = Math.ceil(floorY(r, x)) + 2; for (let k = 0; k < 10 && y > AF_SKY; k++, y--) if (px(x, y)) return y; return -1; }
+// piles: things are heaped in the bowl of a round chamber, the middle first, then out and up (a heap, not a row)
+function heapSpots(r, cap) {
+  const W = Math.max(4, Math.floor(roomRX(r) * 1.6)), spots = [];
+  for (let j = 0; j < 9; j++) {
+    const w = W - j * 4; if (w < 1) break;
+    for (let i = -Math.floor(w / 2); i <= Math.floor(w / 2); i += 2) {
+      const x = r.x + i + (j & 1), f = floorAt(r, x); if (f < 0 || !px(x, f - j * 2)) continue;
+      spots.push([x, f - j * 2, Math.abs(i) + j * 3.2]);
+    }
+  }
+  return spots.sort((p, q) => p[2] - q[2]).slice(0, cap);
+}
+function heapInto(rooms, n, draw, full) {   // n things in big piles: a room is filled (up to `full`) before the next one is used
+  if (!rooms.length || n <= 0) return;
+  const per = Math.max(full, Math.ceil(n / rooms.length)); let left = n;
+  for (const i of rooms) { const m = Math.min(per, left); left -= m; heapSpots(an.room[i], m).forEach(([x, y], k) => draw(x, oyv + y, k, m)); if (left <= 0) break; }
+}
+function drawBrood() {
+  // fire ant nurses sort the brood: eggs and small larvae in the middle of the pile, big larvae and pupae around them
+  const nE = an.placed + an.brood[0] + an.brood[1] + an.brood[2], nL = an.brood[3] + an.brood[4] + an.brood[5], nP = an.brood[6] + an.brood[7];
+  const n = broodShown(), inHand = ants.filter((a) => a.job === AJ_MOVE2).length, b = broodRooms();
+  const W1 = rgbA(0xFFFFFF), W2 = rgbA(0xEDE6D8), L1 = rgbA(0xF6EEDC), L2 = rgbA(0xE8DCC0), P1 = rgbA(0xE2C9A0), P2 = rgbA(0xB89868);
+  const tot = Math.max(1, nE + nL + nP), fE = nE / tot, fL = nL / tot;
+  const piece = (X, Y, k, m) => {
+    const e = Math.round(m * fE), l = Math.round(m * fL);
+    if (k < e) { pset(X, Y, W1); pset(X + 1, Y, W2); }
+    else if (k < e + l) { rect(X, Y - 1, 2, 2, L1); pset(X + 1, Y - 1, L2); }
+    else { rect(X, Y - 1, 2, 2, P1); pset(X, Y - 1, P2); }
+  };
+  const up = Math.min(an.up || 0, n), rest = Math.max(0, n - up - inHand);
+  // (up: the shallowest rooms first, under the mound; deep: the deepest rooms first)
+  if (b.split) { heapInto(b.up, up, piece, 22); heapInto(b.deep.slice().reverse(), rest, piece, 22); } else heapInto(b.up, up + rest, piece, 22);
+}
+function drawFood() {
+  // the store: seeds, crumbs, insect bits, heaped in the round food chambers (as much as the colony brought in and has not eaten)
+  const cols = [rgbA(0xD9B477), rgbA(0xC9A060), rgbA(0xFFF1A8), rgbA(0x6A5030), rgbA(0x9BD35A), rgbA(0xF2C94C)];
+  const rooms = []; for (let i = 0; i < an.nRooms; i++) if (an.room[i].kind === AK_FOOD && an.room[i].prog >= 8) rooms.push(i);
+  heapInto(rooms.length ? rooms : [0], Math.min(140, an.food || 0), (X, Y, k) => {   // (piles of up to 26 bits)
+    const c = cols[hash(k, 77) % cols.length]; rect(X, Y - 1, 2, 2, c); pset(X + 1, Y - 1, rgbA(0x2A1A10));
+  }, 26);
+}
+function render() {
+  updateBg();
+  viewY = Math.max(0, Math.min(AF_H - (zoom === 2 ? VIEW_H / 2 : VIEW_H), viewY | 0)); oyv = OY - viewY;
+  panX = Math.max(0, Math.min(SW / 2, panX | 0));
+  frame.fill(rgbA(0x111111));
+  const rows = Math.min(VIEW_H, AF_H - viewY);
+  frame.set(bg.subarray(viewY * AF_W, (viewY + rows) * AF_W), OY * SW);   // the part of the farm you scrolled to
+  drawBrood(); drawFood();
+  // food lying on the ground outside
+  for (const s of surf) { const c = rgbA(s.col), gy = oyv + AF_SKY - 2;
+    if (s.kind === "dead cricket") {   // it gets smaller as the ants cut it up
+      const L = 2 + Math.round(7 * s.portions / s.max), x0 = s.x - (L >> 1), leg = rgbA(0x2A2014);
+      rect(x0, gy - 1, L, 2, c); pset(x0 + L, gy - 1, leg);
+      if (s.portions > s.max / 2) { line(x0 + 1, gy - 1, x0 - 2, gy - 4, leg); line(x0 + 2, gy, x0 - 1, gy - 3, leg); line(x0 + L, gy - 1, x0 + L + 3, gy - 3, leg); }
+      continue;
+    }
+    const n = Math.max(1, Math.round(4 * s.portions / s.max));
+    for (let k = 0; k < n; k++) pset(s.x + (k % 2) * 2 - 1, gy - (k >> 1), c); if (s.kind === "dead fly") { pset(s.x - 2, gy - 1, rgbA(0xB8D8F0)); pset(s.x + 2, gy - 1, rgbA(0xB8D8F0)); } }
+  // soil crumbs falling at the digging face (and thrown up when the mound is poked)
+  for (const c of crumbs) { c.vy += 0.02; c.y += c.vy; if (px(c.x | 0, (c.y + 1) | 0)) {} else c.vy = 0; pset(c.x, oyv + c.y, rgbA(c.c)); }
+  // the queen: big, slow; her abdomen swells when she lays. Fresh eggs lie next to her until a nurse takes them.
+  const q = an.room[0], wob = Math.sin(simMs / 900) * 0.25, qx = q.x - 2; let qy = floorAt(q, qx); const qf = qy; qy = qy < 0 ? q.y : qy - 2;
+  for (let k = 0; k < an.loose; k++) { pset(qx - 9 - k * 2, oyv + (qf < 0 ? q.y + 2 : qf), rgbA(0xFFFFFF)); }
+  drawAnt(qx, qy, PI + wob, 1.7 + (layPulse > 0 ? 0.25 * Math.sin(layPulse / 1200 * PI) : 0), false, 0, C_QUEEN);
+  for (const a of ants) {
+    const y = a.flying || a.y > AF_SKY ? a.y : a.y - moundTop(a.x | 0);   // on the surface: walking over the mound
+    drawAnt(a.x, y, a.a, a.size || 1.15, a.flying || (!a.wait && a.job !== AJ_DIG),
+      a.job === AJ_CARRY || a.job === AJ_OUT ? (a.pellet || 0x6A4E3A) : a.job === AJ_FOOD || a.job === AJ_MOVE2 ? (a.carryCol || 0xF2C94C) : a.job === AJ_DELIVER ? 0xFFFFFF : 0, a.caste);
+  }
+  if (showScent) for (let gy = 0; gy < AG_H; gy++) for (let gx = 0; gx < AG_W; gx++) {   // the scent trails (optional view)
+    const v = scent[gy * AG_W + gx]; if (v < 0.05) continue;
+    const X = gx * 2, Y = oyv + gy * 2, c = rgbA(blend(0x3A1608, 0x7CFFB0, Math.min(1, v)));
+    pset(X, Y, c); pset(X + 1, Y + 1, c);
+  }
+  g.putImageData(img, 0, 0);
+  present();
+}
+// ---- the visible screen: the pixel farm scaled up (×1 whole width, ×2 zoomed), the glass, then sharp text on top ----
+function present() {
+  const s = zoom === 2 ? 4 : 2, top = AN_BAR * 2, px0 = zoom === 2 ? panX : 0, vw = SW / (zoom === 2 ? 2 : 1), vh = VIEW_H / (zoom === 2 ? 2 : 1);
+  const V = vis, VW = 480, VH = 640;
+  V.imageSmoothingEnabled = false;
+  V.fillStyle = "#111111"; V.fillRect(0, 0, VW, VH);
+  V.drawImage(fb, px0, OY, vw, vh, 0, top, VW, VH - top);
+  const toX = (x) => (x - px0) * s, toY = (y) => top + (y - viewY) * s;   // farm -> screen
+  glass(V, top, VW, VH);
+  // depth ruler (cm) on the right edge, and where you are in the farm
+  V.fillStyle = "rgba(255,255,255,.6)"; V.font = "11px 'Space Mono', monospace"; V.textAlign = "right"; V.textBaseline = "middle";
+  for (let d = 20; d < AF_H - AF_SKY; d += 20) { const sy = toY(AF_SKY + d); if (sy < top + 30 || sy > VH - 6) continue; V.fillRect(VW - 10, sy, d % 40 ? 4 : 8, 1.5); if (d % 40 === 0) V.fillText((d * MM / 10) + " cm", VW - 14, sy); }
+  V.fillStyle = "rgba(0,0,0,.35)"; V.fillRect(VW - 4, top, 4, VH - top);
+  const shown = zoom === 2 ? VIEW_H / 2 : VIEW_H; V.fillStyle = "rgba(255,255,255,.75)"; V.fillRect(VW - 4, top + viewY / AF_H * (VH - top), 4, Math.max(12, shown / AF_H * (VH - top)));
+  // the numbers
+  // one short line, so the mound (up to 14 px of sky) stays in view under it
+  V.textAlign = "left"; V.textBaseline = "top"; V.font = "11px 'Space Mono', monospace";
+  const stat = `ANTS ${an.workers}  BROOD ${broodTotal()}  FOOD ${an.food || 0}  ${(viewY * MM / 10).toFixed(0)} cm`;
+  V.fillStyle = "rgba(10,6,4,.62)"; V.fillRect(0, top, V.measureText(stat).width + 14, 18);
+  V.fillStyle = "#f4e9df"; V.fillText(stat, 7, top + 3);
+  // the bar (like the board)
+  V.fillStyle = "#111111"; V.fillRect(0, 0, VW, top);
+  V.fillStyle = "#2e2e2e"; V.beginPath(); V.roundRect ? V.roundRect(8, 6, 116, 36, 10) : V.rect(8, 6, 116, 36); V.fill();
+  V.fillStyle = "#ffffff"; V.beginPath(); V.moveTo(20, 24); V.lineTo(32, 14); V.lineTo(32, 34); V.closePath(); V.fill();
+  V.textBaseline = "middle"; V.font = "600 21px 'Chakra Petch', sans-serif"; V.fillText("Exit", 38, 25);
+  V.font = "700 23px 'Chakra Petch', sans-serif"; V.fillText("Ant colony", 140, 25);
+  V.textAlign = "right"; V.fillStyle = "#bdbdbd"; V.font = "600 20px 'Chakra Petch', sans-serif"; V.fillText(`Day ${an.day - 6}`, VW - 12, 25); V.textAlign = "left";
+  if (labels) {
+    V.textAlign = "center"; V.textBaseline = "middle"; V.font = "700 12px 'Chakra Petch', sans-serif";
+    const tag = (t, x, y) => { if (y < top + 44 || y > VH - 100 || x < 10 || x > VW - 10) return; const w = V.measureText(t).width + 10;
+      V.fillStyle = "rgba(0,0,0,.6)"; V.fillRect(x - w / 2, y - 8, w, 16); V.fillStyle = "#ffffff"; V.fillText(t, x, y); };
+    for (let i = 0; i < an.nRooms; i++) { const r = an.room[i]; if (r.prog < 8 && r.kind !== AK_QUEEN) continue; tag(["QUEEN", "BROOD", "FOOD", "ROOM"][r.kind], toX(r.x), toY(r.y - roomH(r) * 2 - 6)); }
+    V.font = "11px 'Chakra Petch', sans-serif";
+    for (const it of an.items) if (it.found) tag(ITEMS[it.type].name.replace(/^an? /, ""), toX(it.x), toY(it.y - 6));
+    V.textAlign = "left";
+    const ch = 84, cy = VH - ch - 10; V.fillStyle = "rgba(0,0,0,.82)"; V.beginPath(); V.roundRect ? V.roundRect(12, cy, VW - 24, ch, 16) : V.rect(12, cy, VW - 24, ch); V.fill();
+    const nh = nextHatch();
+    V.fillStyle = "#ffffff"; V.font = "700 22px 'Chakra Petch', sans-serif"; V.fillText(stageName() + (an.workers >= 10 ? " colony" : ""), 28, cy + 26);
+    V.fillStyle = "#c8c8c8"; V.font = "600 18px 'Chakra Petch', sans-serif"; V.fillText(nh ? `Next ant in ${nh} ${nh === 1 ? "day" : "days"}` : "Reach a goal: an egg", 28, cy + 60);
+  }
+}
+// the glass of the ant farm: a frame, two soft shine bands, a darker rim, a few water drops (they stay put while the soil scrolls)
+const drops = []; { let s = 7; const r = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return (s >>> 8) / 16777216; };
+  for (let i = 0; i < 26; i++) { const y = 0.35 + r() * 0.65; drops.push({ x: r(), y, r: 1.2 + r() * (y > 0.85 ? 3.2 : 2) }); } }
+function glass(V, top, VW, VH) {
+  const H = VH - top;
+  V.save();
+  // shine: two slanted bands
+  const band = (x0, w, a) => { const gr = V.createLinearGradient(x0, top, x0 + w, top + w * 0.5); gr.addColorStop(0, "rgba(255,255,255,0)"); gr.addColorStop(0.5, `rgba(255,255,255,${a})`); gr.addColorStop(1, "rgba(255,255,255,0)");
+    V.fillStyle = gr; V.beginPath(); V.moveTo(x0, top); V.lineTo(x0 + w, top); V.lineTo(x0 + w - H * 0.55, VH); V.lineTo(x0 - H * 0.55, VH); V.closePath(); V.fill(); };
+  const night = isNight();
+  band(VW * 0.55, 70, night ? 0.05 : 0.09); band(VW * 0.78, 22, night ? 0.04 : 0.07);
+  // the edges of the glass are a little darker (thickness), with a thin bright line where the light catches it
+  const edge = V.createLinearGradient(0, 0, VW, 0); edge.addColorStop(0, "rgba(0,0,0,.28)"); edge.addColorStop(0.06, "rgba(0,0,0,0)"); edge.addColorStop(0.94, "rgba(0,0,0,0)"); edge.addColorStop(1, "rgba(0,0,0,.28)");
+  V.fillStyle = edge; V.fillRect(0, top, VW, H);
+  V.strokeStyle = "rgba(255,255,255,.28)"; V.lineWidth = 1.5; V.beginPath(); V.moveTo(3, top + 3); V.lineTo(VW - 3, top + 3); V.moveTo(3, top + 3); V.lineTo(3, VH - 3); V.stroke();
+  // water drops on the glass (condensation from the damp soil, more near the bottom)
+  for (const d of drops) {
+    const x = d.x * VW, y = top + d.y * H, r = d.r * 1.6;
+    V.fillStyle = "rgba(255,255,255,.10)"; V.beginPath(); V.arc(x, y, r, 0, 2 * PI); V.fill();
+    V.fillStyle = "rgba(0,0,0,.18)"; V.beginPath(); V.arc(x + r * 0.25, y + r * 0.35, r * 0.8, 0, PI); V.fill();
+    V.fillStyle = "rgba(255,255,255,.55)"; V.beginPath(); V.arc(x - r * 0.35, y - r * 0.35, Math.max(0.8, r * 0.28), 0, 2 * PI); V.fill();
+  }
+  // the frame
+  V.strokeStyle = "#2a1f18"; V.lineWidth = 6; V.strokeRect(3, top + 3, VW - 6, H - 6);
+  V.strokeStyle = "rgba(255,255,255,.12)"; V.lineWidth = 1; V.strokeRect(6.5, top + 6.5, VW - 13, H - 13);
+  V.restore();
+}
+
+// ======================= save (this browser only) =======================
+let dirtySave = false, savedAt = 0;
+function save() {
+  try {
+    const packed = new Uint8Array(AF_W * AF_H / 8); for (let i = 0; i < bits.length; i++) if (bits[i]) packed[i >> 3] |= 1 << (i & 7);
+    let s = ""; for (let i = 0; i < packed.length; i++) s += String.fromCharCode(packed[i]);
+    const items = an.items.map(({ type, x, y, seed, found, portions, taken }) => ({ type, x, y, seed, found, portions, taken }));
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ an: { ...an, items }, bits: btoa(s), anToday, anGoals }));
+  } catch (e) {}
+  dirtySave = false; savedAt = performance.now();
+}
+// (a new key: colonies saved by older versions were dug with older rules, some of their tunnels cut through roots and stones)
+const SAVE_KEY = "somud.fireants.v1";
+function load() {
+  try {
+    const o = JSON.parse(localStorage.getItem(SAVE_KEY) || "null"); if (!o || !o.an || !o.bits || !o.an.world || o.an.gen !== GEN) return false;
+    const s = atob(o.bits); bits.fill(0); for (let i = 0; i < bits.length; i++) if (s.charCodeAt(i >> 3) & (1 << (i & 7))) bits[i] = 1;
+    an = o.an; anToday = o.anToday ?? 2; anGoals = o.anGoals ?? 3; an.finds = an.finds || [];
+    genWorld();
+    // never show soil and a tunnel in the same place: a dug pixel on a stone or root means the save does not fit this world
+    for (let i = 0; i < bits.length; i++) if (bits[i] && mat[i]) return false;
+    return true;
+  } catch (e) { return false; }
+}
+
+// ======================= panel =======================
+const $ = (id) => document.getElementById(id);
+function say(t) { $("msg").innerHTML = t; }
+function brainPanel() {
+  const N = brain.need, C = brain.count, row = (k, name, col) =>
+    `<div class="need"><span>${name}</span><div class="track"><div class="fill" style="width:${Math.round((N[k] || 0) * 100)}%;--c:${col}"></div></div><span class="v">${C[k] || 0} ants</span></div>`;
+  const cs = [0, 0, 0]; for (const a of ants) if (a.caste < 3) cs[a.caste]++;
+  $("brain").innerHTML = row("nurse", "Brood care", "#fff5e6") + row("forage", "Food", "#9bd35a") + row("dig", "More room", "#c2461e") + row("store", "Food store", "#f2c94c")
+    + (C.guard ? `<div class="need"><span>Defence</span><div class="track"><div class="fill" style="width:100%;--c:#ff5a2a"></div></div><span class="v">${C.guard} ants</span></div>` : "")
+    + `<div class="need"><span>Resting</span><div></div><span class="v">${C.rest || 0} ants</span></div>`
+    + `<div class="castes">On screen: <b>${cs[0]}</b> minors · <b>${cs[1]}</b> medias · <b>${cs[2]}</b> majors${C.alate ? ` · <b>${C.alate}</b> alates` : ""}</div>`
+    + `<ul class="why">${brain.why.map((w) => `<li>${w}</li>`).join("")}</ul>`;
+}
+// self-check used before publishing: stones inside tunnels / rooms, ants' depth spread
+window.antFarmCheck = () => {
+  let stoneInTunnel = 0;
+  for (let y = AF_SKY + 1; y < AF_H - 1; y++) for (let x = 1; x < AF_W - 1; x++) {
+    const i = y * AF_W + x; if (!mat[i]) continue;
+    if ((bits[i - 1] && bits[i + 1]) || (bits[i - AF_W] && bits[i + AF_W])) stoneInTunnel++;   // open on both sides = a stone sticking into a tunnel
+  }
+  // strict: no dug pixel may touch a stone or a root at all (8 neighbours); tally which digging made the ones that do
+  let touching = 0; const bySrc = {}, samples = [];
+  for (let y = AF_SKY; y < AF_H - 1; y++) for (let x = 1; x < AF_W - 1; x++) {
+    const i = y * AF_W + x; if (!bits[i]) continue;
+    let hit = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (mat[i + dy * AF_W + dx]) hit = mat[i + dy * AF_W + dx];
+    if (!hit) continue;
+    touching++; const k = DIG_SRC[digSrc[i]] + (hit === 1 ? "/stone" : "/root"); bySrc[k] = (bySrc[k] || 0) + 1;
+    if (samples.length < 6) samples.push([x, y, k]);
+  }
+  const depths = ants.map((a) => a.y), deep = depths.filter((y) => y > AF_SKY + 100).length, surface = depths.filter((y) => y < AF_SKY).length;
+  let maxDug = 0; for (let y = AF_H - 1; y >= 0 && !maxDug; y--) for (let x = 0; x < AF_W; x++) if (bits[y * AF_W + x]) { maxDug = y; break; }
+  // every finished room must be reachable from the door (a stone must not cut a chamber off its tunnel)
+  const unreachable = []; for (let i = 0; i < an.nRooms; i++) { const r = an.room[i]; if (r.prog < 8 && r.kind !== AK_QUEEN) continue;
+    const fy = floorAt(r, r.x), gx = (r.x / 2) | 0, gy = (((fy > 0 ? fy : r.y) - 1) / 2) | 0; let ok = false;
+    for (let dy = -2; dy <= 2 && !ok; dy++) for (let dx = -2; dx <= 2 && !ok; dx++) { const j = (gy + dy) * AG_W + gx + dx; if (anDist[j] !== 0xFFFF) ok = true; }
+    if (!ok) unreachable.push(i); }
+  const castes = {}; for (const a of ants) { const k = CASTE[a.caste]; castes[k] = (castes[k] || 0) + 1; }
+  const b = broodRooms(), rooms = an.room.slice(0, an.nRooms).filter((r) => r.prog >= 8 || r.kind === AK_QUEEN);
+  return { day: an.day - 6, workers: an.workers, shown: ants.length, stoneInTunnel, touching, bySrc, samples, antsDeeperThan5cm: deep, antsOnSurface: surface, deepestTunnelPx: maxDug, roles: brain.count,
+           food: an.food, surfaceFood: surf.map((s) => s.kind + ":" + s.portions).join(","), carryingFood: ants.filter((a) => a.job === AJ_FOOD).length, eggs: { laid: an.laid, loose: an.loose, placed: an.placed },
+           castes, alates: an.alates, flown: an.flown, brood: { shown: broodShown(), up: an.up, target: broodTarget(broodShown()), warm: warm(), split: b.split, moving: ants.filter((a) => a.job === AJ_MOVE || a.job === AJ_MOVE2).length },
+           rooms: rooms.map((r) => ["Q", "B", "F", "R"][r.kind] + roomStyle(r)).join(" "), unreachable, guards: ants.filter((a) => a.guard).length, onMound: ants.filter((a) => a.job === AJ_GUARD).length };
+};
+window.antFarmSkip = (days) => dayOver(days);
+window.antFarmMap = (x0, y0, x1, y1) => {   // (test view) ' ' dug, o stone, r root, . soil
+  const rows = []; for (let y = y0; y <= y1; y++) { let s = ""; for (let x = x0; x <= x1; x++) { const i = y * AF_W + x; s += bits[i] ? " " : mat[i] === 1 ? "o" : mat[i] === 2 ? "r" : "."; } rows.push(s); }
+  return rows.join("\n");
+};
+window.antFarmPoke = () => { poke(); return alarmEnd - simMs; };
+window.antFarmFlight = () => flight();
+window.antFarmSky = (v) => { sky = v; bgNeed = true; panel(); };
+window.antFarmRun = (seconds) => {   // run the live simulation for some seconds of farm time (the same steps as the screen loop)
+  const end = simMs + seconds * 1000;
+  while (simMs < end) { simMs += 60; anStepMs = simMs; antStep(); digTick(); crumbs.forEach((c) => c.t -= 60); crumbs = crumbs.filter((c) => c.t > 0); }
+  render(); return window.antFarmCheck();
+};
+function seg(el, values, current, onPick, fmt) {
+  el.innerHTML = ""; values.forEach((v) => { const b = document.createElement("button"); b.textContent = fmt ? fmt(v) : v; b.className = v === current ? "on" : ""; b.onclick = () => onPick(v); el.appendChild(b); });
+}
+function panel() {
+  const nh = nextHatch();
+  $("stage").innerHTML = `${stageName()}${an.workers >= 10 ? " colony" : ""}<small>day ${an.day - 6} · ${nh ? `next ant in ${nh} ${nh === 1 ? "day" : "days"}` : "reach a goal for an egg"}</small>`;
+  const rooms = an.room.slice(0, an.nRooms).filter((r) => r.prog >= 8 || r.kind === AK_QUEEN);
+  const cnt = (k) => rooms.filter((r) => r.kind === k).length;
+  $("nums").innerHTML = [["Workers", an.workers], ["Brood", broodTotal()], ["Streak", `${an.streak}<small style="font-size:12px;color:var(--dim)"> best ${an.best}</small>`], ["Rooms", rooms.length]]
+    .map(([k, v]) => `<div class="num"><b>${v}</b><span>${k}</span></div>`).join("");
+  const eggs = an.placed + an.loose + an.brood[0] + an.brood[1] + an.brood[2], larvae = an.brood[3] + an.brood[4] + an.brood[5], pupae = an.brood[6] + an.brood[7];
+  $("brood").innerHTML = `<span><i style="--c:#fff"></i>Eggs ${eggs}</span><span><i style="--c:#f6eedc"></i>Larvae ${larvae}</span><span><i style="--c:#e2c9a0"></i>Pupae ${pupae}</span>
+    <span><i style="--c:var(--leaf)"></i>Food rooms ${cnt(AK_FOOD)}</span><span><i style="--c:var(--egg)"></i>Brood rooms ${cnt(AK_BROOD)}</span>
+    ${broodRooms().split ? `<span>Brood up top ${Math.min(an.up || 0, broodShown())} · deep ${Math.max(0, broodShown() - (an.up || 0))}</span>` : ""}
+    ${an.alates ? `<span><i style="--c:#c9d6de"></i>Alates ${an.alates}</span>` : ""}${an.flown ? `<span>Flown away ${an.flown}</span>` : ""}`;
+  // what was found in the soil, and the layers the tunnels reached
+  $("finds").innerHTML = an.finds && an.finds.length
+    ? an.finds.map((f) => `<li><span>day ${f.day}</span>${f.text}</li>`).join("")
+    : `<li class="empty">Nothing yet. Seeds, grubs, snail shells, water drops and even fossils are buried at different depths.</li>`;
+  let deepest = AF_SKY; for (let y = AF_H - 1; y >= AF_SKY; y--) { let hit = false; for (let x = 0; x < AF_W; x += 2) if (bits[y * AF_W + x]) { hit = true; break; } if (hit) { deepest = y; break; } }
+  const layer = LAYERS[layerAt(an.door, deepest)].name, left = an.items.filter((t) => !t.found).length;
+  $("soil").innerHTML = `Deepest tunnel: <strong>${((deepest - AF_SKY) * MM / 10).toFixed(1)} cm</strong>, in the ${layer}. Food in the store: <strong>${an.food || 0}</strong> (the colony eats ${Math.ceil(an.workers / 15)} a night). ${left} things still buried.`;
+  const goal = digGoal(), pct = Math.min(100, an.dug / goal * 100);
+  $("meter").innerHTML = `<span>Tunnels dug: <b>${an.dug}</b> of ${goal} px the colony wants now (more workers want more). Soil pile: ${an.mound} grains.</span><div class="track"><div class="fill" style="width:${pct.toFixed(1)}%"></div></div>`;
+  seg($("goalsSeg"), [1, 2, 3, 4, 5, 6], anGoals, (v) => { anGoals = v; anToday = Math.min(anToday, v); panel(); dirtySave = true; });
+  seg($("doneSeg"), Array.from({ length: anGoals + 1 }, (_, i) => i), anToday, (v) => { anToday = v; panel(); dirtySave = true; say(v ? `${v} goal${v > 1 ? "s" : ""} reached: watch the ants bring food down.` : "No goal yet today: no food, no egg tonight."); });
+  seg($("speedSeg"), [1, 4, 16], speed, (v) => { speed = v; panel(); }, (v) => "×" + v);
+  seg($("skySeg"), ["auto", "day", "night"], sky, (v) => { sky = v; bgNeed = true; panel(); }, (v) => v[0].toUpperCase() + v.slice(1));
+  $("labels").textContent = "Room names: " + (labels ? "on" : "off");
+}
+function dayOver(times) {
+  let hatched = 0; const w0 = an.workers, al0 = an.alates || 0;
+  for (let i = 0; i < times; i++) hatched += endDay(anToday, false);
+  fields(); if (an.workers !== w0 || (an.alates || 0) !== al0) spawnAnts();
+  bgNeed = true; save(); panel();
+  say(`${times === 1 ? "Midnight" : times + " days later"}: ${hatched ? `<strong>${hatched} new worker${hatched > 1 ? "s" : ""}</strong> came out of the pupae.` : "no pupa was ready yet."} The tunnels grew while nobody watched.`);
+}
+$("endDay").onclick = () => dayOver(1);
+$("week").onclick = () => dayOver(7);
+$("away").onclick = () => { const d0 = an.dug; catchUp(8); fields(); bgNeed = true; save(); panel(); say(`8 hours away: the ants dug ${an.dug - d0} more pixels${an.dug >= digGoal() ? " and reached what the colony needs for now (more workers want more)" : ""}.`); };
+$("labels").onclick = () => { labels = !labels; panel(); };
+// drag = scroll the farm up / down, a tap = room names (like on the board)
+let dragY = null, dragX = 0, dragView = 0, dragPan = 0, dragMoved = false;
+const farmPerClientPx = () => (640 / cv.getBoundingClientRect().height) / (zoom === 2 ? 4 : 2);   // screen px -> farm px
+cv.addEventListener("pointerdown", (e) => { dragY = e.clientY; dragX = e.clientX; dragView = viewY; dragPan = panX; dragMoved = false; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener("pointermove", (e) => {
+  if (dragY === null) return; const k = farmPerClientPx(), dy = (e.clientY - dragY) * k, dx = (e.clientX - dragX) * k;
+  if (Math.abs(dy) > 2 || Math.abs(dx) > 2) dragMoved = true;
+  if (dragMoved) { viewY = dragView - dy; if (zoom === 2) panX = dragPan - dx; }   // zoomed in: drag sideways too
+});
+cv.addEventListener("pointerup", (e) => {
+  if (dragY !== null && !dragMoved) {   // a tap on the mound pokes it; anywhere else shows the room names
+    const b = cv.getBoundingClientRect(), s = zoom === 2 ? 4 : 2, cx = (e.clientX - b.left) * 480 / b.width, cy = (e.clientY - b.top) * 640 / b.height;
+    const fx = cx / s + (zoom === 2 ? panX : 0), fy = (cy - AN_BAR * 2) / s + viewY;
+    if (Math.abs(fx - pileX()) <= pileHalf() + 3 && fy >= AF_SKY - moundH() - 6 && fy <= AF_SKY + 3) poke(); else { labels = !labels; panel(); }
+  }
+  dragY = null;
+});
+cv.addEventListener("wheel", (e) => { e.preventDefault(); viewY += e.deltaY * 0.5; }, { passive: false });
+cv.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); labels = !labels; panel(); }
+  else if (e.key === "ArrowDown" || e.key === "PageDown") { e.preventDefault(); viewY += e.key === "PageDown" ? 150 : 24; }
+  else if (e.key === "ArrowUp" || e.key === "PageUp") { e.preventDefault(); viewY -= e.key === "PageUp" ? 150 : 24; }
+});
+function setZoom(z) {   // keep the middle of what you look at in the middle
+  const cx = zoom === 2 ? panX + SW / 4 : SW / 2, cy = viewY + (zoom === 2 ? VIEW_H / 4 : VIEW_H / 2);
+  zoom = z; panX = z === 2 ? cx - SW / 4 : 0; viewY = cy - (z === 2 ? VIEW_H / 4 : VIEW_H / 2);
+  $("zoom").textContent = z === 2 ? "Zoom ×1" : "Zoom ×2";
+}
+$("zoom").onclick = () => setZoom(zoom === 2 ? 1 : 2);
+$("poke").onclick = () => poke();
+$("flight").onclick = () => flight();
+$("scentBtn").onclick = () => { showScent = !showScent; $("scentBtn").textContent = "Scent trails: " + (showScent ? "on" : "off"); };
+cv.addEventListener("keydown", (e) => { if (e.key === "z" || e.key === "Z") setZoom(zoom === 2 ? 1 : 2); else if (e.key === "s" || e.key === "S") $("scentBtn").click();
+  else if (zoom === 2 && e.key === "ArrowLeft") { e.preventDefault(); panX -= 12; } else if (zoom === 2 && e.key === "ArrowRight") { e.preventDefault(); panX += 12; } });
+$("up").onclick = () => { viewY = 0; };
+$("down").onclick = () => { viewY += 150; };
+$("face").onclick = () => {
+  const fx = an.plan.on ? an.plan.hx : an.room[an.nRooms - 1].x, fy = an.plan.on ? an.plan.hy : an.room[an.nRooms - 1].y;
+  viewY = fy - (zoom === 2 ? VIEW_H / 4 : VIEW_H / 2); if (zoom === 2) panX = fx - SW / 4;
+};
+$("reset").onclick = () => { $("confirm").hidden = false; };
+$("no").onclick = () => { $("confirm").hidden = true; };
+$("yes").onclick = () => { $("confirm").hidden = true; found(); fields(); spawnAnts(); save(); panel(); say("A new fire ant queen dug her first round chamber. 3 tiny nanitic workers, and a week of sample goals."); };
+
+// ======================= start + loop =======================
+if (!load()) found();
+fields(); spawnAnts(); panel();
+say("Fire ants dig, heap the soil into a mound, hunt for food and carry their brood up and down with the warmth. Tap the mound to poke it; use the Time buttons to watch the colony grow.");
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.25, (now - last) / 1000); last = now;
+  simMs += dt * 1000 * speed;
+  let n = 0; while (simMs - anStepMs >= 60 && n < 60) { anStepMs += 60; antStep(); digTick(); n++; }
+  if (simMs - anStepMs > 600) anStepMs = simMs;
+  const sdt = dt * 1000 * speed;
+  crumbs.forEach((c) => c.t -= sdt); crumbs = crumbs.filter((c) => c.t > 0); if (layPulse > 0) layPulse -= sdt;
+  render();
+  if (newsFlag) { newsFlag = false; panel(); }
+  if (dirtySave && now - savedAt > 5000) { save(); panel(); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+})();
+</script>

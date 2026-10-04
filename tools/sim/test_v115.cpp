@@ -224,7 +224,7 @@ int main() {
   {
 #ifdef FW_VERSION
     scr = S_SET; setPage = 0; setScroll = 9999; dirty = true; render(); setScroll = 9999; dirty = true; render(); savePng(spr, "t115_settings_version", W, H);
-    printf("19 version %s shown on the Settings page (see t115_settings_version.png) %s\n", FW_VERSION, R(!strncmp(FW_VERSION, "v11.", 4) && atof(FW_VERSION + 1) >= 11.5f));   // v11.5 or newer
+    printf("19 version %s shown on the Settings page (see t115_settings_version.png) %s\n", FW_VERSION, R(FW_VERSION[0] == 'v' && (atoi(FW_VERSION + 1) > 11 || (atoi(FW_VERSION + 1) == 11 && atof(FW_VERSION + 4) >= 5))));   // v11.5 or newer
     setScroll = 0; scr = S_HOME;
 #else
     printf("19 version only far down in About %s\n", R(false));

@@ -37,7 +37,9 @@ extern uint64_t g_simMs;       // millis()
 extern int64_t g_simEpoch;     // wall clock at g_simMs == 0
 inline uint32_t millis() { return (uint32_t)g_simMs; }
 inline uint32_t micros() { return (uint32_t)(g_simMs * 1000); }
-inline void delay(uint32_t ms) { g_simMs += ms; }
+extern void (*g_simDelayHook)();   // tests: called on every delay() (to press buttons while a window waits in its own loop)
+inline void delay(uint32_t ms) { g_simMs += ms; if (g_simDelayHook) g_simDelayHook(); }
+inline void delayMicroseconds(uint32_t) {}
 inline void yield() {}
 inline time_t sim_time(time_t* t) { time_t v = (time_t)(g_simEpoch + (int64_t)(g_simMs / 1000)); if (t) *t = v; return v; }
 inline int sim_settimeofday(const struct timeval* tv, const void*) { g_simEpoch = tv->tv_sec - (int64_t)(g_simMs / 1000); return 0; }
@@ -72,6 +74,7 @@ class String {
   char operator[](size_t i) const { return i < s_.size() ? s_[i] : 0; }
   char& operator[](size_t i) { return s_[i]; }
   char charAt(size_t i) const { return (*this)[i]; }
+  void setCharAt(size_t i, char c) { if (i < s_.size()) s_[i] = c; }
   std::string::iterator begin() { return s_.begin(); }
   std::string::iterator end() { return s_.end(); }
   std::string::const_iterator begin() const { return s_.begin(); }
