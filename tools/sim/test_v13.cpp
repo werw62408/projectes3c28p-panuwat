@@ -52,7 +52,7 @@ int main() {
   auto R = [](bool ok) { return ok ? "PASS" : "FAIL"; };
   offIdx = 3; g_simOffline = true; WiFi.connected = true; remindAct = -1; animOn = false;
 
-  printf("1  version %s %s\n", FW_VERSION, R(!strcmp(FW_VERSION, "v13")));
+  printf("1  version %s %s\n", FW_VERSION, R(atof(FW_VERSION + 1) >= 13.0));   // (this version or a newer one: v13.1)
 
   // ================= the small screen =================
   { bool ok = oledOk && padOk && !joySwIo14 && irOn && g_simIrRxOn;
