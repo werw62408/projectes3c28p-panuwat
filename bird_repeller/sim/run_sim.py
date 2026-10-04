@@ -24,8 +24,8 @@ SERVER = os.path.join(HERE, "..", "raspberry_pi_server.py")
 
 
 class Sim:
-    def __init__(self, clip, model, port=5055, pin="", fw="build/fw_host"):
-        self.clip, self.model, self.port, self.pin = clip, model, port, pin
+    def __init__(self, clip, model, port=5055, pin="", fw="build/fw_host", mode="demo"):
+        self.clip, self.model, self.port, self.pin, self.mode = clip, model, port, pin, mode
         self.fw_exe = os.path.join(HERE, fw)
         self.data_dir = tempfile.mkdtemp(prefix="bird_sim_")
         self.master, self.slave = pty.openpty()
@@ -66,7 +66,8 @@ class Sim:
         self.start_board()
         env = dict(os.environ, BIRD_SERIAL=self.slave_path, BIRD_CAM=self.clip,
                    BIRD_MODEL=self.model, BIRD_DATA_DIR=self.data_dir,
-                   BIRD_PORT=str(self.port), BIRD_PIN=self.pin, PYTHONUNBUFFERED="1")
+                   BIRD_PORT=str(self.port), BIRD_PIN=self.pin, BIRD_MODE=self.mode,
+                   PYTHONUNBUFFERED="1")
         self.server = subprocess.Popen([sys.executable, SERVER], env=env,
                                        stdout=open(self.server_log_path, "w"),
                                        stderr=subprocess.STDOUT)
@@ -90,8 +91,9 @@ def main():
     ap.add_argument("--model", required=True, help="ไฟล์ yolov8n.pt")
     ap.add_argument("--port", type=int, default=5055)
     ap.add_argument("--pin", default="")
+    ap.add_argument("--mode", default="field", choices=["field", "demo", "real"])
     a = ap.parse_args()
-    sim = Sim(a.clip, a.model, a.port, a.pin).start()
+    sim = Sim(a.clip, a.model, a.port, a.pin, mode=a.mode).start()
     print(f"เปิด {sim.url}  (Ctrl+C เพื่อหยุด)")
     try:
         while True:

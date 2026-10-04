@@ -218,6 +218,40 @@ def pir_flow(page, sim):
     check("ปุ่มทดสอบไฟส้มใช้ได้", "OK BIRD 1" in m, m)
 
 
+def field_flow(page, sim):
+    """โหมดทดสอบภาคสนาม: ไม่ต้องกดอะไร เจอนกแล้วไล่จริง + เก็บ log/ภาพ"""
+    log_path = os.path.join(HERE, "build", "fw_pins.log")
+    pins_before = open(log_path, encoding="utf-8").read()
+    page.goto(sim.url)
+    page.wait_for_function("document.getElementById('brd').textContent === 'เชื่อมต่อแล้ว'", timeout=20000)
+    page.wait_for_timeout(1500)
+    warns = page.inner_text("#warns")
+    check("หน้าเว็บบอกว่าอยู่โหมดทดสอบภาคสนาม (ไล่จริง)", "ภาคสนาม" in warns and "โหมดทดสอบเปิดอยู่" not in warns, warns)
+    check("ไล่อัตโนมัติเปิดอยู่ตั้งแต่เริ่ม", page.is_checked("#autoRep"))
+    page.once("dialog", lambda d: d.accept())
+    page.click("#mZ")                                   # ตั้งจุดกลางเหมือนตอนติดตั้งจริง
+    s = wait_state(sim, lambda s: s["hw"]["repel_count"] >= 1, 60)
+    check("เจอนกแล้วสั่งไล่เองโดยไม่ต้องกดอะไร", s is not None, state(sim)["status"])
+    s = wait_state(sim, lambda s: not s["hw"]["repel"] and not s["hw"]["busy"], 20)
+    pins = open(log_path, encoding="utf-8").read()[len(pins_before):]
+    check("รีเลย์ปั๊ม (GPIO18) เปิดแล้วปิดเอง", "PUMP HIGH" in pins and "PUMP LOW" in pins, pins[-400:])
+    check("มอเตอร์กวาดหัวฉีด", "STEPS" in pins, pins[-400:])
+    check("ไฟส้มติดตอนเจอนก", "LAMP_ORANGE HIGH" in pins)
+    page.wait_for_timeout(6000)
+    with open(os.path.join(sim.data_dir, "detection_log.csv"), encoding="utf-8-sig") as f:
+        rows = f.read()
+    check("detection_log.csv บันทึกรอบที่สั่งไล่", "สั่งไล่แล้ว" in rows, rows[-300:])
+    check("detection_log.csv บันทึกรอบรอยืนยันก่อนไล่ (เจอ 2 ใน 3)", "รอยืนยัน" in rows, rows[-300:])
+    ds = os.path.join(sim.data_dir, "dataset")
+    n = len([f for f in os.listdir(ds) if f.endswith(".jpg")]) if os.path.isdir(ds) else 0
+    check(f"เก็บภาพดิบสำหรับเทรนแล้ว {n} ภาพ", n >= 1)
+    st = state(sim)
+    check(f"ภายใน 1 นาทีไล่ไม่เกินที่ช่วงพักกำหนด ({st['hw']['repel_count']} ครั้ง)",
+          st["hw"]["repel_count"] <= 4, st["hw"]["repel_count"])
+    page.evaluate("window.scrollTo(0,0)")
+    shot(page, "11_field_mode.png")
+
+
 def empty_clip():
     """คลิปภาพว่าง ๆ ไม่มีนก ไว้ทดสอบ PIR ค้าง"""
     import cv2
@@ -237,6 +271,7 @@ def pir_stuck_flow(page, sim):
     page.goto(sim.url)
     page.wait_for_function("document.getElementById('brd').textContent === 'เชื่อมต่อแล้ว'", timeout=20000)
     page.uncheck("#autoDet")
+    wait_state(sim, lambda s: s["hw"]["pir_warm"] > 0, 8)      # รอ STAT แรกจากบอร์ด (ค่าเริ่มต้นเป็น 0)
     s = wait_state(sim, lambda s: s["hw"]["pir_warm"] == 0, 30)
     check("PIR พร้อม", s is not None)
     sim.set_sensors(PIR=1, ECHO_CM=15)
@@ -312,6 +347,13 @@ def main():
         sim = Sim(a.bird_clip or a.clip, a.model, port=5057).start()
         try:
             pir_flow(browser.new_page(**phone), sim)
+        finally:
+            sim.stop()
+
+        print("== ทดสอบภาคสนาม: เจอแล้วไล่จริง ==")
+        sim = Sim(a.bird_clip or a.clip, a.model, port=5059, mode="field").start()
+        try:
+            field_flow(browser.new_page(**phone), sim)
         finally:
             sim.stop()
 

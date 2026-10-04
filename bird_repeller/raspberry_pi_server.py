@@ -2,9 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.3
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.4
  ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.3
 --------------------------------------------------------------------------
+ เปลี่ยนจาก v6.3 (รุ่นนี้ — ทดสอบภาคสนาม):
+   - TEST_MODE เปลี่ยนเป็น MODE 3 แบบ: field (ค่าเริ่มต้น) / demo / real
+     field = เจอนก 2 ใน 3 รอบแล้วไล่จริง + เก็บภาพและ log ทุกรอบ
+   - หน้าเว็บบอกว่าอยู่โหมดไหน
+
  เปลี่ยนจาก v6.2 (รุ่นนี้ — PIR ค้าง):
    - แยกตัวนับ "ทริกใหม่" (EVT PIR) กับ "ทริกซ้ำระหว่าง OUT ค้าง" (EVT PIR REP)
      บันทึก PIR บอกว่าแต่ละครั้งทริกซ้ำไปกี่รอบ
@@ -189,12 +194,28 @@ STEPS_PER_REV = 1600
 # ถ้าใช้ฮอตสปอตที่มีคนอื่นต่ออยู่ด้วย ควรตั้งไว้ ไม่งั้นใครก็สั่งปั๊ม/มอเตอร์ได้
 WEB_PIN = os.environ.get("BIRD_PIN", "")
 
-# ============================ โหมดทดสอบ ============================
-# True  = โชว์กรอบอย่างเดียว: ROI เริ่มแบบปิด, ไม่ต้องยืนยันหลายเฟรม,
-#         ไม่สั่งไล่เอง และลดเกณฑ์คะแนนให้เห็นกรอบง่ายขึ้น
-#         (ROI กับการไล่เอง เปิด-ปิดจากหน้าเว็บได้ตามปกติ)
-# False = กลับไปใช้ค่าจริงข้างบนทั้งหมด (ใช้ตอนวันสาธิต)
-TEST_MODE = True
+# ============================ โหมดการทำงาน ============================
+# "field" = ทดสอบภาคสนาม (ค่าเริ่มต้น): เจอนกแล้วไล่จริง (ปั๊ม + มอเตอร์) และเก็บข้อมูลเต็มที่
+#           ภาพทุกรอบลง history/, ภาพดิบสำหรับเทรนลง dataset/, ทุกรอบลง detection_log.csv
+#           เกณฑ์ 0.30 + ต้องเจอ 2 ใน 3 รอบ กันโมเดลเห็นผิดแล้วฉีดน้ำมั่ว
+#           ROI จำค่าไว้ใน roi.json เหมือนของจริง
+# "demo"  = โชว์กรอบอย่างเดียว: ROI เริ่มแบบปิด, ไม่ต้องยืนยันหลายเฟรม,
+#           ไม่สั่งไล่เอง และลดเกณฑ์คะแนนให้เห็นกรอบง่ายขึ้น
+# "real"  = ใช้งานจริง ใช้ค่าข้างบนทั้งหมด
+# เลือกได้ที่นี่ หรือตอนรัน:  BIRD_MODE=demo python3 raspberry_pi_server.py
+# (ROI กับการไล่เอง เปิด-ปิดจากหน้าเว็บได้ทุกโหมด)
+MODE = os.environ.get("BIRD_MODE", "field").strip().lower()
+if MODE not in ("field", "demo", "real"):
+    print(f"[Mode] ไม่รู้จักโหมด '{MODE}' ใช้ field แทน", flush=True)
+    MODE = "field"
+TEST_MODE = MODE == "demo"
+FIELD_TEST = MODE == "field"
+
+if FIELD_TEST:
+    CONF_THRESHOLD = 0.30       # ภาพจริงจากหน้างานเคยได้นกที่ 0.25-0.4 ลดลงนิดนึง
+    CONFIRM_FRAMES = 2          # แต่ต้องเจอ 2 ใน 3 รอบ (~10 วิ) ถึงไล่
+    CONFIRM_OF = 3
+    AUTO_REPEL_DEFAULT = True
 
 if TEST_MODE:
     CONF_THRESHOLD = 0.25       # ต่ำลงนิดนึง จะได้เห็นว่าโมเดลเห็นอะไรบ้าง
@@ -291,7 +312,7 @@ ROI = {"enabled": False, "x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0}
 def load_roi():
     if TEST_MODE:
         # โหมดทดสอบ: ไม่โหลดค่าเก่าจาก roi.json เลย เริ่มแบบปิด ROI เสมอ
-        # (ไฟล์เดิมไม่ถูกลบ ปิด TEST_MODE แล้วค่าเก่ากลับมาเอง)
+        # (ไฟล์เดิมไม่ถูกลบ เปลี่ยนไปโหมดอื่นแล้วค่าเก่ากลับมาเอง)
         ROI["enabled"] = False
         print("[ROI] โหมดทดสอบ -> ปิด ROI", flush=True)
         return
@@ -1349,6 +1370,7 @@ def api_state():
     s["burst_frames"] = BURST_FRAMES
     s["corrupt_frames"] = CAM.corrupt_count
     s["test_mode"] = TEST_MODE
+    s["mode"] = MODE
     s["pin_required"] = bool(WEB_PIN)
     s["roi"] = dict(ROI)
     s["hw"] = CTRL.snapshot()
@@ -1817,8 +1839,10 @@ async function tick(){
 
   // ---- แถบเตือน ----
   const w = [];
+  if(s.mode === 'field') w.push(['w', 'โหมดทดสอบภาคสนาม: เจอนก ' + s.confirm_frames + ' ใน ' + s.confirm_of +
+                               ' รอบแล้วไล่จริง (ปั๊ม + มอเตอร์) และเก็บภาพ/log ทุกรอบ — กด "ดาวน์โหลด log" เพื่อเอาข้อมูลไปสรุป']);
   if(s.test_mode) w.push(['w', 'โหมดทดสอบเปิดอยู่: ไม่ไล่นกเอง ไม่ต้องยืนยันหลายเฟรม และเกณฑ์คะแนนต่ำกว่าปกติ ' +
-                               'ก่อนใช้งานจริงให้แก้ TEST_MODE = False']);
+                               'ก่อนใช้งานจริงให้แก้ MODE เป็น field หรือ real']);
   if(s.hw.link && s.hw.error) w.push(['b', s.hw.error]);
   if(s.hw.link && ['BROWNOUT','PANIC','WDT'].includes(s.hw.reset_reason) && !s.hw.error)
     w.push(['b', 'บอร์ดควบคุมรีบูตเองครั้งล่าสุด (' + s.hw.reset_reason + ') ' +
@@ -2000,8 +2024,13 @@ def main():
 
     print(f"[Web] เปิดที่ http://0.0.0.0:{os.environ.get('BIRD_PORT', '5000')}", flush=True)
     if TEST_MODE:
-        print("[Mode] *** โหมดทดสอบ: ปิด ROI / ไม่ยืนยันเฟรม / ไม่ไล่เอง / "
+        print("[Mode] *** โหมดสาธิต (demo): ปิด ROI / ไม่ยืนยันเฟรม / ไม่ไล่เอง / "
               f"conf={CONF_THRESHOLD} ***", flush=True)
+    elif FIELD_TEST:
+        print(f"[Mode] *** ทดสอบภาคสนาม (field): ไล่จริง + เก็บข้อมูล / conf={CONF_THRESHOLD} ***",
+              flush=True)
+    else:
+        print(f"[Mode] ใช้งานจริง (real) conf={CONF_THRESHOLD}", flush=True)
     print(f"[Auto] ตรวจจับทุก {AUTO_INTERVAL_S} วินาที รอบละ {BURST_FRAMES} เฟรม "
           f"(เจอ {CONFIRM_FRAMES} ใน {CONFIRM_OF} รอบก่อนสั่งไล่)", flush=True)
     print(f"[Detect] CLAHE={'เปิด' if DETECT_CLAHE else 'ปิด'}  "
