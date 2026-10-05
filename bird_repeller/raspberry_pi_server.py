@@ -2,9 +2,18 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.4
- ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.3
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.5
+ ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.4
 --------------------------------------------------------------------------
+ เปลี่ยนจาก v6.4 (รุ่นนี้):
+   - ยืนยันแบบใหม่: ตรวจทุก 5 วิตามปกติ เจอนกเฟรมแรกแล้วถ่ายเฟรมยืนยันใน 3 วิ
+     เจอ 2 เฟรมติดกันถึงไล่ (เดิม 2 ใน 3 รอบ ต้องรอ ~10 วิ)
+   - ปุ่มปั๊มบนเว็บ 5 วิ (รอบไล่ของบอร์ด v7.4 ก็ 5 วิ)
+   - ROI เริ่มต้นแบบเปิด ตัดขอบซ้าย-ขวาออก เหลือตรงกลาง ปรับด้วยแถบเลื่อนบนภาพจริง
+     และกดกลับค่าเริ่มต้นได้
+   - ภาพย้อนหลังกดดูภาพใหญ่ได้ ไม่กระพริบโหลดซ้ำทุกวินาทีแล้ว
+   - จัดหน้าเว็บใหม่ให้ใช้บนมือถือง่ายขึ้น (ธีมเดิม)
+
  เปลี่ยนจาก v6.3 (รุ่นนี้ — ทดสอบภาคสนาม):
    - TEST_MODE เปลี่ยนเป็น MODE 3 แบบ: field (ค่าเริ่มต้น) / demo / real
      field = เจอนก 2 ใน 3 รอบแล้วไล่จริง + เก็บภาพและ log ทุกรอบ
@@ -169,10 +178,11 @@ DATASET_MIN_FREE_MB = 1024      # พื้นที่ว่างเหลื�
 # ---------- การยืนยันก่อนสั่งไล่ ----------
 # โมเดล COCO ที่ยังไม่ได้เทรนเองมีโอกาสเห็นผิด การบังคับให้เจอติดกันหลายเฟรม
 # ช่วยตัดพวกที่โผล่มาเฟรมเดียวแล้วหายไปได้มาก
-# ใช้แบบ "เจอ CONFIRM_FRAMES ครั้ง ใน CONFIRM_OF รอบล่าสุด" พลาดไปรอบเดียวไม่ต้องนับใหม่
-CONFIRM_FRAMES = 2          # ต้องเจอนกกี่รอบถึงจะสั่งไล่ (1 = ไม่ต้องยืนยัน)
-CONFIRM_OF = 3              # ดูย้อนหลังกี่รอบ
-CONFIRM_WINDOW_S = 30       # รอบที่เก่ากว่านี้ไม่นับ
+# ตรวจทุก AUTO_INTERVAL_S ตามปกติ พอเฟรมไหนเจอนก จะถ่ายเฟรมยืนยันตามมาใน CONFIRM_DELAY_S
+# ต้องเจอติดกัน CONFIRM_FRAMES เฟรมถึงไล่ เฟรมไหนไม่เจอ = เริ่มนับใหม่
+CONFIRM_FRAMES = 2          # ต้องเจอนกติดกันกี่เฟรมถึงจะสั่งไล่ (1 = ไม่ต้องยืนยัน)
+CONFIRM_DELAY_S = 3         # เจอเฟรมแรกแล้ว รอกี่วินาทีค่อยถ่ายเฟรมยืนยัน (0 = ถ่ายทันที)
+CONFIRM_WINDOW_S = 12       # เฟรมที่เจอห่างกันเกินนี้ ไม่นับว่าติดกัน
 
 # ---------- ชุดขับไล่ ----------
 SERIAL_PORT = os.environ.get("BIRD_SERIAL", "auto")
@@ -186,6 +196,7 @@ REPEL_COOLDOWN_S = 10
 REPEL_MAX_PER_HOUR = 20     # ไล่อัตโนมัติได้กี่ครั้งต่อชั่วโมง (กดปุ่มเองไม่นับ)
 MOTOR_STEP_MAX = 400
 PUMP_MS_MAX = 8000
+PUMP_BUTTON_MS = 5000       # ปุ่มปั๊มบนหน้าเว็บเปิดกี่ ms (รอบไล่ของบอร์ดตั้งไว้ในเฟิร์มแวร์ = 5 วิ)
 STEPS_PER_REV = 1600
 
 # ---------- ความปลอดภัยหน้าเว็บ ----------
@@ -197,7 +208,7 @@ WEB_PIN = os.environ.get("BIRD_PIN", "")
 # ============================ โหมดการทำงาน ============================
 # "field" = ทดสอบภาคสนาม (ค่าเริ่มต้น): เจอนกแล้วไล่จริง (ปั๊ม + มอเตอร์) และเก็บข้อมูลเต็มที่
 #           ภาพทุกรอบลง history/, ภาพดิบสำหรับเทรนลง dataset/, ทุกรอบลง detection_log.csv
-#           เกณฑ์ 0.30 + ต้องเจอ 2 ใน 3 รอบ กันโมเดลเห็นผิดแล้วฉีดน้ำมั่ว
+#           เกณฑ์ 0.30 + ต้องเจอ 2 เฟรมติดกัน กันโมเดลเห็นผิดแล้วฉีดน้ำมั่ว
 #           ROI จำค่าไว้ใน roi.json เหมือนของจริง
 # "demo"  = โชว์กรอบอย่างเดียว: ROI เริ่มแบบปิด, ไม่ต้องยืนยันหลายเฟรม,
 #           ไม่สั่งไล่เอง และลดเกณฑ์คะแนนให้เห็นกรอบง่ายขึ้น
@@ -213,14 +224,12 @@ FIELD_TEST = MODE == "field"
 
 if FIELD_TEST:
     CONF_THRESHOLD = 0.30       # ภาพจริงจากหน้างานเคยได้นกที่ 0.25-0.4 ลดลงนิดนึง
-    CONFIRM_FRAMES = 2          # แต่ต้องเจอ 2 ใน 3 รอบ (~10 วิ) ถึงไล่
-    CONFIRM_OF = 3
+    CONFIRM_FRAMES = 2          # แต่ต้องเจอ 2 เฟรมติดกัน (เฟรมยืนยันถ่ายตามใน 3 วิ) ถึงไล่
     AUTO_REPEL_DEFAULT = True
 
 if TEST_MODE:
     CONF_THRESHOLD = 0.25       # ต่ำลงนิดนึง จะได้เห็นว่าโมเดลเห็นอะไรบ้าง
     CONFIRM_FRAMES = 1          # เจอครั้งเดียวก็นับ ไม่ต้องรอยืนยัน
-    CONFIRM_OF = 1
     AUTO_REPEL_DEFAULT = False  # ไม่สั่งปั๊ม/มอเตอร์เอง แค่ตีกรอบโชว์
                                 # (อยากลองไล่จริงก็เปิดได้จากหน้าเว็บ)
 
@@ -306,7 +315,10 @@ LATEST_PATH = os.path.join(DATA_DIR, "latest_bird.jpg")
 PREVIEW_PATH = os.path.join(DATA_DIR, "latest_raw.jpg")
 
 # ROI เก็บเป็นสัดส่วน 0-1 จะได้ไม่ผูกกับความละเอียดภาพ
-ROI = {"enabled": False, "x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0}
+# ค่าเริ่มต้น: เปิด ตัดขอบซ้าย-ขวาออก เหลือตรงกลาง (ปรับ/ปิดได้จากหน้าเว็บ)
+ROI_DEFAULT = {"enabled": True, "x1": 0.2, "y1": 0.0, "x2": 0.8, "y2": 1.0}
+ROI_FILE_VER = 2            # roi.json รุ่นก่อน v6.5 (ไม่มี ver) ไม่โหลด ใช้ค่าเริ่มต้นใหม่แทน
+ROI = dict(ROI_DEFAULT)
 
 
 def load_roi():
@@ -319,6 +331,9 @@ def load_roi():
     try:
         with open(ROI_FILE, encoding="utf-8") as f:
             data = json.load(f)
+        if data.get("ver") != ROI_FILE_VER:
+            print("[ROI] roi.json รุ่นเก่า ใช้ค่าเริ่มต้นใหม่ (ตัดขอบซ้าย-ขวา)", flush=True)
+            return
         for k in ROI:
             if k in data:
                 ROI[k] = data[k]
@@ -333,7 +348,7 @@ def save_roi():
         return
     try:
         with open(ROI_FILE, "w", encoding="utf-8") as f:
-            json.dump(ROI, f)
+            json.dump(dict(ROI, ver=ROI_FILE_VER), f)
     except OSError:
         pass
 
@@ -508,7 +523,8 @@ class Controller:
         self.last_repel_at = 0.0
         self.repel_count = 0
         self._auto_repels = deque()          # เวลาที่ไล่อัตโนมัติ ใช้นับโควตาต่อชั่วโมง
-        self._rounds = deque(maxlen=CONFIRM_OF)   # ผลตรวจรอบล่าสุด (เวลา, เจอนกไหม)
+        self._streak = 0                     # เจอนกติดกันกี่เฟรมแล้ว
+        self._streak_at = 0.0                # เวลาเฟรมล่าสุดที่เจอ
         self.resync = threading.Event()      # บอร์ดรีบูต/ขาดการติดต่อ -> ต้องแจ้งสถานะกล้องใหม่
         self.board_boots = 0
         self.motion_until = 0.0              # เพิ่งสั่งหมุน ให้ถือว่ายังหมุนอยู่จนกว่า STAT จะยืนยัน
@@ -811,24 +827,31 @@ class Controller:
         return len(self._auto_repels)
 
     def confirm_hits(self):
-        """นับรอบที่เจอนก ในหน้าต่างยืนยันล่าสุด"""
-        now = time.time()
-        return sum(1 for t, hit in self._rounds if hit and now - t <= CONFIRM_WINDOW_S)
+        """เจอนกติดกันกี่เฟรมแล้ว (เฟรมล่าสุดเก่าเกิน CONFIRM_WINDOW_S = เริ่มใหม่)"""
+        if self._streak and time.time() - self._streak_at > CONFIRM_WINDOW_S:
+            return 0
+        return self._streak
 
     # ---------- ตรรกะไล่อัตโนมัติ ----------
     def maybe_auto_repel(self, bird_count):
         """เรียกหลังตรวจจับเสร็จ คืนข้อความเหตุผลเพื่อบันทึกลง log"""
         now = time.time()
-        self._rounds.append((now, bird_count > 0))
-        hits = self.confirm_hits()
+        if bird_count > 0:
+            self._streak = self.confirm_hits() + 1
+            self._streak_at = now
+        else:
+            self._streak = 0                     # เฟรมไหนไม่เจอ ต้องเริ่มนับใหม่
+        hits = self._streak
         with _state_lock:
             STATE["confirm_streak"] = hits
         if bird_count <= 0:
             return "ไม่เจอนก"
 
-        # เจอ CONFIRM_FRAMES ครั้ง ใน CONFIRM_OF รอบล่าสุด (พลาดรอบเดียวไม่ต้องเริ่มนับใหม่)
+        # ต้องเจอติดกัน CONFIRM_FRAMES เฟรม ยังไม่ครบ -> ถ่ายเฟรมยืนยันตามไปเลย ไม่รอรอบ 5 วิ
         if hits < CONFIRM_FRAMES:
-            return f"รอยืนยัน {hits}/{CONFIRM_FRAMES}"
+            schedule_confirm()
+            return (f"รอยืนยัน {hits}/{CONFIRM_FRAMES} (ถ่ายซ้ำใน {CONFIRM_DELAY_S:g} วิ)"
+                    if CONFIRM_DELAY_S > 0 else f"รอยืนยัน {hits}/{CONFIRM_FRAMES} (ถ่ายซ้ำทันที)")
         if not self.auto_repel:
             return "ปิดโหมดอัตโนมัติอยู่"
         if not self.linked:
@@ -848,7 +871,7 @@ class Controller:
             self.last_repel_at = now
             self.repel_count += 1
             self._auto_repels.append(now)
-            self._rounds.clear()                 # ไล่แล้วเริ่มนับใหม่
+            self._streak = 0                     # ไล่แล้วเริ่มนับใหม่
             with _state_lock:
                 STATE["confirm_streak"] = 0
             return "สั่งไล่แล้ว"
@@ -1156,6 +1179,25 @@ def request_detection(source="manual"):
         return False
 
 
+_confirm_timer = None
+_confirm_lock = threading.Lock()
+
+
+def schedule_confirm():
+    """เจอนกเฟรมแรก -> ถ่ายเฟรมยืนยันใน CONFIRM_DELAY_S วินาที (ไม่รอรอบอัตโนมัติถัดไป)
+
+    ถ้าคิวเต็มอยู่แล้วก็ไม่เป็นไร งานที่ค้างในคิวคือเฟรมถัดไปที่ใช้ยืนยันได้เหมือนกัน
+    """
+    global _confirm_timer
+    with _confirm_lock:
+        if _confirm_timer is not None and _confirm_timer.is_alive():
+            return
+        _confirm_timer = threading.Timer(max(0.0, CONFIRM_DELAY_S),
+                                         lambda: request_detection("confirm"))
+        _confirm_timer.daemon = True
+        _confirm_timer.start()
+
+
 def _process(source, requested_at):
     wait_still()
 
@@ -1245,7 +1287,8 @@ def _process(source, requested_at):
         STATE["total_frames"] += 1
         if count > 0:
             STATE["total_detections"] += 1
-        src = {"pir": "PIR ทริก → ", "manual": "กดถ่ายภาพ → "}.get(source, "")
+        src = {"pir": "PIR ทริก → ", "manual": "กดถ่ายภาพ → ",
+               "confirm": "เฟรมยืนยัน → "}.get(source, "")
         STATE["status"] = src + (f"พบนก {count} ตัว — {repel_note}" if count
                                  else f"ไม่พบนก (ตรวจ {BURST_FRAMES} เฟรม)" if BURST_FRAMES > 1
                                  else "ไม่พบนก")
@@ -1366,7 +1409,10 @@ def api_state():
     s["model"] = _model_name
     s["auto_interval"] = AUTO_INTERVAL_S
     s["confirm_frames"] = CONFIRM_FRAMES
-    s["confirm_of"] = CONFIRM_OF
+    s["confirm_delay"] = CONFIRM_DELAY_S
+    s["confirm_streak"] = CTRL.confirm_hits()
+    s["pump_button_ms"] = PUMP_BUTTON_MS
+    s["now"] = time.time()
     s["burst_frames"] = BURST_FRAMES
     s["corrupt_frames"] = CAM.corrupt_count
     s["test_mode"] = TEST_MODE
@@ -1374,7 +1420,7 @@ def api_state():
     s["pin_required"] = bool(WEB_PIN)
     s["roi"] = dict(ROI)
     s["hw"] = CTRL.snapshot()
-    s["history"] = list(HISTORY)[:12]
+    s["history"] = list(HISTORY)[:24]
     return jsonify(s)
 
 
@@ -1390,6 +1436,11 @@ def api_auto_detect():
 @app.route("/api/roi", methods=["POST"])
 def api_roi():
     data = request.get_json(silent=True) or {}
+    if data.get("reset"):
+        ROI.clear()
+        ROI.update(ROI_DEFAULT)
+        save_roi()
+        return jsonify(ok=True, roi=dict(ROI))
     try:
         if "enabled" in data:
             ROI["enabled"] = bool(data["enabled"])
@@ -1438,7 +1489,7 @@ def api_motor():
 def api_pump():
     data = request.get_json(silent=True) or {}
     try:
-        ms = int(data.get("ms", 3000))
+        ms = int(data.get("ms", PUMP_BUTTON_MS))
     except (TypeError, ValueError):
         return jsonify(ok=False, msg="ค่าเวลาไม่ถูกต้อง"), 400
     ms = max(200, min(PUMP_MS_MAX, ms))
@@ -1568,124 +1619,312 @@ HTML_PAGE = r"""<!DOCTYPE html>
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#11151c">
 <title>Bird Detection Live Monitor</title>
 <style>
   :root{
-    --bg:#11151c; --card:#1a1f29; --line:#2a3140;
+    --bg:#11151c; --card:#1a1f29; --card2:#151a23; --line:#2a3140;
     --txt:#e7ecf3; --muted:#8b97a8; --ok:#3ddc84; --warn:#ffb020; --bad:#ff5d5d;
+    --btn:#233044; --btnh:#2c3a52; --pri:#1f6f43; --prib:#2b8a55; --dan:#6f2626; --danb:#8a3030;
   }
-  *{box-sizing:border-box}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{scroll-padding-top:120px}
   body{margin:0;background:var(--bg);color:var(--txt);
-       font-family:-apple-system,"Segoe UI",Roboto,"Noto Sans Thai",sans-serif}
-  .wrap{max-width:1100px;margin:0 auto;padding:16px}
-  h1{font-size:20px;margin:0 0 14px}
+       font-family:-apple-system,"Segoe UI",Roboto,"Noto Sans Thai",sans-serif;
+       -webkit-text-size-adjust:100%}
+  .wrap{max-width:1100px;margin:0 auto;padding:12px 16px 40px}
+
+  /* ---------- แถบหัว (ติดด้านบน) ---------- */
+  .top{position:sticky;top:0;z-index:20;background:rgba(17,21,28,.92);
+       backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+       border-bottom:1px solid var(--line)}
+  .top .in{max-width:1100px;margin:0 auto;padding:10px 16px 8px}
+  .topRow{display:flex;align-items:center;gap:8px;justify-content:space-between}
+  h1{font-size:18px;margin:0;white-space:nowrap}
+  .chips{display:flex;gap:6px;overflow-x:auto;margin-top:8px;padding-bottom:2px;scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:12px;
+        padding:4px 9px;border-radius:99px;background:var(--card2);border:1px solid var(--line);color:var(--muted)}
+  .chip i{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block}
+  .chip.ok i{background:var(--ok)} .chip.ok{color:var(--txt)}
+  .chip.wn i{background:var(--warn)} .chip.wn{color:#ffd48a}
+  .chip.bad i{background:var(--bad)} .chip.bad{color:#ffb3b3}
+
+  /* ---------- การ์ด ---------- */
   .card{background:var(--card);border:1px solid var(--line);
-        border-radius:12px;padding:14px;margin-bottom:14px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
-  .stat{background:#151a23;border:1px solid var(--line);border-radius:10px;padding:10px}
+        border-radius:14px;padding:14px;margin-bottom:14px}
+  .ctitle{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+          font-size:14px;font-weight:600;margin-bottom:10px}
+  .ctitle .sp{flex:1}
+  .sub{font-size:12px;color:var(--muted);font-weight:400}
+  .lbl{font-size:12px;color:var(--muted);margin:14px 0 6px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:760px){.two{grid-template-columns:1fr;gap:0}}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  @media(max-width:520px){.grid4{grid-template-columns:repeat(2,1fr)}}
+  .stat{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px}
   .stat .k{font-size:11px;color:var(--muted);margin-bottom:4px}
   .stat .v{font-size:19px;font-weight:700}
-  img.shot{width:100%;border-radius:10px;display:block;background:#000}
+  .bar{height:8px;background:#0f131a;border-radius:99px;overflow:hidden;margin-top:6px}
+  .bar i{display:block;height:100%;background:var(--ok);transition:width .4s}
+
+  /* ---------- ภาพ ---------- */
+  .imgbox{position:relative;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:4/3}
+  img.shot{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+  img.live{width:100%;display:block;border-radius:10px;background:#000;aspect-ratio:4/3;object-fit:contain}
+  .badge{position:absolute;left:8px;top:8px;padding:5px 10px;border-radius:99px;font-size:13px;font-weight:700;
+         background:rgba(0,0,0,.6);color:var(--txt)}
+  .badge.bird{background:rgba(255,176,32,.92);color:#1a1200}
+  .busy{position:absolute;right:8px;top:8px;padding:5px 10px;border-radius:99px;font-size:12px;
+        background:rgba(0,0,0,.6);color:var(--txt);display:none}
+  .busy.on{display:block;animation:pulse 1s infinite alternate}
+  @keyframes pulse{from{opacity:.55}to{opacity:1}}
+  .ph{min-height:120px;border-radius:10px;border:1px dashed var(--line);display:flex;align-items:center;
+      justify-content:center;text-align:center;color:var(--muted);font-size:13px;padding:20px}
+
+  .cfm{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:var(--muted)}
+  .dots{display:inline-flex;gap:5px}
+  .dots i{width:12px;height:12px;border-radius:50%;border:2px solid var(--warn);display:inline-block}
+  .dots i.f{background:var(--warn)}
+  .msg{font-size:13px;color:var(--muted);margin-top:6px;min-height:18px;line-height:1.45}
+
+  /* ---------- ปุ่ม ---------- */
+  button,.btn{background:var(--btn);color:var(--txt);border:1px solid var(--line);
+         border-radius:10px;padding:11px 14px;font-size:15px;cursor:pointer;font-family:inherit;
+         min-height:46px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+         transition:background .15s,transform .05s}
+  button:hover,.btn:hover{background:var(--btnh)}
+  button:active,.btn:active{transform:scale(.97)}
+  button.pri{background:var(--pri);border-color:var(--prib)}
+  button.dan{background:var(--dan);border-color:var(--danb)}
+  button:disabled{opacity:.5}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
-  button{background:#233044;color:var(--txt);border:1px solid var(--line);
-         border-radius:9px;padding:9px 14px;font-size:14px;cursor:pointer}
-  button:hover{background:#2c3a52}
-  button.pri{background:#1f6f43;border-color:#2b8a55}
-  button.dan{background:#6f2626;border-color:#8a3030}
-  select,input[type=number]{background:#151a23;color:var(--txt);
-         border:1px solid var(--line);border-radius:8px;padding:8px}
-  label{font-size:14px}
-  .pill{display:inline-block;padding:3px 9px;border-radius:99px;font-size:12px}
+  .actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+  .actions .full{grid-column:1/-1}
+  .btns{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+  .motor{display:grid;grid-template-columns:64px 1fr 64px;gap:8px}
+  .motor button{font-size:18px}
+  select{background:var(--card2);color:var(--txt);border:1px solid var(--line);border-radius:10px;
+         padding:8px;font-size:15px;min-height:46px;font-family:inherit;text-align:center}
+
+  /* ---------- สวิตช์เปิด-ปิด ---------- */
+  .toggles{display:flex;flex-direction:column;margin-top:12px;border-top:1px solid var(--line)}
+  .tg{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);
+      font-size:15px;cursor:pointer}
+  .tg .sp{flex:1}
+  input.sw{appearance:none;-webkit-appearance:none;flex:none;width:46px;height:28px;border-radius:99px;
+           background:#2a3140;position:relative;cursor:pointer;margin:0;transition:background .2s}
+  input.sw::after{content:"";position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;
+           background:#cfd6e0;transition:left .2s}
+  input.sw:checked{background:var(--prib)}
+  input.sw:checked::after{left:21px;background:#fff}
+
+  .pill{display:inline-block;padding:3px 9px;border-radius:99px;font-size:12px;font-weight:400}
   .on{background:rgba(61,220,132,.15);color:var(--ok)}
   .off{background:rgba(255,93,93,.15);color:var(--bad)}
   .wn{background:rgba(255,176,32,.15);color:var(--warn)}
-  .msg{font-size:13px;color:var(--muted);margin-top:8px;min-height:18px}
-  .hist{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
-  .hist img{width:100%;border-radius:8px;display:block}
-  .hist div{font-size:11px;color:var(--muted);text-align:center;margin-top:3px}
-  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-  @media(max-width:760px){.two{grid-template-columns:1fr}}
-  .bar{height:8px;background:#151a23;border-radius:99px;overflow:hidden;margin-top:6px}
-  .bar i{display:block;height:100%;background:var(--ok)}
-  .warns{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+
+  /* ---------- เตือน ---------- */
+  .warns{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+  .warns:empty{display:none}
   .warn{border-radius:10px;padding:10px 12px;font-size:14px;line-height:1.45}
   .warn.w{background:rgba(255,176,32,.12);border:1px solid rgba(255,176,32,.45);color:#ffd48a}
   .warn.b{background:rgba(255,93,93,.12);border:1px solid rgba(255,93,93,.5);color:#ffb3b3}
+
+  /* ---------- ROI ---------- */
+  .roiView{position:relative;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:4/3;margin-top:4px}
+  .roiView img{width:100%;height:100%;object-fit:fill;display:block}
+  .roiBox{position:absolute;border:2px solid var(--ok);border-radius:4px;
+          box-shadow:0 0 0 2000px rgba(0,0,0,.55);transition:all .1s}
+  .roiBox.off{border-style:dashed;border-color:var(--muted);box-shadow:none}
+  .roiBox span{position:absolute;left:4px;top:2px;font-size:11px;color:var(--ok);font-weight:700}
+  .roiBox.off span{color:var(--muted)}
+  .sl{display:grid;grid-template-columns:72px 1fr 44px;align-items:center;gap:10px;margin-top:10px;font-size:14px}
+  .sl b{font-weight:600;text-align:right;font-size:13px;color:var(--muted)}
+  input[type=range]{width:100%;accent-color:var(--ok);height:28px}
+  .dirty{color:var(--warn)}
+
+  /* ---------- ภาพย้อนหลัง ---------- */
+  .hist{display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:8px}
+  .hi{display:block;padding:0;min-height:0;background:var(--card2);border-radius:10px;overflow:hidden;text-align:left}
+  .hi img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:#000}
+  .hi span{display:block;font-size:11px;color:var(--muted);padding:5px 6px;line-height:1.35}
+  .hi span b{color:var(--warn);font-weight:600}
+  .empty{font-size:13px;color:var(--muted);padding:6px 0}
+
+  .lb{position:fixed;inset:0;z-index:50;background:#05070a;display:flex;flex-direction:column;
+      padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+  .lb[hidden]{display:none}
+  .lbTop{display:flex;align-items:center;gap:8px;padding:10px 12px;font-size:14px}
+  .lbTop span{flex:1}
+  .lb img{flex:1;min-height:0;width:100%;object-fit:contain}
+  .lbNav{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;padding:10px 12px}
+
+  /* ---------- อื่น ๆ ---------- */
+  details.card>summary{cursor:pointer;font-size:14px;font-weight:600;list-style:none;display:flex;align-items:center;gap:8px}
+  details.card>summary::-webkit-details-marker{display:none}
+  details.card>summary::before{content:"▸";color:var(--muted);transition:transform .2s}
+  details.card[open]>summary::before{transform:rotate(90deg)}
+  details.card[open]>summary{margin-bottom:10px}
+  #pirLog{font-size:13px;margin-top:8px;display:flex;flex-direction:column;gap:4px}
+  .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translate(-50%,20px);
+         z-index:60;background:#26324a;border:1px solid #3a4a66;color:var(--txt);padding:10px 16px;border-radius:12px;
+         font-size:14px;max-width:calc(100% - 32px);box-shadow:0 8px 24px rgba(0,0,0,.4);
+         opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+  .toast.show{opacity:1;transform:translate(-50%,0)}
 </style>
 </head>
 <body>
+<header class="top"><div class="in">
+  <div class="topRow">
+    <h1>🦅 ระบบไล่นกอัตโนมัติ</h1>
+    <span class="pill wn" id="modeBadge" hidden></span>
+  </div>
+  <div class="chips">
+    <span class="chip" id="cCam"><i></i>กล้อง</span>
+    <span class="chip" id="cBrd"><i></i>บอร์ด</span>
+    <span class="chip" id="cRdy"><i></i>พร้อม</span>
+    <span class="chip" id="cBird"><i></i>ไฟส้ม</span>
+    <span class="chip" id="cWat"><i></i>น้ำ</span>
+    <span class="chip" id="cAuto"><i></i>ไล่อัตโนมัติ</span>
+  </div>
+</div></header>
+
 <div class="wrap">
-  <h1>🦅 ระบบเฝ้าระวังและไล่นกอัตโนมัติ</h1>
   <div class="warns" id="warns"></div>
 
   <div class="two">
-    <!-- ---------- ภาพผลตรวจจับ ---------- -->
-    <div class="card">
-      <div style="font-size:13px;color:var(--muted);margin-bottom:8px">ภาพผลตรวจจับล่าสุด</div>
-      <img class="shot" id="shot" alt="ผลตรวจจับ">
-      <div class="row">
-        <button class="pri" id="btnShot">📷 ถ่ายภาพเดี๋ยวนี้</button>
-        <label><input type="checkbox" id="autoDet"> ตรวจอัตโนมัติ</label>
-        <span class="pill" id="pillDet">-</span>
-        <button id="btnLog">⬇ ดาวน์โหลด log</button>
+    <!-- ---------- ผลตรวจล่าสุด + ปุ่มหลัก ---------- -->
+    <section class="card">
+      <div class="ctitle">ผลตรวจล่าสุด <span class="sp"></span><span class="sub" id="ago"></span></div>
+      <div class="imgbox">
+        <img class="shot" id="shot" alt="ผลตรวจจับ">
+        <div class="badge" id="badge">-</div>
+        <div class="busy" id="busy">กำลังตรวจ…</div>
       </div>
+      <div class="cfm"><span>ยืนยันก่อนไล่</span><span class="dots" id="dots"></span><span id="cfm">-</span></div>
       <div class="msg" id="msg"></div>
-    </div>
+      <div class="actions">
+        <button class="pri full" id="btnShot">📷 ถ่ายภาพเดี๋ยวนี้</button>
+        <button id="bRepel">🚿 สั่งไล่เดี๋ยวนี้</button>
+        <button class="dan" id="bAbort">■ หยุดทุกอย่าง</button>
+      </div>
+      <div class="toggles">
+        <label class="tg"><span class="sp">ตรวจอัตโนมัติ</span><span class="pill" id="pillDet">-</span>
+          <input type="checkbox" class="sw" id="autoDet"></label>
+        <label class="tg"><span class="sp">ไล่อัตโนมัติเมื่อเจอนก</span><span class="sub" id="cdTxt"></span>
+          <input type="checkbox" class="sw" id="autoRep"></label>
+      </div>
+    </section>
 
     <!-- ---------- ภาพสด ---------- -->
-    <div class="card">
-      <div style="font-size:13px;color:var(--muted);margin-bottom:8px">
-        ภาพสดจากกล้อง <span class="pill" id="pillCam">-</span>
-      </div>
-      <img class="shot" id="live" alt="ภาพสด" style="display:none">
+    <section class="card">
+      <div class="ctitle">ภาพสดจากกล้อง <span class="pill" id="pillCam">-</span></div>
+      <img class="live" id="live" alt="ภาพสด" style="display:none">
+      <div class="ph" id="livePh">ปิดอยู่ — เปิดดูตอนติดตั้ง/เล็งกล้อง<br>(ภาพสดกินเน็ตและแย่ง CPU กับการตรวจจับ)</div>
       <div class="row">
         <button id="btnLive">▶ เปิดภาพสด</button>
-        <span style="font-size:12px;color:var(--muted)" id="camip"></span>
+        <span class="sub" id="camip"></span>
       </div>
-    </div>
+    </section>
   </div>
 
-  <!-- ---------- ตัวเลข ---------- -->
-  <div class="card">
-    <div class="grid">
-      <div class="stat"><div class="k">จำนวนนก</div><div class="v" id="cnt">0</div></div>
-      <div class="stat"><div class="k">ความมั่นใจสูงสุด</div><div class="v" id="conf">-</div></div>
-      <div class="stat"><div class="k">เวลาประมวลผล</div><div class="v" id="inf">-</div></div>
-      <div class="stat"><div class="k">ดึงภาพจากกล้อง</div><div class="v" id="sh">-</div></div>
-      <div class="stat"><div class="k">ขนาดภาพ</div><div class="v" id="sz">-</div></div>
-      <div class="stat"><div class="k">เฟรมทั้งหมด</div><div class="v" id="tot">0</div></div>
-      <div class="stat"><div class="k">ครั้งที่เจอนก</div><div class="v" id="det">0</div></div>
-      <div class="stat"><div class="k">ครั้งที่ไล่</div><div class="v" id="rep">0</div></div>
-      <div class="stat"><div class="k">ภาพชุดข้อมูล</div><div class="v" id="ds">-</div></div>
-      <div class="stat"><div class="k">ยืนยันก่อนไล่</div><div class="v" id="cfm">-</div></div>
+  <!-- ---------- สรุปตัวเลข ---------- -->
+  <section class="card">
+    <div class="grid4">
+      <div class="stat"><div class="k">นกในภาพล่าสุด</div><div class="v" id="cnt">0</div></div>
+      <div class="stat"><div class="k">รอบที่เจอนก</div><div class="v" id="det">0</div></div>
+      <div class="stat"><div class="k">ไล่ไปแล้ว</div><div class="v" id="rep">0</div></div>
+      <div class="stat"><div class="k">ตรวจไปแล้ว</div><div class="v" id="tot">0</div></div>
     </div>
-  </div>
+  </section>
 
   <!-- ---------- สถานะเครื่อง ---------- -->
-  <div class="card">
-    <div style="font-size:13px;color:var(--muted);margin-bottom:8px">สถานะเครื่อง</div>
+  <section class="card">
+    <div class="ctitle">สถานะเครื่อง</div>
     <div class="grid">
       <div class="stat">
         <div class="k">ระดับน้ำ</div><div class="v" id="wat">-</div>
         <div class="bar"><i id="watBar" style="width:0%"></i></div>
       </div>
-      <div class="stat"><div class="k">แรงดันแบต</div><div class="v" id="vb">-</div></div>
-      <div class="stat"><div class="k">มุมมอเตอร์</div><div class="v" id="deg">-</div></div>
-      <div class="stat"><div class="k">บอร์ดควบคุม</div><div class="v" id="brd">-</div></div>
-      <div class="stat"><div class="k">ไฟเขียว (พร้อม)</div><div class="v" id="rdy">-</div></div>
-      <div class="stat"><div class="k">ไฟส้ม (เจอนก)</div><div class="v" id="blamp">-</div></div>
-      <div class="stat"><div class="k">PIR</div><div class="v" id="pir" style="font-size:16px">-</div></div>
+      <div class="stat"><div class="k">บอร์ดควบคุม</div><div class="v" id="brd" style="font-size:16px">-</div></div>
+      <div class="stat"><div class="k">ไฟเขียว (พร้อม)</div><div class="v" id="rdy" style="font-size:16px">-</div></div>
+      <div class="stat"><div class="k">ไฟส้ม (เจอนก)</div><div class="v" id="blamp" style="font-size:16px">-</div></div>
+      <div class="stat"><div class="k">PIR</div><div class="v" id="pir" style="font-size:15px">-</div></div>
+      <div class="stat"><div class="k">มุมหัวฉีด</div><div class="v" id="deg">-</div></div>
       <div class="stat"><div class="k">โควตาปั๊ม (10 นาที)</div><div class="v" id="duty">-</div></div>
       <div class="stat"><div class="k">ไล่อัตโนมัติได้อีก (ชม.นี้)</div><div class="v" id="rph">-</div></div>
+      <div class="stat"><div class="k">แรงดันแบต</div><div class="v" id="vb">-</div></div>
     </div>
-  </div>
+  </section>
 
-  <!-- ---------- PIR ---------- -->
-  <div class="card">
-    <div style="font-size:13px;color:var(--muted);margin-bottom:8px">
-      บันทึก PIR — ใช้หาสาเหตุ PIR หลอน
+  <!-- ---------- ควบคุมด้วยมือ ---------- -->
+  <section class="card">
+    <div class="ctitle">ควบคุมด้วยมือ</div>
+    <div class="lbl" style="margin-top:0">หมุนหัวฉีด</div>
+    <div class="motor">
+      <button id="mL" aria-label="หมุนซ้าย">◀</button>
+      <select id="steps">
+        <option value="5">ทีละ 5 สเต็ป</option>
+        <option value="10" selected>ทีละ 10 สเต็ป</option>
+        <option value="40">ทีละ 40 สเต็ป</option>
+        <option value="120">ทีละ 120 สเต็ป</option>
+      </select>
+      <button id="mR" aria-label="หมุนขวา">▶</button>
     </div>
+    <div class="btns" style="margin-top:8px">
+      <button id="mH">◆ กลับจุดกลาง</button>
+      <button id="mS">■ หยุดหมุน</button>
+      <button id="mZ">⌖ ตั้งตรงนี้เป็นจุดกลาง</button>
+    </div>
+    <div class="lbl">น้ำและไฟ</div>
+    <div class="btns">
+      <button id="bPump">💧 ปั๊มน้ำ 5 วินาที</button>
+      <button id="bWater">📏 วัดระดับน้ำใหม่</button>
+      <button id="bLamp">💡 ทดสอบไฟส้ม</button>
+    </div>
+  </section>
+
+  <!-- ---------- ROI ---------- -->
+  <section class="card" id="roiCard">
+    <label class="tg" style="padding-top:0">
+      <span class="sp" style="font-weight:600;font-size:14px">ตรวจเฉพาะพื้นที่ (ROI)</span>
+      <input type="checkbox" class="sw" id="roiOn">
+    </label>
+    <div class="msg" style="margin-top:8px">นกนอกกรอบสีเขียวจะไม่นับและไม่สั่งไล่ และภาพในกรอบจะถูกขยายก่อนตรวจ ทำให้เจอนกตัวเล็กง่ายขึ้น</div>
+    <div class="roiView"><img id="roiImg" alt="ภาพสำหรับตั้ง ROI"><div class="roiBox" id="roiBox"><span>ROI</span></div></div>
+    <div class="sl"><span>ตัดซ้าย</span><input type="range" id="cutL" min="0" max="0.45" step="0.01"><b id="cutLv"></b></div>
+    <div class="sl"><span>ตัดขวา</span><input type="range" id="cutR" min="0" max="0.45" step="0.01"><b id="cutRv"></b></div>
+    <div class="sl"><span>ตัดบน</span><input type="range" id="cutT" min="0" max="0.45" step="0.01"><b id="cutTv"></b></div>
+    <div class="sl"><span>ตัดล่าง</span><input type="range" id="cutB" min="0" max="0.45" step="0.01"><b id="cutBv"></b></div>
+    <div class="row">
+      <button class="pri" id="roiSave">บันทึก ROI</button>
+      <button id="roiReset">↺ ค่าเริ่มต้น (ตัดขอบซ้าย-ขวา)</button>
+    </div>
+    <div class="msg" id="roiNote"></div>
+  </section>
+
+  <!-- ---------- ภาพย้อนหลัง ---------- -->
+  <section class="card">
+    <div class="ctitle">ภาพย้อนหลังที่พบนก <span class="sub" id="histN"></span></div>
+    <div class="hist" id="hist"></div>
+    <div class="row"><button id="btnLog">⬇ ดาวน์โหลด log การตรวจจับ (CSV)</button></div>
+  </section>
+
+  <!-- ---------- รายละเอียดเชิงเทคนิค ---------- -->
+  <details class="card" id="tech">
+    <summary>รายละเอียดเชิงเทคนิค และบันทึก PIR</summary>
+    <div class="grid">
+      <div class="stat"><div class="k">ความมั่นใจสูงสุด</div><div class="v" id="conf">-</div></div>
+      <div class="stat"><div class="k">เวลาประมวลผล</div><div class="v" id="inf">-</div></div>
+      <div class="stat"><div class="k">ดึงภาพจากกล้อง</div><div class="v" id="sh">-</div></div>
+      <div class="stat"><div class="k">ขนาดภาพ</div><div class="v" id="sz">-</div></div>
+      <div class="stat"><div class="k">ภาพชุดข้อมูล</div><div class="v" id="ds">-</div></div>
+    </div>
+    <div class="lbl">PIR — ใช้หาสาเหตุ PIR หลอน</div>
     <div class="grid">
       <div class="stat"><div class="k">ทริกใหม่</div><div class="v" id="pirN">-</div></div>
       <div class="stat"><div class="k">ทริกซ้ำ (OUT ค้าง)</div><div class="v" id="pirR">-</div></div>
@@ -1693,70 +1932,40 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <div class="stat"><div class="k">ไม่สนใจ (มอเตอร์หมุน)</div><div class="v" id="pirI">-</div></div>
     </div>
     <div class="msg" id="pirHint"></div>
-    <div id="pirLog" style="font-size:13px;margin-top:8px;display:flex;flex-direction:column;gap:4px"></div>
-  </div>
+    <div id="pirLog"></div>
+  </details>
+</div>
 
-  <!-- ---------- ควบคุม ---------- -->
-  <div class="card">
-    <div style="font-size:13px;color:var(--muted);margin-bottom:8px">ชุดขับไล่</div>
-    <div class="row">
-      <button id="mL">◀</button>
-      <select id="steps">
-        <option value="5">5 สเต็ป</option>
-        <option value="10" selected>10 สเต็ป</option>
-        <option value="40">40 สเต็ป</option>
-        <option value="120">120 สเต็ป</option>
-      </select>
-      <button id="mR">▶</button>
-      <button id="mH">◆ กลับจุดกลาง</button>
-      <button id="mS">■ หยุดหมุน</button>
-      <button id="mZ">⌖ ตั้งตรงนี้เป็นจุดกลาง</button>
-    </div>
-    <div class="row">
-      <button id="bPump">💧 ปั๊มน้ำ 3 วินาที</button>
-      <button id="bRepel" class="pri">🚿 สั่งไล่เดี๋ยวนี้</button>
-      <button id="bWater">📏 วัดระดับน้ำใหม่</button>
-      <button id="bLamp">💡 ทดสอบไฟส้ม</button>
-      <button id="bAbort" class="dan">■ หยุดทุกอย่าง</button>
-    </div>
-    <div class="row">
-      <label><input type="checkbox" id="autoRep"> ไล่อัตโนมัติเมื่อเจอนก</label>
-      <span style="font-size:12px;color:var(--muted)" id="cdTxt"></span>
-    </div>
-  </div>
-
-  <!-- ---------- ROI ---------- -->
-  <div class="card">
-    <div style="font-size:13px;color:var(--muted);margin-bottom:8px">
-      พื้นที่สนใจ (ROI) — นกที่อยู่นอกกรอบจะไม่นับและไม่สั่งไล่
-    </div>
-    <div class="row">
-      <label><input type="checkbox" id="roiOn"> เปิดใช้ ROI</label>
-    </div>
-    <div class="row">
-      <label>ซ้าย <input type="number" id="rx1" step="0.05" min="0" max="1" value="0"></label>
-      <label>บน <input type="number" id="ry1" step="0.05" min="0" max="1" value="0"></label>
-      <label>ขวา <input type="number" id="rx2" step="0.05" min="0" max="1" value="1"></label>
-      <label>ล่าง <input type="number" id="ry2" step="0.05" min="0" max="1" value="1"></label>
-      <button id="roiSave">บันทึก ROI</button>
-    </div>
-    <div class="msg">ค่าเป็นสัดส่วน 0 ถึง 1 เทียบกับขนาดภาพ เช่น 0.25 = หนึ่งในสี่จากขอบ</div>
-  </div>
-
-  <!-- ---------- ประวัติ ---------- -->
-  <div class="card">
-    <div style="font-size:13px;color:var(--muted);margin-bottom:8px">ภาพย้อนหลังที่พบนก</div>
-    <div class="hist" id="hist"></div>
+<!-- ---------- ดูภาพใหญ่ ---------- -->
+<div class="lb" id="lb" hidden>
+  <div class="lbTop"><span id="lbCap"></span><button id="lbX" aria-label="ปิด">✕</button></div>
+  <img id="lbImg" alt="ภาพที่พบนก">
+  <div class="lbNav">
+    <button id="lbPrev">‹ ใหม่กว่า</button>
+    <a class="btn" id="lbDl" download>⬇ บันทึก</a>
+    <button id="lbNext">เก่ากว่า ›</button>
   </div>
 </div>
+<div class="toast" id="toast"></div>
 
 <script>
 const $ = id => document.getElementById(id);
 let lastFrame = -1, lastPrev = -1, liveOn = false, camIP = null;
+let pirStuckSeen = false;
 
-let msgHoldUntil = 0;
-// ข้อความตอบกลับจากปุ่ม ค้างไว้ 4 วินาที ไม่ให้สถานะตรวจจับทับทันที
-function setMsg(t, hold){ $('msg').textContent = thaiMsg(t); if(hold !== false) msgHoldUntil = Date.now() + 4000; }
+let msgHoldUntil = 0, toastTimer = 0;
+function toast(t){
+  const el = $('toast');
+  el.textContent = t;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+// ข้อความตอบกลับจากปุ่ม ค้างไว้ 4 วินาที ไม่ให้สถานะตรวจจับทับทันที และเด้งแจ้งที่ล่างจอด้วย
+function setMsg(t, hold){
+  $('msg').textContent = thaiMsg(t);
+  if(hold !== false){ msgHoldUntil = Date.now() + 4000; toast(thaiMsg(t)); }
+}
 
 function getPin(){ try{ return localStorage.getItem('birdPin') || ''; }catch(e){ return ''; } }
 function setPin(p){ try{ localStorage.setItem('birdPin', p); }catch(e){} }
@@ -1793,11 +2002,15 @@ const ERR_TH = {
   'ERR PUMP DUTY':'ใช้ปั๊มครบโควตา 10 นาทีแล้ว รอสักพัก',
   'ERR WATER EMPTY':'น้ำหมด (หรือเซนเซอร์น้ำเสีย) ปั๊มถูกล็อก',
   'ERR NO WATER SENSOR':'ยังไม่ได้ต่อเซนเซอร์ระดับน้ำ',
-  'ERR UNKNOWN':'บอร์ดไม่รู้จักคำสั่งนี้ (แฟลชเฟิร์มแวร์ v7.1 หรือยัง?)',
+  'ERR UNKNOWN':'บอร์ดไม่รู้จักคำสั่งนี้ (แฟลชเฟิร์มแวร์ v7.4 หรือยัง?)',
 };
 function thaiMsg(m){ return (m && ERR_TH[m.trim()]) || m || ''; }
 
+let lastWarns = '';
 function warnBox(list){
+  const key = JSON.stringify(list);
+  if(key === lastWarns) return;                 // ไม่สร้างใหม่ทุกวินาที หน้าจะได้ไม่กระตุก
+  lastWarns = key;
   $('warns').innerHTML = '';
   for(const [cls, text] of list){
     const d = document.createElement('div');
@@ -1811,13 +2024,44 @@ function pill(el, ok, textOk, textNo, warn){
   el.textContent = ok ? textOk : textNo;
   el.className = 'pill ' + (warn ? 'wn' : (ok ? 'on' : 'off'));
 }
+function chip(id, cls, text){
+  const el = $(id);
+  el.className = 'chip ' + cls;
+  el.lastChild.textContent = text;
+}
 
 async function tick(){
   let s;
   try{ s = await (await fetch('/api/state')).json(); }
-  catch(e){ return; }
+  catch(e){ chip('cBrd', 'bad', 'ติดต่อ Pi ไม่ได้'); return; }
 
-  $('cnt').textContent = s.bird_count;
+  // ---- แถบหัว ----
+  const mb = $('modeBadge');
+  mb.hidden = s.mode === 'real';
+  mb.textContent = s.mode === 'field' ? 'ทดสอบภาคสนาม' : s.mode === 'demo' ? 'โหมดสาธิต' : '';
+  chip('cCam', s.cam_online ? 'ok' : 'bad', s.cam_online ? 'กล้อง' : 'กล้องหลุด');
+  chip('cBrd', s.hw.link ? 'ok' : 'bad', s.hw.link ? 'บอร์ด' : 'บอร์ดไม่ต่อ');
+  const ready = s.hw.link && s.hw.ready;          // อ่านจากบอร์ดจริง = ตรงกับไฟเขียวจริง
+  chip('cRdy', ready ? 'ok' : '', ready ? 'พร้อม' : 'กำลังเตรียม');
+  const bl = s.hw.link && s.hw.bird_lamp;
+  chip('cBird', bl ? 'wn' : '', bl ? 'เจอนก!' : 'ไม่มีนก');
+  const wp = s.hw.water_pct;
+  chip('cWat', wp < 0 ? '' : s.hw.water_empty ? 'bad' : s.hw.water_low ? 'wn' : 'ok',
+       wp < 0 ? 'น้ำ -' : 'น้ำ ' + wp + '%');
+  chip('cAuto', s.hw.auto_repel ? 'ok' : '', s.hw.auto_repel ? 'ไล่อัตโนมัติ' : 'ไม่ไล่เอง');
+
+  // ---- ผลตรวจล่าสุด ----
+  const n = s.bird_count;
+  $('cnt').textContent = n;
+  $('badge').textContent = !s.last_update ? 'ยังไม่ได้ตรวจ'
+      : n > 0 ? '🐦 พบนก ' + n + ' ตัว · ' + s.max_conf.toFixed(2) : 'ไม่พบนก';
+  $('badge').className = 'badge' + (n > 0 ? ' bird' : '');
+  $('busy').className = 'busy' + (s.processing ? ' on' : '');
+  $('ago').textContent = s.last_update ? Math.max(0, Math.round(s.now - s.last_update)) + ' วิที่แล้ว' : '';
+  const cf = s.confirm_frames, st = Math.min(s.confirm_streak, cf);
+  $('dots').innerHTML = cf > 1 ? Array.from({length: cf}, (_, i) => '<i' + (i < st ? ' class="f"' : '') + '></i>').join('') : '';
+  $('cfm').textContent = cf > 1 ? st + '/' + cf + ' เฟรมติดกัน' : 'ไม่ต้องยืนยัน';
+
   if(s.dataset){
     const d = s.dataset;
     $('ds').textContent = d.total;
@@ -1831,16 +2075,15 @@ async function tick(){
   $('tot').textContent = s.total_frames;
   $('det').textContent = s.total_detections;
   $('rep').textContent = s.hw.repel_count;
-  $('cfm').textContent = s.confirm_streak + '/' + s.confirm_frames +
-                         (s.confirm_of > 1 ? ' (ใน ' + s.confirm_of + ' รอบ)' : '');
   $('duty').textContent = s.hw.pump_duty_left == null ? '-'
                         : (s.hw.pump_duty_left / 1000).toFixed(0) + ' วิ';
   $('rph').textContent = s.hw.repel_hour_left + ' ครั้ง';
 
   // ---- แถบเตือน ----
   const w = [];
-  if(s.mode === 'field') w.push(['w', 'โหมดทดสอบภาคสนาม: เจอนก ' + s.confirm_frames + ' ใน ' + s.confirm_of +
-                               ' รอบแล้วไล่จริง (ปั๊ม + มอเตอร์) และเก็บภาพ/log ทุกรอบ — กด "ดาวน์โหลด log" เพื่อเอาข้อมูลไปสรุป']);
+  if(s.mode === 'field') w.push(['w', 'โหมดทดสอบภาคสนาม: ตรวจทุก ' + s.auto_interval + ' วิ เจอนกแล้วถ่ายเฟรมยืนยันใน ' +
+                               s.confirm_delay + ' วิ เจอ ' + cf + ' เฟรมติดกันจึงไล่จริง (ปั๊ม + มอเตอร์) ' +
+                               'และเก็บภาพ/log ทุกรอบ — ดาวน์โหลด log ได้ที่ท้ายหน้า']);
   if(s.test_mode) w.push(['w', 'โหมดทดสอบเปิดอยู่: ไม่ไล่นกเอง ไม่ต้องยืนยันหลายเฟรม และเกณฑ์คะแนนต่ำกว่าปกติ ' +
                                'ก่อนใช้งานจริงให้แก้ MODE เป็น field หรือ real']);
   if(s.hw.link && s.hw.error) w.push(['b', s.hw.error]);
@@ -1862,7 +2105,6 @@ async function tick(){
   warnBox(w);
 
   // ---- สถานะเครื่อง ----
-  const wp = s.hw.water_pct;
   if(wp < 0){ $('wat').textContent = 'ไม่มีเซนเซอร์'; $('watBar').style.width = '0%'; }
   else{
     $('wat').textContent = wp + '%';
@@ -1874,10 +2116,8 @@ async function tick(){
   $('deg').textContent = s.hw.deg + '°' + (s.hw.pos_ok === false ? ' ?' : '');
   $('brd').textContent = s.hw.link ? 'เชื่อมต่อแล้ว' : 'ไม่ได้เชื่อมต่อ';
   $('brd').style.color = s.hw.link ? 'var(--ok)' : 'var(--bad)';
-  const ready = s.hw.link && s.hw.ready;          // อ่านจากบอร์ดจริง = ตรงกับไฟเขียวจริง
   $('rdy').textContent = ready ? 'ติด (พร้อม)' : 'ดับ (กำลังเตรียม)';
   $('rdy').style.color = ready ? 'var(--ok)' : 'var(--muted)';
-  const bl = s.hw.link && s.hw.bird_lamp;
   $('blamp').textContent = bl ? 'ติด' : 'ดับ';
   $('blamp').style.color = bl ? 'var(--warn)' : 'var(--muted)';
   $('pir').textContent = !s.hw.link ? '-'
@@ -1901,6 +2141,8 @@ async function tick(){
     hint = 'เคยค้าง HIGH จนต้องหยุดถ่ายซ้ำ: ลด Sx (ความไว) ทีละนิด ถ้ายังค้างให้หมุน Tx (หน่วงเวลา) ทวนเข็มจนสุด';
   else if(holds.length && Math.max(...holds) > 20) hint = 'HIGH ค้างนาน: หมุนปุ่ม Tx (หน่วงเวลา) บน PIR ทวนเข็มจนสุด';
   $('pirHint').textContent = hint;
+  if(s.hw.pir_stuck && !pirStuckSeen) $('tech').open = true;   // ค้างเมื่อไหร่ กางบันทึก PIR ให้เห็นเอง
+  pirStuckSeen = !!s.hw.pir_stuck;
   $('pirLog').innerHTML = '';
   for(const e of log){
     const d = document.createElement('div');
@@ -1915,8 +2157,7 @@ async function tick(){
 
   pill($('pillDet'), s.auto_detect, 'ทุก ' + s.auto_interval + ' วิ', 'ปิดอยู่');
   pill($('pillCam'), s.cam_online, 'ออนไลน์', 'ออฟไลน์');
-  $('cdTxt').textContent = s.hw.cooldown_left > 0
-      ? 'พักอีก ' + s.hw.cooldown_left + ' วิ' : '';
+  $('cdTxt').textContent = s.hw.cooldown_left > 0 ? 'พักอีก ' + s.hw.cooldown_left + ' วิ' : '';
 
   if(document.activeElement !== $('autoDet')) $('autoDet').checked = s.auto_detect;
   if(document.activeElement !== $('autoRep')) $('autoRep').checked = s.hw.auto_repel;
@@ -1929,7 +2170,8 @@ async function tick(){
 
   // ---- ภาพ ----
   if(s.preview_seq !== lastPrev){ lastPrev = s.preview_seq;
-    $('shot').src = '/preview?t=' + Date.now(); }
+    const u = '/preview?t=' + Date.now();
+    $('shot').src = u; $('roiImg').src = u; }
   if(s.frame_seq !== lastFrame){ lastFrame = s.frame_seq;
     $('shot').src = '/image?t=' + Date.now(); }
 
@@ -1937,17 +2179,118 @@ async function tick(){
     setMsg(s.status + (s.processing ? ' (กำลังประมวลผล...)' : ''), false);
 
   // ---- ROI ----
-  if(document.activeElement.tagName !== 'INPUT'){
-    $('roiOn').checked = s.roi.enabled;
-    $('rx1').value = s.roi.x1; $('ry1').value = s.roi.y1;
-    $('rx2').value = s.roi.x2; $('ry2').value = s.roi.y2;
+  if(document.activeElement !== $('roiOn')) $('roiOn').checked = s.roi.enabled;
+  if(!roiDirty){
+    $('cutL').value = s.roi.x1; $('cutR').value = (1 - s.roi.x2).toFixed(2);
+    $('cutT').value = s.roi.y1; $('cutB').value = (1 - s.roi.y2).toFixed(2);
   }
+  drawRoi();
 
   // ---- ประวัติ ----
-  $('hist').innerHTML = (s.history||[]).map(h =>
-    `<div><img src="/history/${h.file}" loading="lazy">
-     <div>${h.ts} · ${h.count} ตัว · ${h.conf}</div></div>`).join('');
+  renderHistory(s.history || []);
 }
+
+// ---------- ภาพย้อนหลัง: สร้างใหม่เฉพาะตอนมีภาพเพิ่ม (เดิมสร้างทุกวินาที ภาพเลยกระพริบและกดไม่ได้) ----------
+let hist = [], histKey = null, lbFile = null;
+function renderHistory(list){
+  const key = list.map(h => h.file).join('|');
+  if(key === histKey) return;
+  histKey = key;
+  hist = list;
+  $('histN').textContent = list.length ? list.length + ' ภาพล่าสุด' : '';
+  if(!list.length){ $('hist').innerHTML = '<div class="empty">ยังไม่เจอนก</div>'; return; }
+  $('hist').innerHTML = list.map((h, i) =>
+    `<button class="hi" data-f="${h.file}"><img src="/history/${h.file}" loading="lazy" alt="">
+     <span><b>${h.count} ตัว</b> · ${h.conf}<br>${h.ts}</span></button>`).join('');
+}
+$('hist').onclick = e => {
+  const b = e.target.closest('.hi');
+  if(b) openLb(b.dataset.f);
+};
+function openLb(file){
+  const i = hist.findIndex(h => h.file === file);
+  if(i < 0) return;
+  const h = hist[i];
+  lbFile = file;
+  $('lbImg').src = '/history/' + file;
+  $('lbDl').href = '/history/' + file;
+  $('lbDl').setAttribute('download', file);
+  $('lbCap').textContent = h.ts + ' · พบนก ' + h.count + ' ตัว · ความมั่นใจ ' + h.conf +
+                           '  (' + (i + 1) + '/' + hist.length + ')';
+  $('lbPrev').disabled = i === 0;
+  $('lbNext').disabled = i === hist.length - 1;
+  $('lb').hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+function lbStep(d){
+  const i = hist.findIndex(h => h.file === lbFile);
+  const j = i + d;
+  if(i >= 0 && j >= 0 && j < hist.length) openLb(hist[j].file);
+}
+function closeLb(){ $('lb').hidden = true; document.body.style.overflow = ''; }
+$('lbX').onclick = closeLb;
+$('lbPrev').onclick = () => lbStep(-1);
+$('lbNext').onclick = () => lbStep(1);
+$('lbImg').onclick = closeLb;
+document.addEventListener('keydown', e => {
+  if($('lb').hidden) return;
+  if(e.key === 'Escape') closeLb();
+  if(e.key === 'ArrowLeft') lbStep(-1);
+  if(e.key === 'ArrowRight') lbStep(1);
+});
+let tx0 = null;
+$('lb').addEventListener('touchstart', e => { tx0 = e.touches[0].clientX; }, {passive:true});
+$('lb').addEventListener('touchend', e => {
+  if(tx0 == null) return;
+  const dx = e.changedTouches[0].clientX - tx0;
+  tx0 = null;
+  if(Math.abs(dx) > 60) lbStep(dx > 0 ? -1 : 1);
+});
+
+// ---------- ROI ----------
+let roiDirty = false;
+const CUTS = ['cutL', 'cutR', 'cutT', 'cutB'];
+function roiVals(){
+  const v = k => parseFloat($(k).value) || 0;
+  return {x1: v('cutL'), x2: +(1 - v('cutR')).toFixed(2), y1: v('cutT'), y2: +(1 - v('cutB')).toFixed(2)};
+}
+function drawRoi(){
+  const r = roiVals(), b = $('roiBox');
+  b.style.left = r.x1 * 100 + '%';  b.style.width  = (r.x2 - r.x1) * 100 + '%';
+  b.style.top  = r.y1 * 100 + '%';  b.style.height = (r.y2 - r.y1) * 100 + '%';
+  b.className = 'roiBox' + ($('roiOn').checked ? '' : ' off');
+  for(const k of CUTS) $(k + 'v').textContent = Math.round(parseFloat($(k).value) * 100) + '%';
+  $('roiNote').textContent = roiDirty ? 'ยังไม่ได้บันทึก — กด "บันทึก ROI" เพื่อใช้ค่านี้' :
+      ($('roiOn').checked ? 'ตรวจเฉพาะในกรอบ ' + Math.round((r.x2 - r.x1) * 100) + '% × ' +
+                            Math.round((r.y2 - r.y1) * 100) + '% ของภาพ' : 'ปิดอยู่ — ตรวจทั้งภาพ');
+  $('roiNote').className = 'msg' + (roiDirty ? ' dirty' : '');
+}
+for(const k of CUTS) $(k).addEventListener('input', () => { roiDirty = true; drawRoi(); });
+// ใช้จากสคริปต์ทดสอบ / คอนโซลได้: setCut('cutL', 0.3)
+function setCut(k, v){ $(k).value = v; roiDirty = true; drawRoi(); }
+
+$('roiOn').onchange = async e => {
+  drawRoi();
+  const r = await post('/api/roi', {enabled: e.target.checked});
+  if(r.ok) setMsg(e.target.checked ? 'เปิด ROI แล้ว' : 'ปิด ROI แล้ว (ตรวจทั้งภาพ)');
+};
+$('roiSave').onclick = async () => {
+  const r = await post('/api/roi', Object.assign({enabled: $('roiOn').checked}, roiVals()));
+  if(r.ok) roiDirty = false;
+  setMsg(r.ok ? 'บันทึก ROI แล้ว' : 'ค่าไม่ถูกต้อง');
+  drawRoi();
+};
+$('roiReset').onclick = async () => {
+  const r = await post('/api/roi', {reset: true});
+  if(r.ok){
+    roiDirty = false;
+    $('roiOn').checked = r.roi.enabled;
+    $('cutL').value = r.roi.x1; $('cutR').value = (1 - r.roi.x2).toFixed(2);
+    $('cutT').value = r.roi.y1; $('cutB').value = (1 - r.roi.y2).toFixed(2);
+  }
+  setMsg(r.ok ? 'คืนค่า ROI เริ่มต้นแล้ว (ตัดขอบซ้าย-ขวา)' : 'สั่งไม่สำเร็จ');
+  drawRoi();
+};
 
 // ---------- ปุ่ม ----------
 $('btnShot').onclick = async () => {
@@ -1955,8 +2298,14 @@ $('btnShot').onclick = async () => {
   const r = await post('/api/capture');
   if(!r.ok) setMsg(r.msg || 'สั่งไม่สำเร็จ');
 };
-$('autoDet').onchange = e => post('/api/auto_detect', {on: e.target.checked});
-$('autoRep').onchange = e => post('/api/auto_repel', {on: e.target.checked});
+$('autoDet').onchange = async e => {
+  const r = await post('/api/auto_detect', {on: e.target.checked});
+  if(r.ok) setMsg(r.on ? 'เปิดตรวจอัตโนมัติ' : 'ปิดตรวจอัตโนมัติ');
+};
+$('autoRep').onchange = async e => {
+  const r = await post('/api/auto_repel', {on: e.target.checked});
+  if(r.ok) setMsg(r.on ? 'เปิดไล่อัตโนมัติ — เจอนกแล้วจะฉีดน้ำเอง' : 'ปิดไล่อัตโนมัติ — เจอนกแค่ตีกรอบ/ไฟส้ม');
+};
 $('btnLog').onclick = () => location.href = '/log';
 
 $('live').onerror = () => {
@@ -1965,6 +2314,7 @@ $('live').onerror = () => {
 $('btnLive').onclick = () => {
   liveOn = !liveOn;
   $('live').style.display = liveOn ? 'block' : 'none';
+  $('livePh').style.display = liveOn ? 'none' : 'flex';
   if(liveOn){
     $('live').src = '/stream?t=' + Date.now();
     $('btnLive').textContent = '⏸ ปิดภาพสด';
@@ -1986,20 +2336,11 @@ $('mZ').onclick = () => {
   if(confirm('หัวฉีดอยู่ตรงกลางจริงแล้วใช่ไหม? ระบบจะถือว่าตำแหน่งนี้คือ 0°'))
     run('/api/motor', {action:'zero'});
 };
-$('bPump').onclick  = () => run('/api/pump', {ms:3000});
+$('bPump').onclick  = () => run('/api/pump', {});
 $('bRepel').onclick = () => run('/api/repel');
 $('bWater').onclick = () => run('/api/water');
 $('bAbort').onclick = () => run('/api/abort');
 $('bLamp').onclick  = () => run('/api/bird_lamp', {on: true});
-
-$('roiOn').onchange = e => post('/api/roi', {enabled: e.target.checked});
-$('roiSave').onclick = async () => {
-  const r = await post('/api/roi', {
-    enabled: $('roiOn').checked,
-    x1: parseFloat($('rx1').value), y1: parseFloat($('ry1').value),
-    x2: parseFloat($('rx2').value), y2: parseFloat($('ry2').value)});
-  setMsg(r.ok ? 'บันทึก ROI แล้ว' : 'ค่าไม่ถูกต้อง');
-};
 
 tick();
 setInterval(tick, 1000);
@@ -2032,7 +2373,8 @@ def main():
     else:
         print(f"[Mode] ใช้งานจริง (real) conf={CONF_THRESHOLD}", flush=True)
     print(f"[Auto] ตรวจจับทุก {AUTO_INTERVAL_S} วินาที รอบละ {BURST_FRAMES} เฟรม "
-          f"(เจอ {CONFIRM_FRAMES} ใน {CONFIRM_OF} รอบก่อนสั่งไล่)", flush=True)
+          f"(เจอนก {CONFIRM_FRAMES} เฟรมติดกันก่อนสั่งไล่ เฟรมยืนยันถ่ายตามใน {CONFIRM_DELAY_S:g} วิ)",
+          flush=True)
     print(f"[Detect] CLAHE={'เปิด' if DETECT_CLAHE else 'ปิด'}  "
           f"ตัดภาพตาม ROI={'เปิด' if ROI_CROP else 'ปิด'}", flush=True)
     if not WEB_PIN:

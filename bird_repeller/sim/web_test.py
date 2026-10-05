@@ -7,6 +7,7 @@
 ภาพหน้าจออยู่ที่ build/shots/
 """
 import argparse
+from datetime import datetime
 import json
 import os
 import sys
@@ -108,7 +109,7 @@ def main_flow(page, sim):
     # ---------- ปั๊ม ----------
     page.click("#bPump")
     m = wait_msg(page, "OK PUMP", 3)
-    check("กดปั๊ม 3 วินาที -> OK", "OK PUMP 3000" in m, m)
+    check("กดปั๊ม 5 วินาที -> OK", "OK PUMP 5000" in m, m)
     page.click("#bPump")
     m = wait_msg(page, "ปั๊มเปิดอยู่แล้ว", 3)
     check("กดปั๊มซ้ำตอนปั๊มเปิดอยู่ -> ไม่ยืดเวลา", "ปั๊มเปิดอยู่แล้ว" in m, m)
@@ -130,20 +131,47 @@ def main_flow(page, sim):
     page.uncheck("#autoRep")
 
     # ---------- ROI ----------
+    check("โหมดสาธิตเริ่มแบบปิด ROI", not page.is_checked("#roiOn"))
     page.check("#roiOn")
-    for k, v in (("rx1", "0.35"), ("ry1", "0.05"), ("rx2", "0.75"), ("ry2", "0.55")):
-        page.fill("#" + k, v)
+    for k, v in (("cutL", 0.35), ("cutT", 0.05), ("cutR", 0.25), ("cutB", 0.45)):
+        page.evaluate(f"setCut('{k}', {v})")
+    check("ปรับแถบเลื่อนแล้วขึ้นว่ายังไม่บันทึก", "ยังไม่ได้บันทึก" in page.inner_text("#roiNote"))
     page.click("#roiSave")
-    m = wait_msg(page, "ROI", 3)
+    m = wait_msg(page, "บันทึก ROI", 3)
     check("บันทึก ROI จากหน้าเว็บ", "บันทึก ROI แล้ว" in m, m)
+    r = state(sim)["roi"]
+    check("ค่า ROI ที่บันทึกตรงกับแถบเลื่อน", r["enabled"] and abs(r["x1"] - 0.35) < 1e-6 and abs(r["x2"] - 0.75) < 1e-6
+          and abs(r["y2"] - 0.55) < 1e-6, r)
     before = state(sim)["frame_seq"]
     s = wait_state(sim, lambda s: s["frame_seq"] > before + 1 and "พบนก" in s["status"], 40)
     check("เปิด ROI (ตัดภาพก่อนตรวจ) แล้วยังเจอนกในกรอบ", s is not None, state(sim)["status"])
-    page.wait_for_function("document.getElementById('cnt').textContent !== '0'", timeout=8000)
+    page.wait_for_function("document.getElementById('cnt').textContent !== '0'", timeout=30000)
     page.wait_for_timeout(700)
     m = msg(page)
     check("ข้อความสถานะตรงกับจำนวนนกที่แสดง", "พบนก" in m, m)
     shot(page, "04_detect_roi.png")
+    page.evaluate("document.getElementById('roiCard').scrollIntoView()")
+    page.wait_for_timeout(400)
+    page.screenshot(path=os.path.join(SHOTS, "04b_roi_editor.png"))
+
+    # ---------- ภาพย้อนหลัง ----------
+    page.wait_for_selector("#hist .hi", timeout=5000)
+    src0 = page.evaluate("document.querySelector('#hist .hi img').src")
+    page.wait_for_timeout(2500)
+    same = page.evaluate("document.querySelector('#hist .hi img').src") == src0
+    n_before = page.evaluate("document.querySelectorAll('#hist .hi').length")
+    check("ภาพย้อนหลังไม่ถูกสร้างใหม่ทุกวินาที", same)
+    page.click("#hist .hi")
+    page.wait_for_function("!document.getElementById('lb').hidden && document.getElementById('lbImg').naturalWidth > 0",
+                           timeout=4000)
+    check("กดภาพย้อนหลัง -> เปิดภาพใหญ่ได้", "พบนก" in page.inner_text("#lbCap"), page.inner_text("#lbCap"))
+    page.wait_for_timeout(300)
+    page.screenshot(path=os.path.join(SHOTS, "04c_history_viewer.png"))
+    if n_before > 1:
+        page.click("#lbNext")
+        check("ปุ่มเก่ากว่าในตัวดูภาพใช้ได้", "(2/" in page.inner_text("#lbCap"), page.inner_text("#lbCap"))
+    page.click("#lbX")
+    check("ปิดตัวดูภาพได้", page.evaluate("document.getElementById('lb').hidden"))
 
     # ---------- ภาพสด ----------
     page.click("#btnLive")
@@ -177,6 +205,7 @@ def pir_flow(page, sim):
     """ปิดตรวจอัตโนมัติ -> PIR ทริก -> กล้องจับนก -> ไฟส้มติด -> ดับเอง"""
     page.goto(sim.url)
     page.wait_for_function("document.getElementById('brd').textContent === 'เชื่อมต่อแล้ว'", timeout=20000)
+    page.evaluate("document.getElementById('tech').open = true")   # บันทึก PIR อยู่ในส่วนพับเก็บ
     page.uncheck("#autoDet")
     page.wait_for_timeout(4000)
     check("ไฟเขียวติดเมื่อ Pi + กล้องพร้อม", "ติด" in page.inner_text("#rdy"), page.inner_text("#rdy"))
@@ -208,6 +237,7 @@ def pir_flow(page, sim):
     page.wait_for_timeout(1500)
     check("บันทึก PIR บอกว่า HIGH นานกี่วินาที", "HIGH " in page.inner_text("#pirLog") and "วิ" in page.inner_text("#pirLog"),
           page.inner_text("#pirLog"))
+    page.evaluate("document.getElementById('tech').open = true")
     page.evaluate("document.getElementById('pirLog').scrollIntoView({block:'center'})")
     shot(page, "08_pir_log.png")
     s = wait_state(sim, lambda s: not s["hw"]["bird_lamp"], 14)
@@ -241,7 +271,18 @@ def field_flow(page, sim):
     with open(os.path.join(sim.data_dir, "detection_log.csv"), encoding="utf-8-sig") as f:
         rows = f.read()
     check("detection_log.csv บันทึกรอบที่สั่งไล่", "สั่งไล่แล้ว" in rows, rows[-300:])
-    check("detection_log.csv บันทึกรอบรอยืนยันก่อนไล่ (เจอ 2 ใน 3)", "รอยืนยัน" in rows, rows[-300:])
+    check("detection_log.csv บันทึกรอบรอยืนยันก่อนไล่ (เฟรมแรก)", "รอยืนยัน 1/2" in rows, rows[-300:])
+    check("เฟรมยืนยันถูกถ่ายตามมาเอง (source=confirm)", ",confirm," in rows, rows[-300:])
+    lines = [ln.split(",") for ln in rows.splitlines()[1:]]
+    first = next((i for i, ln in enumerate(lines) if "รอยืนยัน" in ln[-3]), None)
+    gap = None
+    if first is not None and first + 1 < len(lines):
+        t = [datetime.strptime(lines[k][0], "%Y-%m-%d %H:%M:%S") for k in (first, first + 1)]
+        gap = (t[1] - t[0]).total_seconds()
+    check(f"เฟรมยืนยันห่างจากเฟรมแรก {gap} วิ (ไม่ต้องรอรอบ 5 วิ)", gap is not None and gap <= 4.5, gap)
+    st = state(sim)
+    check("ROI เริ่มต้นเปิด ตัดขอบซ้าย-ขวา", st["roi"]["enabled"] and st["roi"]["x1"] > 0 and st["roi"]["x2"] < 1,
+          st["roi"])
     ds = os.path.join(sim.data_dir, "dataset")
     n = len([f for f in os.listdir(ds) if f.endswith(".jpg")]) if os.path.isdir(ds) else 0
     check(f"เก็บภาพดิบสำหรับเทรนแล้ว {n} ภาพ", n >= 1)
@@ -270,6 +311,7 @@ def pir_stuck_flow(page, sim):
     """PIR ค้าง HIGH และกล้องไม่เจอนก -> บอร์ดเลิกทริกซ้ำ หน้าเว็บเตือน"""
     page.goto(sim.url)
     page.wait_for_function("document.getElementById('brd').textContent === 'เชื่อมต่อแล้ว'", timeout=20000)
+    page.evaluate("document.getElementById('tech').open = true")   # บันทึก PIR อยู่ในส่วนพับเก็บ
     page.uncheck("#autoDet")
     wait_state(sim, lambda s: s["hw"]["pir_warm"] > 0, 8)      # รอ STAT แรกจากบอร์ด (ค่าเริ่มต้นเป็น 0)
     s = wait_state(sim, lambda s: s["hw"]["pir_warm"] == 0, 30)
@@ -293,6 +335,7 @@ def pir_stuck_flow(page, sim):
           page.inner_text("#pirLog"))
     page.evaluate("window.scrollTo(0,0)")
     shot(page, "09_pir_stuck_warning.png")
+    page.evaluate("document.getElementById('tech').open = true")
     page.evaluate("document.getElementById('pirLog').scrollIntoView({block:'center'})")
     shot(page, "10_pir_stuck_log.png")
     sim.set_sensors(PIR=0, ECHO_CM=15)
