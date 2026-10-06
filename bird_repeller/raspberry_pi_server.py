@@ -2,14 +2,18 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.6
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.7
  ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.6 (ไฟส้มค้าง 5 วิ)
 --------------------------------------------------------------------------
- เปลี่ยนจาก v6.5 (รุ่นนี้):
+ เปลี่ยนจาก v6.6 (รุ่นนี้):
+   - เฟรมยืนยันใช้เกณฑ์ 0.20 (เฟรมแรกยังต้อง 0.30) ซ้อมระบบแล้วพบว่านกที่คะแนน
+     ก้ำกึ่ง 0.30-0.35 เฟรมยืนยันได้ 0.297 พลาดซ้ำ ๆ จนไม่ไล่
+
+ เปลี่ยนจาก v6.5:
    - ปั๊มน้ำ 2 วิต่อครั้ง ทั้งปุ่มบนเว็บและรอบไล่ (บอร์ด v7.5) ประหยัดน้ำ
      (ทดสอบจริง: ปั๊มดูดน้ำ 1 ลิตรหมดใน 30-40 วิ)
 
- เปลี่ยนจาก v6.4 (รุ่นนี้):
+ เปลี่ยนจาก v6.4:
    - ยืนยันแบบใหม่: ตรวจทุก 5 วิตามปกติ เจอนกเฟรมแรกแล้วถ่ายเฟรมยืนยันใน 3 วิ
      เจอ 2 เฟรมติดกันถึงไล่ (เดิม 2 ใน 3 รอบ ต้องรอ ~10 วิ)
    - ปุ่มปั๊มบนเว็บ 5 วิ (รอบไล่ของบอร์ด v7.4 ก็ 5 วิ)
@@ -187,6 +191,10 @@ DATASET_MIN_FREE_MB = 1024      # พื้นที่ว่างเหลื�
 CONFIRM_FRAMES = 2          # ต้องเจอนกติดกันกี่เฟรมถึงจะสั่งไล่ (1 = ไม่ต้องยืนยัน)
 CONFIRM_DELAY_S = 3         # เจอเฟรมแรกแล้ว รอกี่วินาทีค่อยถ่ายเฟรมยืนยัน (0 = ถ่ายทันที)
 CONFIRM_WINDOW_S = 12       # เฟรมที่เจอห่างกันเกินนี้ ไม่นับว่าติดกัน
+# เกณฑ์ของเฟรมถัดจากเฟรมที่เจอนก (เฟรมยืนยัน) ต่ำกว่าเกณฑ์ปกติ: เฟรมแรกต้องมั่นใจจริงก่อน
+# แต่พอรู้แล้วว่ามีนก เฟรมยืนยันแค่ต้องเห็นนกตัวนั้นอีก (ซ้อมระบบ: นกตัวเดิมได้ 0.35 แล้ว 0.297
+# พอใช้เกณฑ์ 0.30 เท่ากัน เฟรมยืนยันพลาดซ้ำ ๆ จนไม่ได้ไล่เลย)
+CONFIRM_CONF = 0.20
 
 # ---------- ชุดขับไล่ ----------
 SERIAL_PORT = os.environ.get("BIRD_SERIAL", "auto")
@@ -410,13 +418,15 @@ def enhance(image_bgr):
     return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
 
-def detect_and_draw(image_bgr):
+def detect_and_draw(image_bgr, threshold=None):
     """รัน YOLO เฉพาะคลาสนก กรองด้วย ROI แล้ววาดกรอบลงภาพ
 
     คืน (จำนวนนกที่นับ, ความมั่นใจสูงสุด, เวลาที่ใช้เป็น ms, ความมั่นใจสูงสุดของกรอบที่ต่ำกว่าเกณฑ์)
     """
     if _model is None:
         return 0, 0.0, 0, 0.0
+    if threshold is None:
+        threshold = CONF_THRESHOLD
 
     h, w = image_bgr.shape[:2]
     roi = dict(ROI)
@@ -445,7 +455,7 @@ def detect_and_draw(image_bgr):
         results = _model.predict(
             model_input,
             imgsz=IMG_SIZE,
-            conf=min(CONF_THRESHOLD, DATASET_LOWCONF) if DATASET_ENABLED else CONF_THRESHOLD,
+            conf=min(threshold, DATASET_LOWCONF) if DATASET_ENABLED else threshold,
             classes=[BIRD_CLASS_ID],
             verbose=False,
         )
@@ -465,7 +475,7 @@ def detect_and_draw(image_bgr):
             conf = float(b.conf[0])
 
             # กรอบที่ต่ำกว่าเกณฑ์: ไม่นับ ไม่วาด แต่จำไว้ให้ระบบเก็บชุดข้อมูล
-            if conf < CONF_THRESHOLD:
+            if conf < threshold:
                 weak_max = max(weak_max, conf)
                 continue
 
@@ -1205,6 +1215,10 @@ def schedule_confirm():
 def _process(source, requested_at):
     wait_still()
 
+    # เพิ่งเจอนกไป (กำลังรอยืนยัน) -> เฟรมนี้ใช้เกณฑ์ยืนยันที่ต่ำกว่า
+    confirming = CONFIRM_FRAMES > 1 and CTRL.confirm_hits() > 0
+    threshold = min(CONF_THRESHOLD, CONFIRM_CONF) if confirming else CONF_THRESHOLD
+
     # ถ่ายรัวหลายเฟรม เจอนกเฟรมไหนก็ใช้เฟรมนั้น (คะแนนนกตัวเดิมแกว่งมากตามท่าทาง
     # ภาพเดียวต่อรอบจึงพลาดบ่อย) เจอแล้วหยุดทันที ไม่เสีย CPU เพิ่มตอนมีนก
     best = None
@@ -1227,7 +1241,7 @@ def _process(source, requested_at):
                 STATE["processing"] = True
         raw = frame.copy()                     # เก็บภาพดิบไว้ก่อนโดนวาดกรอบทับ
         t_det = time.perf_counter()
-        count, max_conf, infer_ms, weak_max = detect_and_draw(frame)
+        count, max_conf, infer_ms, weak_max = detect_and_draw(frame, threshold)
         detect_total += int((time.perf_counter() - t_det) * 1000)
         infer_total += infer_ms
         cand = (count, max_conf, weak_max, frame, raw)
