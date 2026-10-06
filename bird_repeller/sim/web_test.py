@@ -246,8 +246,8 @@ def pir_flow(page, sim):
     page.evaluate("document.getElementById('tech').open = true")
     page.evaluate("document.getElementById('pirLog').scrollIntoView({block:'center'})")
     shot(page, "08_pir_log.png")
-    s = wait_state(sim, lambda s: not s["hw"]["bird_lamp"], 14)
-    check("ไม่เจอนกต่อ -> ไฟส้มดับเองใน 10 วิ", s is not None)
+    s = wait_state(sim, lambda s: not s["hw"]["bird_lamp"], 9)
+    check("ไม่เจอนกต่อ -> ไฟส้มดับเองใน 5 วิ", s is not None)
 
     page.click("#bLamp")
     m = wait_msg(page, "OK BIRD", 3)

@@ -211,8 +211,10 @@ def main():
         check("STAT รายงาน BIRD=1", b.stat().get("BIRD") == "1")
         r = b.cmd("BIRD 2")
         check("BIRD ค่าแปลก -> ERR ARG", first(r, "ERR ARG") is not None, r)
-        ln, seen = b.wait_for("EVT BIRDLAMP 0", 11.5)
-        check("ไฟส้มดับเองหลัง 10 วินาที", ln is not None, seen)
+        t0 = time.time()
+        ln, seen = b.wait_for("EVT BIRDLAMP 0", 8)
+        held = time.time() - t0
+        check(f"ไฟส้มดับเองหลัง 5 วินาที ({held:.1f} วิ)", ln is not None and 4.0 <= held <= 6.0, seen)
 
         r = b.cmd("X" * 80)
         check("บรรทัดยาวเกิน -> ERR TOOLONG ทั้งบรรทัด", r == ["ERR TOOLONG"], r)
