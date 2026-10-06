@@ -33,7 +33,7 @@ POSTS = [("front post 1", 19.5, 7.5, 5.5, "F"), ("front post 2", 74.5, 7.5, 5.5,
          ("back post 3", 12.5, 18.5, 10.5, "B"), ("back post 4", 81.5, 18.5, 10.5, "B"),
          ("back post 5", 9.0, 87.0, 10.5, "B"), ("back post 6", 85.0, 87.0, 10.5, "B"),
          ("back post 7", 12.5, 155.0, 10.5, "B"), ("back post 8", 81.5, 155.0, 10.5, "B")]
-CUT_POSTS = {"back post 7": 7.0, "back post 8": 7.0}   # cut these down to this height (the battery lies under them)
+CUT_POSTS = {"back post 7": 0.0, "back post 8": 0.0}   # cut these off flush (the battery, 24 at its wire end, lies under them)
 def post_z(name, h, half):
     h = CUT_POSTS.get(name, h)
     return (FACE, FACE + h) if half == "F" else (BODY_D - h, BODY_D)
@@ -47,7 +47,7 @@ NA = dict(w=87.0, h=53.0, pcb_t=1.5, joy=(18.5, 30.9), knob_d=20.0, joy_total=30
           btn={"A": (65.0, 18.4), "B": (77.1, 29.9), "C": (65.0, 42.0), "D": (53.1, 29.9)}, small={"E": (47.5, 41.6), "F": (34.5, 41.6)},
           holes=[(4.2, 2.5), (82.8, 17.5)], cap_d=11.5)   # button places from the maker's photo: check on the paper template
 NA_SPACER = 10.0          # M3 spacers face -> NA011: the colour caps then stand 1.5 out of the face (no printed caps needed)
-BATT = (72.0, 21.0, 21.0);   # 18650 + BMS + shrink: seller says 2 x 2 x 7 cm (MEASURE: length and thickness)
+BATT = (72.0, 24.0, 24.0);   # 18650 + BMS + shrink: measured 18.5 thick, 24 at the end with the wires (taken all along)
 HUB = (30.0, 20.0, 4.0)     # perfboard hub 30 x 20, 3V3 / GND / SDA / SCL rails
 DS3231 = (38.0, 21.5, 9.0); PCF = (35.0, 19.0, 9.0)
 SPK = (40.0, 28.0, 10.0)    # oval speaker (measured)
@@ -311,7 +311,7 @@ def asm_json(path):
         ("ช่อง USB-C (ชาร์จ / แฟลช)", at("USB-C"), "ผนังซ้าย ตรงกลางจอใหญ่ · หัวช่องเสียบอยู่ในรูผนังพอดี"),
         ("บอร์ดปุ่ม NA011", at("NA011 button board"), "ล่าง · น็อต M3 2 ตัว + เสารอง 10 มม. · ปุ่มสี A B C D ขวา, E F กลาง"),
         ("จอย (โผล่ 17.5 มม.)", (X(jx), Y(jy), knob_z + 3), "ซ้ายล่าง ติดกับบอร์ดปุ่ม · รูหน้ากล่อง 28 มม. ให้โยกได้"),
-        ("แบต 18650 3000mAh (มี BMS)", at("18650 battery"), "ท้ายกล่อง ใต้บอร์ดปุ่ม นอนขวาง · ตีนตุ๊กแก · ตัดเสา 7, 8 ของซีกหลังให้เหลือ 7 มม."),
+        ("แบต 18650 3000mAh (มี BMS)", at("18650 battery"), "ท้ายกล่อง ใต้บอร์ดปุ่ม นอนขวาง · ตีนตุ๊กแก · ตัดเสา 7, 8 ของซีกหลังออก"),
         ("แผงรวมสาย (hub)", at("hub board"), "หลังจอใหญ่ · ราง 3V3 / GND / SDA / SCL · เทปโฟม ทับเทปกันไฟฟ้า"),
         ("นาฬิกา DS3231", at("DS3231 clock"), "หลังบอร์ดปุ่ม ซ้าย (มองจากหน้า) · เทปโฟม ทับเทปกันไฟฟ้า"),
         ("PCF8574 (ตัวอ่านปุ่ม 7 ปุ่ม)", at("PCF8574"), "หลังบอร์ดปุ่ม ขวา (ใต้ขาเหลือง) · เทปโฟม ทับเทปกันไฟฟ้า"),
@@ -328,7 +328,7 @@ def asm_json(path):
                    posts=[[X(x), Y(y), *post_z(n, h, half)] for n, x, y, h, half in POSTS], post_r=POST_R, seam=SEAM,
                    body_rim=SEAM, tab="กล่องเทา 172", title="กล่องเทา 172 × 94 × 34.5 สองซีก (เจาะเอง)", template="case/out_box4/drill_template.pdf",
                    notes=["ของทุกชิ้นยึดกับซีกหน้า (ซีกที่มีเสาเตี้ย 2 ต้น) ซีกหลังมีแค่รูลำโพง: คลายน็อต 2 ตัวที่หัวกล่อง แล้วยกซีกหลังออก ก็เห็นทุกชิ้น",
-                          "ซีกหลังมีเสา 8 ต้น: ตัดเสา 7, 8 (ท้ายกล่อง) ให้เหลือสูง 7 มม. ก่อนประกอบ ไม่อย่างนั้นค้ำแบต"],
+                          "ซีกหลังมีเสา 8 ต้น: ตัดเสา 7, 8 (ท้ายกล่อง) ออกให้เรียบพื้นก่อนประกอบ ไม่อย่างนั้นค้ำแบต (หนา 24 ตรงปลายสายไฟ)"],
                    items=items, holes=holes, walls=walls,
                    lid_holes=[dict(kind=k, cx=X(cx), cy=Y(cy), a=a, b=b) for k, n, cx, cy, a, b in lid_cuts()]), open(path, "w"))
 
