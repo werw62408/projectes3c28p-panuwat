@@ -3,6 +3,7 @@ import base64, json, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 CASE = os.path.join(HERE, "..", "..", "case")   # (v13: next to this folder, not a fixed Windows path)
 BOX = "out_box3"   # the box layout shown: out_box3 = layout 3, the clear box D384 180 x 100 x 25 (v13.1); out_box2 = layout 2
+if len(sys.argv) > 1: BOX = sys.argv[1]   # python build.py out_box4 = layout 4, the grey box 172 x 94 x 34.5 (6 Oct 2026)
 sys.path.insert(0, CASE); os.chdir(CASE)
 import make_case as mc
 
@@ -60,5 +61,6 @@ boxd = json.load(open(os.path.join(CASE, BOX, "box_asm.json"), encoding="utf-8")
 boxd.update(json.load(open(os.path.join(CASE, BOX, "box_wires.json"), encoding="utf-8")))
 boxj = json.dumps(boxd, ensure_ascii=False)
 t = t.replace("/*PARTS*/[]", json.dumps(data, ensure_ascii=False)).replace("/*ASM*/null", json.dumps(asm)).replace("/*BOX*/null", boxj)
-open(os.path.join(HERE, "index.html"), "w", encoding="utf-8").write(t)
+OUT = "index.html" if len(sys.argv) < 2 else f"index_{BOX.replace('out_', '')}.html"   # (another layout: its own page)
+open(os.path.join(HERE, OUT), "w", encoding="utf-8").write(t)
 print("index.html", len(t), "items", len(items))

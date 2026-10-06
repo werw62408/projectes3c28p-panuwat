@@ -173,7 +173,7 @@ function showBox() {
     const hm = new THREE.Mesh(g, mat("#7fa9bb", clear ? 0.7 : 1)); hm.position.set(hx, 0, B.lid_line || bodyD); grp.add(hm);
     slab(-hx, 0, 2.0, 14, (B.lid_line || bodyD) - 4, (B.lid_line || bodyD) + 3, "#7fa9bb", clear ? 0.75 : 1);
   }
-  for (const [x, y] of B.posts) { const g = new THREE.CylinderGeometry(B.post_r, B.post_r, bodyD - B.face, 24); g.rotateX(Math.PI / 2); const m = new THREE.Mesh(g, mat(white, o)); m.position.set(x, y, (B.face + bodyD) / 2); grp.add(m); }
+  for (const [x, y, z0 = B.face, z1 = bodyD] of B.posts) { const g = new THREE.CylinderGeometry(B.post_r, B.post_r, z1 - z0, 24); g.rotateX(Math.PI / 2); const m = new THREE.Mesh(g, mat(white, o)); m.position.set(x, y, (z0 + z1) / 2); grp.add(m); }   // (a post may stand on the face or hang from the back half)
   for (const it of B.items) {
     const h = it.z1 - it.z0, g = it.k === "box" ? new THREE.BoxGeometry(it.w, it.h, h) : new THREE.CylinderGeometry(it.r, it.r, h, 32);
     if (it.k === "cyl") g.rotateX(Math.PI / 2);
