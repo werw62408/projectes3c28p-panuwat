@@ -1,0 +1,248 @@
+<title>ประกอบกล่องเทา SomudTick</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one column workshop sheet. The real-parts picture first, then one card per part in build order, then the full wire list. */
+:root {
+  --bg: #e9ebec;        /* grey ABS */
+  --panel: #f7f8f8;
+  --ink: #1d2327;
+  --dim: #5b6670;
+  --line: #c9cfd3;
+  --accent: #c8102e;    /* the red button board */
+  --warn-bg: #fff1d6; --warn-ink: #7a4b00;
+  --code-bg: #e2e6e8;
+  --f-body: "IBM Plex Sans Thai", "Leelawadee UI", "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #15191c; --panel: #1e2428; --ink: #e6eaec; --dim: #9aa6ae; --line: #2f383e; --accent: #ff5a6e; --warn-bg: #3a2c12; --warn-ink: #ffd28a; --code-bg: #283035; color-scheme: dark } }
+:root[data-theme="dark"] { --bg: #15191c; --panel: #1e2428; --ink: #e6eaec; --dim: #9aa6ae; --line: #2f383e; --accent: #ff5a6e; --warn-bg: #3a2c12; --warn-ink: #ffd28a; --code-bg: #283035; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.6; padding-inline: 16px; padding-block: 20px 48px; }
+.wrap { max-width: 900px; margin: 0 auto; display: grid; gap: 18px; }
+h1 { font-size: clamp(24px, 4.5vw, 32px); line-height: 1.25; margin: 0; text-wrap: balance; }
+h1 small { display: block; font-size: 15px; font-weight: 400; color: var(--dim); margin-top: 4px; }
+h2 { font-size: 20px; margin: 10px 0 0; text-wrap: balance; }
+p { margin: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+.fig img { width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--line); background: #fff; display: block; }
+.fig figcaption { font-size: 13px; color: var(--dim); margin-top: 6px; }
+figure { margin: 0; }
+.key { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 18px; font-size: 14px; }
+.key b { font-weight: 600; }
+.warn { background: var(--warn-bg); color: var(--warn-ink); border-radius: 6px; padding: 10px 12px; font-size: 14px; }
+.step { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 600px) { .step { grid-template-columns: minmax(0, 1fr); } }
+.step .ph { background: #111; border-radius: 6px; padding: 6px; display: grid; place-items: center; }
+.step .ph img { max-width: 100%; max-height: 140px; image-rendering: auto; }
+.step h3 { margin: 0; font-size: 17px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.num { font-family: var(--f-mono); font-weight: 600; background: var(--ink); color: var(--panel); border-radius: 999px; padding: 0 9px; font-size: 13px; }
+dl { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 4px 12px; margin: 6px 0 0; font-size: 14px; }
+dt { color: var(--dim); }
+dd { margin: 0; }
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--dim); font-weight: 600; font-size: 12.5px; letter-spacing: .02em; }
+td.m, code { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+code { background: var(--code-bg); border-radius: 4px; padding: 0 5px; font-size: 13px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; border: 1px solid #0003; }
+ol.check { margin: 0; padding-left: 22px; display: grid; gap: 4px; }
+footer { color: var(--dim); font-size: 13px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>ประกอบ SomudTick ลงกล่องเทา <small>กล่อง 172 × 94 สูง 34.5 สองซีก · แบบ 4 · ใช้รูปอุปกรณ์จริงที่ถ่ายมา</small></h1>
+  </header>
+
+  <section class="panel">
+    <figure class="fig"><img src="img/real_layout.png" alt="ของจริงแต่ละชิ้นวางตามตำแหน่งในกล่อง มองจากด้านหน้ากล่อง"><figcaption>รูปอุปกรณ์จริงย่อตามขนาดจริง วางตรงตำแหน่งที่จะติด มองจากด้านหน้ากล่อง (เหมือนหน้ากล่องเป็นกระจก) · กรอบดำ = ติดกับหน้ากล่อง · กรอบส้ม = อยู่ชั้นหลัง ซ้อนข้างหลังชิ้นอื่น</figcaption></figure>
+    <div class="key">
+      <p><b>ตัวเลขตำแหน่ง:</b> <code>x</code> วัดจากขอบซ้าย <code>y</code> วัดจากขอบบน ของ<b>หน้ากล่องด้านนอก</b> (มม.)</p>
+      <p><b>ด้านบน</b> = หัวกล่อง ด้านที่มีเสาน็อต 2 ต้น · <b>ผนังซ้าย</b> = ช่อง USB-C และสวิตช์</p>
+      <p><b>ลึก</b> = ระยะจากผิวนอกหน้ากล่องเข้าไปในกล่อง</p>
+    </div>
+    <p class="warn">ตอนประกอบ ซีกหน้าจะคว่ำอยู่บนโต๊ะ และเรามองจากด้านใน: <b>ซ้าย–ขวาจะกลับกับรูปบน</b> ผนังที่มีช่อง USB-C จะอยู่ทางขวามือ ใช้ช่อง USB-C เป็นหลักจำทิศ</p>
+  </section>
+
+  <h2>ก่อนเริ่ม</h2>
+  <section class="panel">
+    <ol class="check">
+      <li>เจาะหน้ากล่อง ผนัง และซีกหลังตาม <code>DRILL_BOX4.md</code> ให้เสร็จก่อน (ยกเว้นช่องสวิตช์ ซึ่งรอย้ายตำแหน่งหนีเขี้ยวล็อก)</li>
+      <li>ตัด<b>เสา 7, 8 ของซีกหลัง</b> (คู่ท้ายกล่อง) ออกให้เรียบพื้น ไม่อย่างนั้นค้ำแบต</li>
+      <li>ทุกจุดที่แปะของทับหลังบอร์ดอื่น: ปิดเทปกันไฟฟ้าก่อน แล้วค่อยแปะเทปโฟมสองหน้า</li>
+      <li>บอร์ดปุ่ม: เลื่อนสวิตช์ 3V/5V มุมซ้ายล่างไปที่ <b>3V</b> และถอด PCF8574 ที่เสียบอยู่ด้านหน้าบอร์ดออก (จะย้ายไปไว้ข้างหลัง)</li>
+      <li>ใส่ถ่านกระดุม CR2032 เข้าช่องของ DS3231</li>
+    </ol>
+  </section>
+
+  <h2>ทีละชิ้น ตามลำดับประกอบ</h2>
+
+  <section class="panel step">
+    <div class="ph"><img src="img/screen.png" alt="จอใหญ่ ES3C28P"></div>
+    <div><h3><span class="num">2</span>จอใหญ่ ES3C28P (บอร์ดหลัก)</h3>
+      <dl>
+        <dt>ตรงไหน</dt><dd>กลางกล่อง จุดกลางบอร์ด <code>x 47, y 63.5</code> ขอบบนบอร์ดห่างจอเล็ก 2 มม.</dd>
+        <dt>หันยังไง</dt><dd>หน้ากระจกแนบหน้ากล่อง ภาพตรงช่องหน้าต่าง · ด้านที่มีช่อง USB-C ชนผนังซ้าย หัว USB-C อยู่ในช่องผนังพอดี · ปลั๊กหลังบอร์ด (I2C, ขยาย, แบต, ลำโพง) อยู่ทางหัวกล่อง</dd>
+        <dt>ยึดด้วย</dt><dd>น็อต M3 4 ตัวสอดจากนอกหน้ากล่องที่รู <code>(8, 42.5) (8, 84.5) (86, 42.5) (86, 84.5)</code> → เสารอง 4.5 มม. → รูบอร์ด → ขันเข้าเสาทองเหลืองเดิมของจอ</dd>
+        <dt>ลึก</dt><dd>กระจก 2–4 มม. · บอร์ด 6.5–8 มม. · ชิ้นส่วนหลังบอร์ดถึง 12 มม.</dd>
+        <dt>สาย</dt><dd>ปลั๊ก I2C → แผงรวมสาย (W1–W4) · ปลั๊กขยาย IO21 → KY-005 (W23), IO14 → KY-022 (W24), IO2/IO3 → จอย X/Y (W25/W26) · ปลั๊กแบต ← สวิตช์ (W35), แบต − (W36) · ปลั๊กลำโพง → ลำโพง (W37/W38)</dd>
+      </dl></div>
+  </section>
+
+  <section class="panel step">
+    <div class="ph"><img src="img/oled.png" alt="จอเล็ก 1.3 นิ้ว DST-013"></div>
+    <div><h3><span class="num">1</span>จอเล็ก 1.3" SH1106</h3>
+      <dl>
+        <dt>ตรงไหน</dt><dd>หัวกล่อง ระหว่างเสาน็อตหน้า 2 ต้น จุดกลาง <code>x 50.1, y 19.8</code> ตรงกลางภาพจอใหญ่พอดี</dd>
+        <dt>หันยังไง</dt><dd>หน้าจอแนบหน้ากล่อง · <b>แถวขา GND VDD SCK SDA หันไปทางหัวกล่อง</b> (ขอบบน)</dd>
+        <dt>ยึดด้วย</dt><dd>เทปโฟมสองหน้าบาง ๆ แปะที่ขอบบอร์ดรอบกระจก (อย่าแปะทับกระจก)</dd>
+        <dt>ลึก</dt><dd>2–5.7 มม. · ถ้ามีขาหัวต่อบัดกรีอยู่ ให้งอขาไปด้านหลัง หรือตัดออกแล้วบัดกรีสายตรง</dd>
+        <dt>สาย</dt><dd>SDA ← W13 · SCK(SCL) ← W14 · GND ← W15 · VDD ← W16 (3.3V) ทั้งหมดมาจากแผงรวมสาย ⚠️ ดูตัวหนังสือบนบอร์ดจอก่อน บางรุ่นสลับ VDD/GND</dd>
+      </dl></div>
+  </section>
+
+  <section class="panel step">
+    <div class="ph"><img src="img/ir_tx.png" alt="หลอดส่ง IR KY-005"></div>
+    <div><h3><span class="num">10</span>หลอดส่ง IR KY-005 (มีหลอดใส)</h3>
+      <dl>
+        <dt>ตรงไหน</dt><dd>ซ้ายบน (มองจากหน้า) ใต้เสาน็อตหน้าต้นที่ 1 จุดกลาง <code>x 13, y 19.5</code></dd>
+        <dt>หันยังไง</dt><dd>บอร์ดนอนราบ ด้านที่มีชิ้นส่วนหันเข้าในกล่อง · <b>ขอบที่มีหลอดหันไปทางหัวกล่อง</b> ขา S / + / − หันลงหาจอใหญ่ · งอขาหลอดให้หัวหลอดชี้ออกรูผนังบน Ø5.4 ที่ <code>x 9</code> (ซ้ายของเสา)</dd>
+        <dt>ยึดด้วย</dt><dd>เทปโฟมสองหน้าใต้บอร์ด + กาวร้อนหยดที่หลอดให้ค้างอยู่ในรู</dd>
+        <dt>สาย</dt><dd>S ← IO21 (W23) · + ← 3V3 (W20) · − ← GND (W19)</dd>
+      </dl></div>
+  </section>
+
+  <section class="panel step">
+    <div class="ph"><img src="img/ir_rx.png" alt="ตัวรับ IR KY-022"></div>
+    <div><h3><span class="num">11</span>ตัวรับ IR KY-022</h3>
+      <dl>
+        <dt>ตรงไหน</dt><dd>ขวาบน (มองจากหน้า) ใต้เสาน็อตหน้าต้นที่ 2 จุดกลาง <code>x 82.5, y 21.2</code></dd>
+        <dt>หันยังไง</dt><dd>บอร์ดนอนราบ · <b>เลนส์ตัวรับต้องมองตรงไปที่ช่องผนังบน</b> 7 × 7.5 ที่ <code>x 82.5</code> (ขวาของเสา) ถ้าตัวรับนอนอยู่บนบอร์ด ให้งอขาตัวรับ 90° ให้หน้าเลนส์หันไปทางผนังบน · ขา S / + / − หันลงหาจอใหญ่</dd>
+        <dt>ยึดด้วย</dt><dd>เทปโฟมสองหน้าใต้บอร์ด</dd>
+        <dt>สาย</dt><dd>S → IO14 (W24) · + ← 3V3 (W18) · − ← GND (W17)</dd>
+      </dl>
+      <p class="warn">ยังไม่แน่ใจว่าโมดูลไหนในรูปคือตัวรับ: ตัวรับคือตัวที่<b>ไม่มี</b>หลอดใส (ชิ้นดำ มีหน้าต่าง) ถ้าสายแดงดำของลำโพงเสียบอยู่กับมัน ให้ถอดออก</p></div>
+  </section>
+
+  <section class="panel step">
+    <div class="ph"><img src="img/switch.png" alt="สวิตช์กระดก"></div>
+    <div><h3><span class="num">12</span>สวิตช์กระดก</h3>
+      <dl>
+        <dt>ตรงไหน</dt><dd>ผนังซ้าย (ฝั่ง USB-C) เหนือจอใหญ่ ตอนนี้ <code>y 25.7–37.7</code> ห่างหน้ากล่อง 9 มม.</dd>
+        <dt>หันยังไง</dt><dd>ด้านกระดกอยู่นอกกล่อง ขา 2 ขาอยู่ในกล่อง ลึกเข้ามา 9 มม. · กดเข้าช่อง 12.5 × 9 จนเขี้ยวล็อก</dd>
+        <dt>สาย</dt><dd>ขา 1 ← แบต + (W34, 24 AWG) · ขา 2 → ปลั๊กแบตของจอใหญ่ + (W35)</dd>
+      </dl>
+      <p class="warn">ช่องนี้ทับเขี้ยวล็อกของกล่อง <b>ยังไม่ต้องเจาะ</b> รอวัดตำแหน่งเขี้ยว แล้วผมจะย้ายให้</p></div>
+  </section>
+
+  <section class="panel step">
+    <div class="ph"><img src="img/shield.png" alt="บอร์ดปุ่ม NA011"></div>
+    <div><h3><span class="num">4</span>บอร์ดปุ่ม NA011 (Joystick Shield)</h3>
+      <dl>
+        <dt>ตรงไหน</dt><dd>ใต้จอใหญ่ ห่าง 2 มม. จุดกลาง <code>x 47, y 117</code></dd>
+        <dt>หันยังไง</dt><dd>ปุ่มและจอยหันออกหน้ากล่อง โผล่ตามรู · <b>จอยอยู่ซ้าย ปุ่ม A B C D อยู่ขวา</b> (มองจากหน้า) · ขาหัวต่อยาวด้านหลังตัดให้สั้นหรืองอ</dd>
+        <dt>ยึดด้วย</dt><dd>น็อต M3 2 ตัวที่ <code>(7.7, 93) (86.3, 108)</code> + เสารอง 10 มม. → ปุ่มสีโผล่ราว 2 มม. จอยโผล่ราว 18 มม.</dd>
+        <dt>ลึก</dt><dd>แผ่นบอร์ด 12–13.5 มม.</dd>
+        <dt>สาย</dt><dd>บัดกรีหลังบอร์ด ตามป้ายบนบอร์ด: X (A0) ← IO2 (W25) · Y (A1) ← IO3 (W26) · GND ← W21 · 3V3 ← W22 · ปุ่ม A–F, K ← PCF8574 P0–P6 (W27–W33)<br><span style="color:var(--dim)">(บนบอร์ด Funduino ปุ่ม A–F = D2–D7, กดจอย K = D8 ถ้าเคยต่อตาม <code>wiring_v12.png</code> แล้ว ใช้ตามนั้น)</span></dd>
+      </dl></div>
+  </section>
+
+  <section class="panel step">
+    <div class="ph"><img src="img/ds3231.png" alt="นาฬิกา DS3231"></div>
+    <div><h3><span class="num">8</span>นาฬิกา DS3231</h3>
+      <dl>
+        <dt>ตรงไหน</dt><dd>แปะหลังบอร์ดปุ่ม ฝั่งซ้าย (มองจากหน้า) จุดกลาง <code>x 23.5, y 113</code></dd>
+        <dt>หันยังไง</dt><dd>ด้านถ่านกระดุมหันเข้าหาซีกหลัง แถวขา 4 ขาหันไปทางขวา (หา PCF8574) · เว้นขาหัวต่อเหลือง 2×6 ด้านบนไว้ (ห่างขอบบนบอร์ดปุ่ม 12 มม.)</dd>
+        <dt>ยึดด้วย</dt><dd>เทปกันไฟฟ้าบนหลังบอร์ดปุ่ม แล้วเทปโฟมสองหน้า</dd>
+        <dt>ลึก</dt><dd>16–25 มม.</dd>
+        <dt>สาย</dt><dd>SDA ← W9 · SCL ← W10 · GND ← W11 · VCC ← W12 (3.3V) จากแผงรวมสาย</dd>
+      </dl></div>
+  </section>
+
+  <section class="panel step">
+    <div class="ph" style="color:#fff;font-weight:600;min-height:90px">PCF8574</div>
+    <div><h3><span class="num">9</span>PCF8574 (ตัวอ่านปุ่ม 7 ปุ่ม)</h3>
+      <dl>
+        <dt>ตรงไหน</dt><dd>แปะหลังบอร์ดปุ่ม ฝั่งขวา (มองจากหน้า) ข้าง DS3231 จุดกลาง <code>x 62, y 112</code></dd>
+        <dt>หันยังไง</dt><dd>ด้านชิปหันเข้าหาซีกหลัง · ขา IN (VCC GND SDA SCL) หันไปทางขวา · ขา P0–P7 หันลงหาแบต · จัมเปอร์ A0 A1 A2 ไว้ฝั่ง GND ทั้งหมด (= 0x20)</dd>
+        <dt>ยึดด้วย</dt><dd>เทปกันไฟฟ้า + เทปโฟมสองหน้า (เหมือน DS3231)</dd>
+        <dt>สาย</dt><dd>IN: SDA ← W5 · SCL ← W6 · GND ← W7 · VCC ← W8 (3.3V) · P0–P6 → ปุ่ม A B C D E F K (W27–W33 สายแพ 7 เส้น)</dd>
+      </dl></div>
+  </section>
+
+  <section class="panel step">
+    <div class="ph"><img src="img/perf.png" alt="แผ่นปรุทำแผงรวมสาย"></div>
+    <div><h3><span class="num">7</span>แผงรวมสาย (hub)</h3>
+      <dl>
+        <dt>ทำยังไง</dt><dd>ตัดแผ่นปรุให้เหลือ 30 × 20 มม. (12 × 8 รู) บัดกรีจุดต่อเป็นแถวยาว 4 ราง: <b>3V3 · GND · SDA · SCL</b> (ดู <code>hub_board.png</code>)</dd>
+        <dt>ตรงไหน</dt><dd>แปะหลังจอใหญ่ ฝั่งซ้าย (มองจากหน้า) จุดกลาง <code>x 27, y 69.5</code> ข้างแผ่นโฟมลำโพง</dd>
+        <dt>ยึดด้วย</dt><dd>เทปกันไฟฟ้าบนหลังจอใหญ่ก่อน แล้วเทปโฟมสองหน้า · ลึก 12.5–16.5 มม.</dd>
+        <dt>สาย</dt><dd>ขอบบน: เข้าจากปลั๊ก I2C จอใหญ่ (W1–W4) · ออกไปจอเล็ก (W13–W16), KY-022 (W17–W18), KY-005 (W19–W20)<br>ขอบล่าง: ออกไป PCF8574 (W5–W8), DS3231 (W9–W12), ไฟบอร์ดปุ่ม (W21–W22)<br>ไม่มีขาไหนต้องบัดกรีสาย 2 เส้น</dd>
+      </dl></div>
+  </section>
+
+  <section class="panel step">
+    <div class="ph"><img src="img/speaker.png" alt="ลำโพงวงรี"></div>
+    <div><h3><span class="num">13</span>ลำโพงวงรี 40 × 28</h3>
+      <dl>
+        <dt>ตรงไหน</dt><dd>หลังจอใหญ่ จุดกลาง <code>x 55, y 67.5</code> ตรงรูเสียง 15 รูของซีกหลัง</dd>
+        <dt>หันยังไง</dt><dd>หน้ากรวยหันออกไปทางซีกหลัง (ชิดรูเสียง) · ด้านยาว 40 มม. ขวางกล่อง</dd>
+        <dt>ยึดด้วย</dt><dd>แผ่นโฟม 18 × 18 สูงราว 9 มม. แปะบนหลังจอใหญ่ (ทับเทปกันไฟฟ้า) แล้ววางลำโพงบนโฟม · ลึก 21.5–31.5 มม. หน้าลำโพงห่างซีกหลัง 0.5 มม.</dd>
+        <dt>สาย</dt><dd>+ ← ปลั๊กลำโพง (W37) · − ← (W38) สาย 26 AWG</dd>
+      </dl></div>
+  </section>
+
+  <section class="panel step">
+    <div class="ph"><img src="img/battery.png" alt="แบต 18650 3000mAh"></div>
+    <div><h3><span class="num">6</span>แบต 18650 3000 mAh (มี BMS)</h3>
+      <dl>
+        <dt>ตรงไหน</dt><dd>ท้ายกล่อง ใต้บอร์ดปุ่ม นอนขวาง จุดกลาง <code>x 47, y 156.5</code></dd>
+        <dt>หันยังไง</dt><dd>นอนแนบหน้ากล่อง · <b>ปลายที่มีสายไฟ/BMS (หนา 24) ไว้ทางขวา</b> (มองจากหน้า = ฝั่งตรงข้าม USB-C) สายจะวิ่งขึ้นตามผนังขวา</dd>
+        <dt>ยึดด้วย</dt><dd>ตีนตุ๊กแก หรือเทปโฟมสองหน้า 2 จุด · ห่อหัว BMS ด้วยเทปกันไฟฟ้า</dd>
+        <dt>ลึก</dt><dd>2.5–26.5 มม. (เสา 7, 8 ซีกหลังตัดออกแล้วถึงพอ)</dd>
+        <dt>สาย</dt><dd>+ → สวิตช์ (W34, 24 AWG) · − → ปลั๊กแบตจอใหญ่ (W36, 24 AWG) · ⚠️ เช็คขั้ว + / − ของปลั๊กแบตบนจอก่อนเสียบ</dd>
+      </dl></div>
+  </section>
+
+  <h2>ผังสายไฟ</h2>
+  <section class="panel">
+    <figure class="fig"><img src="img/wiring_box.png" alt="ผังสายไฟในกล่อง"><figcaption>ทุกเส้นมีเลข W ตรงกับตารางด้านล่าง</figcaption></figure>
+    <p style="font-size:14px">สีที่แนะนำ: <span class="dot" style="background:#e53935"></span>3V3 แดง · <span class="dot" style="background:#212121"></span>GND ดำ · <span class="dot" style="background:#1e88e5"></span>SDA น้ำเงิน · <span class="dot" style="background:#f9a825"></span>SCL เหลือง · <span class="dot" style="background:#fb8c00"></span>IR ส้ม · <span class="dot" style="background:#8e24aa"></span>จอย ม่วง · <span class="dot" style="background:#43a047"></span>ปุ่ม เขียว</p>
+    <div class="tbl"><table>
+      <thead><tr><th>สาย</th><th>จาก</th><th>ถึง</th><th>สัญญาณ</th><th>ขนาด</th><th>ตัดยาว มม.</th></tr></thead>
+      <tbody>
+        <tr><td class="m">W1–W4</td><td>จอใหญ่ ปลั๊ก I2C</td><td>แผงรวมสาย ขอบบน</td><td>SDA · SCL · GND · 3V3</td><td class="m">28</td><td class="m">55</td></tr>
+        <tr><td class="m">W5–W8</td><td>แผงรวมสาย ขอบล่าง</td><td>PCF8574 ขา IN</td><td>SDA · SCL · GND · 3V3</td><td class="m">28</td><td class="m">130</td></tr>
+        <tr><td class="m">W9–W12</td><td>แผงรวมสาย ขอบล่าง</td><td>DS3231</td><td>SDA · SCL · GND · 3V3</td><td class="m">28</td><td class="m">95</td></tr>
+        <tr><td class="m">W13–W16</td><td>แผงรวมสาย ขอบบน</td><td>จอเล็ก</td><td>SDA · SCL · GND · 3V3</td><td class="m">28</td><td class="m">115</td></tr>
+        <tr><td class="m">W17–W18</td><td>แผงรวมสาย ขอบบน</td><td>KY-022 ตัวรับ</td><td>GND · 3V3</td><td class="m">28</td><td class="m">130</td></tr>
+        <tr><td class="m">W19–W20</td><td>แผงรวมสาย ขอบบน</td><td>KY-005 หลอดส่ง</td><td>GND · 3V3</td><td class="m">28</td><td class="m">85</td></tr>
+        <tr><td class="m">W21–W22</td><td>แผงรวมสาย ขอบล่าง</td><td>บอร์ดปุ่ม</td><td>GND · 3V3</td><td class="m">28</td><td class="m">95</td></tr>
+        <tr><td class="m">W23</td><td>จอใหญ่ ปลั๊กขยาย IO21</td><td>KY-005 ขา S</td><td>ยิงรีโมท</td><td class="m">28</td><td class="m">70</td></tr>
+        <tr><td class="m">W24</td><td>จอใหญ่ ปลั๊กขยาย IO14</td><td>KY-022 ขา S</td><td>รับรีโมท</td><td class="m">28</td><td class="m">90</td></tr>
+        <tr><td class="m">W25–W26</td><td>จอใหญ่ ปลั๊กขยาย IO2 / IO3</td><td>บอร์ดปุ่ม X / Y</td><td>แกนจอย</td><td class="m">28</td><td class="m">130</td></tr>
+        <tr><td class="m">W27–W33</td><td>PCF8574 P0–P6</td><td>ปุ่ม A B C D E F K</td><td>ปุ่ม 7 ปุ่ม</td><td class="m">28</td><td class="m">80</td></tr>
+        <tr><td class="m">W34</td><td>แบต + (ปลาย BMS)</td><td>สวิตช์</td><td>ไฟแบต</td><td class="m">24</td><td class="m">250</td></tr>
+        <tr><td class="m">W35</td><td>สวิตช์</td><td>จอใหญ่ ปลั๊กแบต +</td><td>ไฟแบต</td><td class="m">24</td><td class="m">70</td></tr>
+        <tr><td class="m">W36</td><td>แบต −</td><td>จอใหญ่ ปลั๊กแบต −</td><td>กราวด์แบต</td><td class="m">24</td><td class="m">220</td></tr>
+        <tr><td class="m">W37–W38</td><td>จอใหญ่ ปลั๊กลำโพง</td><td>ลำโพง + / −</td><td>เสียง</td><td class="m">26</td><td class="m">70</td></tr>
+      </tbody>
+    </table></div>
+    <p style="font-size:13px;color:var(--dim)">ความยาว = ทางเดินสายจริงในกล่อง + ปอกปลายละ 4 มม. + เผื่อ 15 มม. · ตำแหน่งปลั๊กหลังจอใหญ่ประมาณจากแบบผู้ผลิต อาจคลาด ±2 ซม. ดูชื่อบนบอร์ดจริงก่อน · ถ้าสายปลั๊กที่แถมมากับจอยาวพอ ต่อตรงเข้าโมดูลได้เลย</p>
+  </section>
+
+  <h2>ก่อนเปิดสวิตช์ครั้งแรก</h2>
+  <section class="panel">
+    <ol class="check">
+      <li>ไล่สาย 3V3 ทุกเส้น: ต้องไม่มีเส้นไหนไปขา 5V</li>
+      <li>สวิตช์ 3V/5V บนบอร์ดปุ่มอยู่ที่ 3V</li>
+      <li>ขั้วแบตตรงกับปลั๊กแบตบนจอ (+ ผ่านสวิตช์)</li>
+      <li>ไม่มีขาโลหะของบอร์ดชั้นหลังแตะกัน (มีเทปกันไฟฟ้าคั่นทุกชั้น)</li>
+      <li>เปิดสวิตช์ → จอเล็กขึ้น <code>FIRMWARE v13.1</code> → Settings → About: <code>Small screen 1.3 inch</code>, <code>Buttons OK (0x20)</code>, กดรีโมทแล้ว <code>IR receiver</code> เป็น <code>OK</code></li>
+    </ol>
+  </section>
+
+  <footer>สร้างจาก <code>case/make_box4.py</code> และ <code>make_box_harness4.py</code> (ตัวเลขตรงกับแม่แบบเจาะ <code>out_box4/drill_template.pdf</code>) · ภาพ 3 มิติ: https://claude.ai/artifact/QHp9WYyrmArYY3hwHa9M4r</footer>
+</div>
