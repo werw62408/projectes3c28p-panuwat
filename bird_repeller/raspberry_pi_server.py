@@ -2,9 +2,13 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.5
- ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.4
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.6
+ ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.5
 --------------------------------------------------------------------------
+ เปลี่ยนจาก v6.5 (รุ่นนี้):
+   - ปั๊มน้ำ 2 วิต่อครั้ง ทั้งปุ่มบนเว็บและรอบไล่ (บอร์ด v7.5) ประหยัดน้ำ
+     (ทดสอบจริง: ปั๊มดูดน้ำ 1 ลิตรหมดใน 30-40 วิ)
+
  เปลี่ยนจาก v6.4 (รุ่นนี้):
    - ยืนยันแบบใหม่: ตรวจทุก 5 วิตามปกติ เจอนกเฟรมแรกแล้วถ่ายเฟรมยืนยันใน 3 วิ
      เจอ 2 เฟรมติดกันถึงไล่ (เดิม 2 ใน 3 รอบ ต้องรอ ~10 วิ)
@@ -196,7 +200,7 @@ REPEL_COOLDOWN_S = 10
 REPEL_MAX_PER_HOUR = 20     # ไล่อัตโนมัติได้กี่ครั้งต่อชั่วโมง (กดปุ่มเองไม่นับ)
 MOTOR_STEP_MAX = 400
 PUMP_MS_MAX = 8000
-PUMP_BUTTON_MS = 5000       # ปุ่มปั๊มบนหน้าเว็บเปิดกี่ ms (รอบไล่ของบอร์ดตั้งไว้ในเฟิร์มแวร์ = 5 วิ)
+PUMP_BUTTON_MS = 2000       # ปุ่มปั๊มบนหน้าเว็บเปิดกี่ ms (รอบไล่ของบอร์ดตั้งไว้ในเฟิร์มแวร์ = 2 วิ)
 STEPS_PER_REV = 1600
 
 # ---------- ความปลอดภัยหน้าเว็บ ----------
@@ -1882,7 +1886,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
     </div>
     <div class="lbl">น้ำและไฟ</div>
     <div class="btns">
-      <button id="bPump">💧 ปั๊มน้ำ 5 วินาที</button>
+      <button id="bPump">💧 ปั๊มน้ำ <span id="pumpS">2</span> วินาที</button>
       <button id="bWater">📏 วัดระดับน้ำใหม่</button>
       <button id="bLamp">💡 ทดสอบไฟส้ม</button>
     </div>
@@ -2002,7 +2006,7 @@ const ERR_TH = {
   'ERR PUMP DUTY':'ใช้ปั๊มครบโควตา 10 นาทีแล้ว รอสักพัก',
   'ERR WATER EMPTY':'น้ำหมด (หรือเซนเซอร์น้ำเสีย) ปั๊มถูกล็อก',
   'ERR NO WATER SENSOR':'ยังไม่ได้ต่อเซนเซอร์ระดับน้ำ',
-  'ERR UNKNOWN':'บอร์ดไม่รู้จักคำสั่งนี้ (แฟลชเฟิร์มแวร์ v7.4 หรือยัง?)',
+  'ERR UNKNOWN':'บอร์ดไม่รู้จักคำสั่งนี้ (แฟลชเฟิร์มแวร์ v7.5 หรือยัง?)',
 };
 function thaiMsg(m){ return (m && ERR_TH[m.trim()]) || m || ''; }
 
@@ -2078,6 +2082,7 @@ async function tick(){
   $('duty').textContent = s.hw.pump_duty_left == null ? '-'
                         : (s.hw.pump_duty_left / 1000).toFixed(0) + ' วิ';
   $('rph').textContent = s.hw.repel_hour_left + ' ครั้ง';
+  if(s.pump_button_ms) $('pumpS').textContent = s.pump_button_ms / 1000;
 
   // ---- แถบเตือน ----
   const w = [];

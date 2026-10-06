@@ -109,7 +109,7 @@ def main_flow(page, sim):
     # ---------- ปั๊ม ----------
     page.click("#bPump")
     m = wait_msg(page, "OK PUMP", 3)
-    check("กดปั๊ม 5 วินาที -> OK", "OK PUMP 5000" in m, m)
+    check("กดปั๊ม 2 วินาที -> OK", "OK PUMP 2000" in m, m)
     page.click("#bPump")
     m = wait_msg(page, "ปั๊มเปิดอยู่แล้ว", 3)
     check("กดปั๊มซ้ำตอนปั๊มเปิดอยู่ -> ไม่ยืดเวลา", "ปั๊มเปิดอยู่แล้ว" in m, m)
@@ -156,11 +156,17 @@ def main_flow(page, sim):
 
     # ---------- ภาพย้อนหลัง ----------
     page.wait_for_selector("#hist .hi", timeout=5000)
-    src0 = page.evaluate("document.querySelector('#hist .hi img').src")
-    page.wait_for_timeout(2500)
-    same = page.evaluate("document.querySelector('#hist .hi img').src") == src0
+    # นับว่ารายการภาพถูกสร้างใหม่กี่ครั้งใน 4 วิ เทียบกับจำนวนครั้งที่มีภาพใหม่เข้ามาจริง
+    page.evaluate("""window._histBuilds = 0;
+        new MutationObserver(() => window._histBuilds++).observe(document.getElementById('hist'), {childList: true})""")
+    keys = set()
+    for _ in range(8):
+        keys.add(tuple(h["file"] for h in state(sim)["history"]))
+        page.wait_for_timeout(500)
+    builds = page.evaluate("window._histBuilds")
     n_before = page.evaluate("document.querySelectorAll('#hist .hi').length")
-    check("ภาพย้อนหลังไม่ถูกสร้างใหม่ทุกวินาที", same)
+    check(f"ภาพย้อนหลังสร้างใหม่เฉพาะตอนมีภาพเพิ่ม ({builds} ครั้ง / ภาพใหม่ {len(keys) - 1} ครั้ง)",
+          builds <= len(keys), (builds, len(keys)))
     page.click("#hist .hi")
     page.wait_for_function("!document.getElementById('lb').hidden && document.getElementById('lbImg').naturalWidth > 0",
                            timeout=4000)
