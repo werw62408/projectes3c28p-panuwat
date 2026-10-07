@@ -78,11 +78,13 @@ IR_Y0 = 12.0
 irtx_c = (IX0 + 1.5 + IR_TX[0] / 2, IR_Y0 + IR_TX[1] / 2)
 irrx_c = (IX1 - 1.5 - IR_RX[0] / 2, IR_Y0 + IR_RX[1] / 2)
 IR_LED_X = 9.0                                         # the LED is bent up to the top wall, left of front post 1
-sw_y = scr_c[1] - SCR["h"] / 2 - 0.8 - SW[0] / 2     # rocker switch in the left wall, just above the big screen (over the IR LED board's lower end)
+# rocker switch in the BOTTOM wall, left corner (the side walls have latch tabs at 38-49 and 143-155 from the top)
+sw_x = IX0 + 0.5 + SW_SLOT[0] / 2
+sw_y = IY1 - SW[2] / 2
 # behind the button board: battery, clock, PCF8574 on double-sided foam (over a sheet of insulating tape)
-batt_c = (MIDX, na_top + NA["h"] + 1.0 + BATT[1] / 2)   # across the bottom strip, between the corner posts
+batt_c = (sw_x + SW_SLOT[0] / 2 + 1.0 + BATT[0] / 2, na_top + NA["h"] + 1.0 + BATT[1] / 2)   # across the bottom strip, right of the switch; its wire end on the LEFT (next to the switch)
 # (the clock starts 12 mm down: the NA011's yellow 2x6 pin block, where its wires are soldered, stays free above it)
-HDR = (74.0, 6.0)          # MEASURE: middle of the yellow 2x6 block, from the NA011's left and top edge
+HDR = (52.0, 8.0)          # the solder pads V G A B C D E F K 3 X Y (2 x 6, left of the yellow block; owner's photo 7 Oct), from the NA011's left and top edge
 ds_c = (na_left + 1.0 + DS3231[0] / 2, na_top + 12.0 + DS3231[1] / 2)
 pcf_c = (ds_c[0] + DS3231[0] / 2 + 2.0 + PCF[0] / 2, na_top + 12.0 + PCF[1] / 2)
 hub_c = (scr_c[0] - 20.0, scr_c[1] + 6.0)                 # behind the big screen, left of the speaker (seen from the front)
@@ -105,7 +107,7 @@ def boxes():
     P.append(("PCF8574", *pcf_c, PCF[0], PCF[1], Z_BEHIND, Z_BEHIND + PCF[2], "#7a4fb0"))
     P.append(("IR LED board", *irtx_c, IR_TX[0], IR_TX[1], FACE, FACE + 1.5, "#c94c4c"))
     P.append(("IR receiver board", *irrx_c, IR_RX[0], IR_RX[1], FACE, FACE + 1.5, "#d98a3a"))
-    P.append(("switch", IX0 + SW[2] / 2, sw_y, SW[2], SW[0], 9.0 - SW[1] / 2, 9.0 + SW[1] / 2, "#e0c040"))
+    P.append(("switch", sw_x, sw_y, SW[0], SW[2], 9.0 - SW[1] / 2, 9.0 + SW[1] / 2, "#e0c040"))
     P.append(("speaker", *spk_c, SPK[0], SPK[1], SPK_Z0, SPK_Z0 + SPK[2], "#4a90d9"))
     P.append(("speaker foam pad", *spk_c, 18.0, 18.0, Z_SCR_BACK + 0.5, SPK_Z0, "#d8d0b8"))
     return P
@@ -147,8 +149,9 @@ def lid_cuts():
 def wall_cuts():
     """(wall, name, along, z, a, b): wall 'L' (along = y from the top edge) or 'T' (along = x from the left edge);
     z = from the FACE side edge of the wall; rect a (along) x b (z)"""
+    # wall 'B' = bottom wall, along = x from the left edge
     return [("L", "USB-C plug", scr_c[1], FACE + SCR["usb_z"], 12.5, 7.5),
-            ("L", "rocker switch", sw_y, 9.0, *SW_SLOT),
+            ("B", "rocker switch", sw_x, 9.0, *SW_SLOT),
             ("T", "IR LED (round 5.4)", IR_LED_X, FACE + 1.5 + 2.7, 5.4, 5.4),
             ("T", "IR receiver", irrx_c[0], FACE + 1.5 + 4.0, 7.0, 7.5)]
 
@@ -226,7 +229,7 @@ def template(path):
         ax.add_patch(Rectangle((lx, ly), SEAM, BOX_H, fill=False, lw=1.0))
         ax.text(lx + SEAM / 2, ly + BOX_H + 4, "LEFT wall (front half)", ha="center", fontsize=8, weight="bold")
         ax.text(lx - 3, ly + BOX_H / 2, "face side", rotation=90, ha="center", va="center", fontsize=6.5)
-        ax.text(lx + SEAM / 2, ly - 5, "bottom end (button board)", ha="center", fontsize=6)
+        ax.text(lx + SEAM / 2, ly - 5, "bottom end (button board, switch)", ha="center", fontsize=6)
         ax.text(lx + SEAM / 2, ly + BOX_H + 9, "top end (screw posts)", ha="center", fontsize=6)
         for w, n, along, z, a, b in wall_cuts():
             if w != "L": continue
@@ -245,6 +248,16 @@ def template(path):
             ly2 = ty + SEAM + 12 + i * 7                     # labels one under the other, with a leader line
             cross(ax, X, Y); ax.plot([X, X], [Y + b / 2, ly2 - 1.5], color="gray", lw=0.4)
             ax.text(X + 1.5, ly2, f"{n}: {along:.1f} from left, {z:.1f} from face", fontsize=5.5, va="center")
+        # bottom wall of the front half (seen from below, face side down)
+        bx, by = 100, 297 - 120
+        ax.add_patch(Rectangle((bx, by), BOX_W, SEAM, fill=False, lw=1.0))
+        ax.text(bx + BOX_W / 2, by + SEAM + 4, "BOTTOM wall of the front half (seen from below, face side down)", ha="center", fontsize=8, weight="bold")
+        ax.text(bx + BOX_W / 2, by - 4, "face side   (left edge of the drawing = left edge of the face)", ha="center", fontsize=6.5)
+        for w, n, along, z, a, b in wall_cuts():
+            if w != "B": continue
+            X, Y = bx + along, by + z
+            ax.add_patch(Rectangle((X - a / 2, Y - b / 2), a, b, fill=False, lw=0.8, color="tab:blue")); cross(ax, X, Y)
+            ax.text(X + a / 2 + 2, Y, f"{n}: {a:g} x {b:g}, centre {along:.1f} from left, {z:.1f} from face", fontsize=5.5, va="center")
         ax.text(tx, 160, f"Box as measured: {BOX_W:g} x {BOX_H:g}, closed {BOX_D:g}.\nFront half 16 outside / 14 inside, back half 19 / 16.5.\n"
                 "All wall holes are in the FRONT half (under 16 mm).\n\nBack half: cut posts 7 and 8 (the two at the\nbottom end) down to 7 mm high: the battery lies under them.", fontsize=7, va="top")
         ax.plot([55, 155], [16, 16], color="k", lw=1); ax.text(105, 10, "100 mm", ha="center", fontsize=7)
@@ -270,7 +283,7 @@ def drill_list(path):
         L.append(f"  face  {n:22s} centre x {cx:6.1f}  y {cy:6.1f}   " + (f"{a:.1f} x {b:.1f} rect" if kind == "rect" else f"diameter {a:.1f}"))
     L.append("")
     for w, n, along, z, a, b in wall_cuts():
-        L.append(f"  {'left' if w == 'L' else 'top '} wall {n:18s} {'y' if w == 'L' else 'x'} {along:6.1f}  from face {z:5.1f}   {a:.1f} x {b:.1f}")
+        L.append(f"  {dict(L='left', T='top ', B='bottom')[w]} wall {n:18s} {'y' if w == 'L' else 'x'} {along:6.1f}  from face {z:5.1f}   {a:.1f} x {b:.1f}")
     L += ["", "  LID, looking at the BACK: x from the LEFT edge of the lid as you see it from behind, y from the top (small screen end)"]
     for kind, n, cx, cy, a, b in lid_cuts():
         L.append(f"  lid   {n:22s} centre x {BOX_W - cx:6.1f}  y {cy:6.1f}   diameter {a:.1f}")
@@ -311,13 +324,13 @@ def asm_json(path):
         ("ช่อง USB-C (ชาร์จ / แฟลช)", at("USB-C"), "ผนังซ้าย ตรงกลางจอใหญ่ · หัวช่องเสียบอยู่ในรูผนังพอดี"),
         ("บอร์ดปุ่ม NA011", at("NA011 button board"), "ล่าง · น็อต M3 2 ตัว + เสารอง 10 มม. · ปุ่มสี A B C D ขวา, E F กลาง"),
         ("จอย (โผล่ 17.5 มม.)", (X(jx), Y(jy), knob_z + 3), "ซ้ายล่าง ติดกับบอร์ดปุ่ม · รูหน้ากล่อง 28 มม. ให้โยกได้"),
-        ("แบต 18650 3000mAh (มี BMS)", at("18650 battery"), "ท้ายกล่อง ใต้บอร์ดปุ่ม นอนขวาง · ตีนตุ๊กแก · ตัดเสา 7, 8 ของซีกหลังออก"),
+        ("แบต 18650 3000mAh (มี BMS)", at("18650 battery"), "ท้ายกล่อง ใต้บอร์ดปุ่ม นอนขวาง ปลายสายไฟไว้ซ้าย (ติดสวิตช์) · ตีนตุ๊กแก · ตัดเสา 7, 8 ของซีกหลังออก"),
         ("แผงรวมสาย (hub)", at("hub board"), "หลังจอใหญ่ · ราง 3V3 / GND / SDA / SCL · เทปโฟม ทับเทปกันไฟฟ้า"),
         ("นาฬิกา DS3231", at("DS3231 clock"), "หลังบอร์ดปุ่ม ซ้าย (มองจากหน้า) · เทปโฟม ทับเทปกันไฟฟ้า"),
         ("PCF8574 (ตัวอ่านปุ่ม 7 ปุ่ม)", at("PCF8574"), "หลังบอร์ดปุ่ม ขวา (ใต้ขาเหลือง) · เทปโฟม ทับเทปกันไฟฟ้า"),
         ("หลอดส่ง IR KY-005 (รีโมทแอร์)", at("IR LED board"), "ซ้ายบน ใต้เสาน็อต วางราบ · งอขาหลอดให้ชี้ออกรูผนังบน (ซ้ายของเสา)"),
         ("ตัวรับ IR KY-022 (เรียนรู้รีโมท)", at("IR receiver board"), "ขวาบน ใต้เสาน็อต วางราบ · ตัวรับมองออกช่องผนังบน (ขวาของเสา)"),
-        ("สวิตช์กระดก", at("switch"), "ผนังซ้ายด้านบน ใต้บอร์ด IR · ใส่ช่อง 12.5 × 9 กดล็อกเอง"),
+        ("สวิตช์กระดก", at("switch"), "ผนังล่าง มุมซ้าย ข้างปลายแบต · ใส่ช่อง 12.5 × 9 กดล็อกเอง"),
         ("ลำโพง 40×28", at("speaker"), "หลังจอใหญ่ บนแผ่นโฟม · หน้าลำโพงชิดซีกหลัง ตรงรูเสียง 15 รู"),
     ]
     # free room left inside (for extras later): (name, cx, cy, w, h, z0, z1) in face coordinates

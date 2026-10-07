@@ -27,31 +27,34 @@ TOPY = M.OLED_TOP + M.OLED["h"] + 3.0                      # the gap between the
 hx, hy = M.na(M.HDR)
 
 hubx, huby = M.hub_c
+# the plugs on the back of the big screen, from the owner's photo (7 Oct 2026). With the USB-C at the left wall:
+# I2C, expansion (IO2 IO3 IO14 IO21) and SPEAKER along its BOTTOM edge (towards the button board), BAT on its TOP edge
+PB, PT = SB - 3, T + 3
 P = {
-    "ES_I2C": (cx - 25, T + 3, ZP), "ES_EXP": (cx - 14, T + 3, ZP), "ES_BAT": (cx - 3, T + 3, ZP), "ES_SPK": (cx + 7, T + 3, ZP),
+    "ES_I2C": (54.0, PB, ZP), "ES_EXP": (72.0, PB, ZP), "ES_SPK": (40.0, PB, ZP), "ES_BAT": (27.5, PT, ZP),
     "HUB": (hubx, huby, ZH), "HUB_T": (hubx, huby - M.HUB[1] / 2 + 2, ZH), "HUB_B": (hubx, huby + M.HUB[1] / 2 - 2, ZH),
     "PCF_IN": (M.pcf_c[0] + 15, M.pcf_c[1], ZM), "PCF_P": (M.pcf_c[0], M.pcf_c[1] + 7, ZM),
     "DS_4": (M.ds_c[0] + 16, M.ds_c[1], ZM),
     "OLED": (M.oled_c[0], M.OLED_TOP + 2.5, ZO),
     "IRRX": (M.irrx_c[0], M.irrx_c[1] + M.IR_RX[1] / 2 - 2.5, M.FACE + 2.5),
     "IRTX": (M.irtx_c[0], M.irtx_c[1] + M.IR_TX[1] / 2 - 2.5, M.FACE + 2.5),
-    "SW": (M.IX0 + M.SW[2] + 0.5, M.sw_y, 9.0),
+    "SW": (M.sw_x, M.IY1 - M.SW[2] - 0.5, 9.0),
     "HDR": (hx, hy, M.NA_BACK),
-    "BAT": (M.batt_c[0] + M.BATT[0] / 2 - 3, M.batt_c[1] - 4, M.FACE + 0.5 + M.BATT[2] - 3),   # BMS end, on the right seen from the front
-    "SPK": (M.spk_c[0] - 6, M.spk_c[1], M.SPK_Z0 + 2),
+    "BAT": (M.batt_c[0] - M.BATT[0] / 2 + 3, M.batt_c[1] - 4, M.FACE + 0.5 + M.BATT[2] - 3),   # wire end, on the LEFT next to the switch
 }
 def p(name): return P[name]
 LX = M.pcf_c[0] + 15                                       # the run down to the PCF8574 IN pins
-RX = M.IX1 - 4                                             # a lane along the right inside wall (seen from the front)
+LL = M.IX0 + 4                                             # a lane along the left inside wall (seen from the front)
 
 def bus(ids, a, b, rails=("SDA", "SCL", "GND", "3V3")):
     col = {"SDA": "#1e88e5", "SCL": "#f9a825", "GND": "#212121", "3V3": "#e53935"}
     return [(w, r, col[r], 28, a, b) for w, r in zip(ids, rails)]
 up = lambda x: [(hubx, P["HUB_T"][1], ZS), (hubx, TOPY, ZS), (x, TOPY, ZS)]
+to_bat_plug = [(LL, GAPY, ZS), (LL, T - 1, ZS), (P["ES_BAT"][0], T - 1, ZS), (P["ES_BAT"][0], PT, ZS), p("ES_BAT")]
 # bundles: (name, label colour, [(wire, signal, colour, AWG, from, to)], path)
 B = [
-    ("I2C in: screen > hub", "#1565c0", bus(["W1", "W2", "W3", "W4"], "ES_I2C", "HUB_T"),
-     [p("ES_I2C"), (P["ES_I2C"][0], T + 3, ZS), (P["ES_I2C"][0], P["HUB_T"][1], ZS), (hubx, P["HUB_T"][1], ZS), p("HUB_T")]),
+    ("I2C in: screen > hub", "#1565c0", bus(["W1", "W2", "W3", "W4"], "ES_I2C", "HUB_B"),
+     [p("ES_I2C"), (P["ES_I2C"][0], PB, ZS), (P["ES_I2C"][0], P["HUB_B"][1], ZS), (hubx, P["HUB_B"][1], ZS), p("HUB_B")]),
     ("hub > PCF8574", "#1565c0", bus(["W5", "W6", "W7", "W8"], "HUB_B", "PCF_IN"),
      [p("HUB_B"), (hubx, P["HUB_B"][1], ZS), (hubx, GAPY, ZS), (LX, GAPY, ZS), (LX, GAPY, ZT), (LX, P["PCF_IN"][1], ZT), p("PCF_IN")]),
     ("hub > clock", "#1565c0", bus(["W9", "W10", "W11", "W12"], "HUB_B", "DS_4"),
@@ -66,36 +69,32 @@ B = [
      [p("HUB_B"), (hubx, P["HUB_B"][1], ZS), (hubx, GAPY, ZS), (hx - 4, GAPY, ZS), (hx - 4, hy, ZS), (hx - 4, hy, M.NA_BACK)]),
     ("IR signals", "#e65100",
      [("W23", "IO21 > IR LED S", "#fb8c00", 28, "ES_EXP", "IRTX"), ("W24", "IO14 > IR receiver S", "#ffb74d", 28, "ES_EXP", "IRRX")],
-     [p("ES_EXP"), (P["ES_EXP"][0], TOPY, ZP), (P["IRTX"][0] - 2, TOPY, ZP), (P["IRTX"][0] - 2, P["IRTX"][1], ZO + 2), p("IRTX")]),
+     [p("ES_EXP"), (P["ES_EXP"][0], PB, ZS), (P["ES_EXP"][0], TOPY, ZS), (P["IRTX"][0] - 2, TOPY, ZS), (P["IRTX"][0] - 2, P["IRTX"][1], ZO + 2), p("IRTX")]),
     ("stick X / Y", "#6a1b9a",
      [("W25", "IO2 > X", "#8e24aa", 28, "ES_EXP", "HDR"), ("W26", "IO3 > Y", "#6a1b9a", 28, "ES_EXP", "HDR")],
-     [p("ES_EXP"), (P["ES_EXP"][0], T + 3, ZS), (P["ES_EXP"][0] + 4, GAPY - 1, ZS), (hx, GAPY - 1, ZS), (hx, hy, ZS), p("HDR")]),
+     [p("ES_EXP"), (P["ES_EXP"][0], PB, ZS), (P["ES_EXP"][0], GAPY - 1, ZS), (hx, GAPY - 1, ZS), (hx, hy, ZS), p("HDR")]),
     ("buttons (7-wire ribbon)", "#2e7d32",
      [(f"W{27 + k}", f"P{k} > {n}", "#43a047", 28, "PCF_P", "HDR") for k, n in enumerate("ABCDEFK")],
      [p("PCF_P"), (P["PCF_P"][0], P["PCF_P"][1], ZT), (P["PCF_P"][0] + 6, hy + 4, ZT), (hx, hy + 4, ZT), (hx, hy + 4, M.NA_BACK + 1), p("HDR")]),
-    ("battery > switch > screen", "#c62828",
-     [("W34", "BAT + > switch", "#c62828", 24, "BAT", "SW"), ("W36", "BAT -", "#424242", 24, "BAT", "ES_BAT")],
-     [p("BAT"), (RX, P["BAT"][1], P["BAT"][2]), (RX, P["BAT"][1], ZT), (RX, GAPY, ZT), (RX, GAPY, ZS), (P["ES_BAT"][0] + 2, GAPY, ZS),
-      (P["ES_BAT"][0] + 2, T - 1, ZS), (P["ES_BAT"][0], T - 1, ZS), (P["ES_BAT"][0], T + 3, ZS), p("ES_BAT")]),
+    ("battery + > switch", "#c62828",
+     [("W34", "BAT + > switch", "#c62828", 24, "BAT", "SW")],
+     [p("BAT"), (P["SW"][0], P["BAT"][1], P["BAT"][2]), (P["SW"][0], P["SW"][1], 9.0), p("SW")]),
     ("switch > screen", "#c62828",
      [("W35", "switch > BAT + (plug)", "#c62828", 24, "SW", "ES_BAT")],
-     [p("SW"), (P["SW"][0], P["SW"][1], 12), (P["SW"][0], TOPY, 12), (P["ES_BAT"][0], TOPY, 12), (P["ES_BAT"][0], T + 3, ZP), p("ES_BAT")]),
-    ("speaker", "#616161",
-     [("W37", "SPK +", "#9e9e9e", 26, "ES_SPK", "SPK"), ("W38", "SPK -", "#616161", 26, "ES_SPK", "SPK")],
-     [p("ES_SPK"), (P["ES_SPK"][0], T + 3, ZS), (P["ES_SPK"][0], P["SPK"][1], ZS), (P["SPK"][0], P["SPK"][1], ZS), p("SPK")]),
+     [p("SW"), (P["SW"][0], P["SW"][1], ZT), (LL, P["SW"][1], ZT), (LL, GAPY, ZT)] + to_bat_plug),
+    ("battery - > screen", "#424242",
+     [("W36", "BAT -", "#424242", 24, "BAT", "ES_BAT")],
+     [p("BAT"), (P["BAT"][0], P["BAT"][1], ZT), (LL, P["BAT"][1], ZT), (LL, GAPY, ZT)] + to_bat_plug),
 ]
-# W34 does not end at the plug: from the lane behind the screen it turns off to the switch
-W30_TAIL = [(P["ES_BAT"][0] + 2, T - 1, ZS), (P["SW"][0] + 1, T - 1, ZS), (P["SW"][0] + 1, P["SW"][1], 12), p("SW")]
-J = []    # no two-wire joints any more: the hub takes them
+J = []    # no two-wire joints: the hub takes them
 S = [("S1", "ES_I2C", "I2C plug lead x4 <-> W1-W4"), ("S2", "ES_EXP", "expansion plug lead: IO21 W23, IO14 W24, IO2 W25, IO3 W26"),
-     ("S3", "ES_BAT", "battery plug lead: + W35, - W36"), ("S4", "ES_SPK", "speaker plug lead: W37 / W38")]
+     ("S3", "ES_BAT", "battery plug lead: + W35, - W36"), ("S4", "ES_SPK", "the speaker has its own plug: straight into SPEAKER (no wires to cut)")]
 
 def plen(path): return sum(math.dist(path[i], path[i + 1]) for i in range(len(path) - 1))
 def cut(mm): return int(math.ceil((mm + 8 + 15) / 5.0) * 5)
 def length(bundle, w):
     path = bundle[3]
-    if w[0] == "W34": i = path.index(W30_TAIL[0]); path = path[:i + 1] + W30_TAIL[1:]
-    if w[0] == "W24": path = bundle[3][:-3] + [(P["IRRX"][0] - 2, TOPY, ZP), (P["IRRX"][0] - 2, P["IRRX"][1], ZO + 2), p("IRRX")]
+    if w[0] == "W24": path = bundle[3][:-3] + [(P["IRRX"][0] - 2, TOPY, ZS), (P["IRRX"][0] - 2, P["IRRX"][1], ZO + 2), p("IRRX")]
     return plen(path), path
 
 rows, wires3d = [], []
@@ -108,8 +107,8 @@ rows.sort(key=lambda r: int(r[0][1:]))
 NAMES = {"ES_I2C": "จอใหญ่ ปลั๊ก I2C", "ES_EXP": "จอใหญ่ ปลั๊กขยาย", "ES_BAT": "จอใหญ่ ปลั๊กแบต", "ES_SPK": "จอใหญ่ ปลั๊กลำโพง",
          "HUB_T": "แผงรวมสาย (ขอบบน)", "HUB_B": "แผงรวมสาย (ขอบล่าง)",
          "PCF_IN": "PCF8574 ขา IN", "PCF_P": "PCF8574 ขา P0-P6", "DS_4": "DS3231 หัว 4 ขา",
-         "OLED": "จอเล็ก", "IRRX": "ตัวรับ IR (KY-022)", "IRTX": "หลอดส่ง IR (KY-005)", "SW": "สวิตช์", "HDR": "NA011 ขาเหลือง",
-         "BAT": "แบต 18650 (ปลาย BMS)", "SPK": "ลำโพง"}
+         "OLED": "จอเล็ก", "IRRX": "ตัวรับ IR (KY-022)", "IRTX": "หลอดส่ง IR (KY-005)", "SW": "สวิตช์", "HDR": "บอร์ดปุ่ม ช่อง V G A–F K X Y",
+         "BAT": "แบต 18650 (ปลายสาย)", "SPK": "ลำโพง"}
 
 def cut_list(path):
     L = ["# SomudTick กล่องจริงสีเทา (แบบ 4: 172 × 94 × 34.5 สองซีก): ตัดสาย", "",
@@ -171,11 +170,11 @@ PANELS = [
     ("1  POWER + I2C (all through the HUB)", CABLE_COL := ["#1565c0", "#00897b", "#6a1b9a", "#ef6c00", "#2e7d32", "#ad1457", "#5d4037"], ["hub > small screen", "hub > IR receiver (power)", "hub > IR LED (power)", "I2C in: screen > hub",
                                              "hub > clock", "hub > button board power", "hub > PCF8574"]),
     ("2  SIGNALS (stick, buttons, IR)", ["#6a1b9a", "#2e7d32", "#ef6c00"], ["stick X / Y", "buttons (7-wire ribbon)", "IR signals"]),
-    ("3  BATTERY + SPEAKER", ["#c62828", "#ef6c00", "#616161"], ["battery > switch > screen", "switch > screen", "speaker"]),
+    ("3  BATTERY + SWITCH", ["#c62828", "#ef6c00", "#424242"], ["battery + > switch", "switch > screen", "battery - > screen"]),
 ]
 SHORT = {"ES_I2C": "screen I2C plug", "ES_EXP": "screen EXP plug", "ES_BAT": "screen BAT plug", "ES_SPK": "screen SPK plug",
          "HUB_T": "hub (top edge)", "HUB_B": "hub (bottom edge)", "PCF_IN": "PCF8574 IN", "PCF_P": "PCF8574 P0-P6", "DS_4": "DS3231 4-pin",
-         "OLED": "small screen", "IRRX": "IR receiver", "IRTX": "IR LED", "SW": "switch", "HDR": "NA011 yellow pins", "BAT": "18650 (BMS end)", "SPK": "speaker"}
+         "OLED": "small screen", "IRRX": "IR receiver", "IRTX": "IR LED", "SW": "switch", "HDR": "button pads V G A-F K X Y", "BAT": "18650 (wire end)", "SPK": "speaker"}
 
 def drawing_easy(outpath):
     import matplotlib; matplotlib.use("Agg")
@@ -221,7 +220,7 @@ def drawing_easy(outpath):
         for j, (col, t) in enumerate(notes):
             ax.text(-2, -6 - j * 7.8, t, fontsize=7, color="#222", va="top", family="monospace")
             ax.add_patch(Rectangle((-4, -6 - j * 7.8 - 2.6), 1.4, 2.6, fc=col, ec="none"))
-    fig.suptitle("SomudTick box (layout 2): wires seen from the BACK, lid off (left and right are swapped compared with the front)\n"
+    fig.suptitle("SomudTick grey box (layout 4): wires seen from the BACK, lid off (left and right are swapped compared with the front)\n"
                  "one thick line = one cable (2-7 wires together); the circled number matches the list under each panel; cut lengths are in cut_list.md",
                  fontsize=10)
     fig.tight_layout(rect=(0, 0, 1, 0.95)); fig.savefig(outpath, dpi=100); plt.close(fig)

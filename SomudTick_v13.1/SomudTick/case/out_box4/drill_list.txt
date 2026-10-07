@@ -17,7 +17,7 @@ SomudTick box - holes (mm). Face: x from the LEFT edge, y from the TOP edge (loo
   face  M3 buttons             centre x   86.3  y  108.0   diameter 3.2
 
   left wall USB-C plug         y   63.5  from face   9.4   12.5 x 7.5
-  left wall rocker switch      y   31.7  from face   9.0   12.5 x 9.0
+  bottom wall rocker switch      x    9.2  from face   9.0   12.5 x 9.0
   top  wall IR LED (round 5.4) x    9.0  from face   6.2   5.4 x 5.4
   top  wall IR receiver        x   82.5  from face   7.5   7.0 x 7.5
 
