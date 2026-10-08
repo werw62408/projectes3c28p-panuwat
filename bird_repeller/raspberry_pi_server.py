@@ -2,10 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.7
- ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.6 (ไฟส้มค้าง 5 วิ)
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.8
+ ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.7 (กวาดช้าลง ไม่ชนขอบ)
 --------------------------------------------------------------------------
- เปลี่ยนจาก v6.6 (รุ่นนี้):
+ เปลี่ยนจาก v6.7 (รุ่นนี้):
+   - ตั้งความกว้างและความเร็วการกวาดตอนไล่นกได้จากหน้าเว็บ (การ์ด "ควบคุมด้วยมือ")
+     พร้อมปุ่มทดสอบกวาดโดยไม่ฉีดน้ำ ไว้หาค่าที่หัวฉีดไม่ชนขอบ (ต้องใช้บอร์ด v7.7)
+
+ เปลี่ยนจาก v6.6:
    - เฟรมยืนยันใช้เกณฑ์ 0.20 (เฟรมแรกยังต้อง 0.30) ซ้อมระบบแล้วพบว่านกที่คะแนน
      ก้ำกึ่ง 0.30-0.35 เฟรมยืนยันได้ 0.297 พลาดซ้ำ ๆ จนไม่ไล่
 
@@ -207,6 +211,9 @@ AUTO_REPEL_DEFAULT = True
 REPEL_COOLDOWN_S = 10
 REPEL_MAX_PER_HOUR = 20     # ไล่อัตโนมัติได้กี่ครั้งต่อชั่วโมง (กดปุ่มเองไม่นับ)
 MOTOR_STEP_MAX = 400
+# ช่วงที่ตั้งการกวาดตอนไล่ได้ (ต้องตรงกับ REPEL_SWEEP_*/REPEL_SPEED_* ในเฟิร์มแวร์)
+SWEEP_DEG_MIN, SWEEP_DEG_MAX = 10, 80
+SWEEP_SPD_MIN, SWEEP_SPD_MAX = 10, 100
 PUMP_MS_MAX = 8000
 PUMP_BUTTON_MS = 2000       # ปุ่มปั๊มบนหน้าเว็บเปิดกี่ ms (รอบไล่ของบอร์ดตั้งไว้ในเฟิร์มแวร์ = 2 วิ)
 STEPS_PER_REV = 1600
@@ -700,7 +707,7 @@ class Controller:
 
         up = cmd.strip().upper()
         ok = not line.startswith("ERR")
-        if ok and (up == "REPEL" or (up.startswith("MOT") and up not in ("MOT STOP", "MOT ZERO"))):
+        if ok and (up.startswith("REPEL") or (up.startswith("MOT") and up not in ("MOT STOP", "MOT ZERO"))):
             # STAT รอบถัดไปอาจยังไม่ทันบอกว่ากำลังหมุน กันไม่ให้ถ่ายภาพตอนแกนยังหมุน
             self.motion_until = time.time() + 1.0
         if not up.startswith("STAT"):
@@ -739,6 +746,9 @@ class Controller:
                 self.hw["pir_stuck"] = vals.get("PSTK") == "1"
                 self.hw["pir_glitch"] = int(vals.get("PIRG", 0))
                 self.hw["pir_ignored"] = int(vals.get("PIRI", 0))
+                # v7.7 ขึ้นไป: การกวาดตอนไล่ (รุ่นเก่าไม่มี = None ซ่อนตัวปรับบนเว็บ)
+                self.hw["sweep_deg"] = int(vals["SWP"]) if "SWP" in vals else None
+                self.hw["sweep_spd"] = int(vals["RSP"]) if "RSP" in vals else None
             except ValueError:
                 pass
 
@@ -1524,6 +1534,24 @@ def api_repel():
     return jsonify(ok=ok, msg=line)
 
 
+@app.route("/api/sweep", methods=["POST"])
+def api_sweep():
+    """ตั้งการกวาดตอนไล่ {deg, spd} หรือ {test: true} = กวาดหนึ่งรอบโดยไม่ฉีดน้ำ"""
+    data = request.get_json(silent=True) or {}
+    if data.get("test"):
+        ok, line = CTRL.send("REPEL TEST", timeout=5.0)
+        return jsonify(ok=ok, msg="กำลังทดสอบกวาด (ไม่ฉีดน้ำ)" if ok else line)
+    try:
+        deg = int(data.get("deg"))
+        spd = int(data.get("spd"))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, msg="ค่าไม่ถูกต้อง"), 400
+    if not (SWEEP_DEG_MIN <= deg <= SWEEP_DEG_MAX and SWEEP_SPD_MIN <= spd <= SWEEP_SPD_MAX):
+        return jsonify(ok=False, msg="ค่าเกินช่วงที่ตั้งได้"), 400
+    ok, line = CTRL.send(f"RCFG {deg} {spd}")
+    return jsonify(ok=ok, msg=f"บันทึกการกวาด ±{deg}° ความเร็ว {spd}%" if ok else line)
+
+
 @app.route("/api/bird_lamp", methods=["POST"])
 def api_bird_lamp():
     """ปุ่มทดสอบไฟส้ม"""
@@ -1898,6 +1926,16 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <button id="mS">■ หยุดหมุน</button>
       <button id="mZ">⌖ ตั้งตรงนี้เป็นจุดกลาง</button>
     </div>
+    <div id="swBox" hidden>
+      <div class="lbl">การกวาดตอนไล่นก</div>
+      <div class="sl"><span>กว้างข้างละ</span><input type="range" id="swDeg" min="10" max="80" step="5"><b id="swDegV"></b></div>
+      <div class="sl"><span>ความเร็ว</span><input type="range" id="swSpd" min="10" max="100" step="5"><b id="swSpdV"></b></div>
+      <div class="row">
+        <button class="pri" id="swSave">บันทึกการกวาด</button>
+        <button id="swTest">↔ ทดสอบกวาด (ไม่ฉีดน้ำ)</button>
+      </div>
+      <div class="msg" id="swNote">ถ้าหัวฉีดชนขอบ ให้ลดความกว้าง ถ้าเหวี่ยงแรงหรือสะดุด ให้ลดความเร็ว</div>
+    </div>
     <div class="lbl">น้ำและไฟ</div>
     <div class="btns">
       <button id="bPump">💧 ปั๊มน้ำ <span id="pumpS">2</span> วินาที</button>
@@ -2133,6 +2171,10 @@ async function tick(){
   }
   $('vb').textContent  = s.hw.vbat > 2 ? s.hw.vbat.toFixed(2) + ' V' : '-';
   $('deg').textContent = s.hw.deg + '°' + (s.hw.pos_ok === false ? ' ?' : '');
+  $('swBox').hidden = s.hw.sweep_deg == null;
+  if(s.hw.sweep_deg != null && !swDirty){
+    $('swDeg').value = s.hw.sweep_deg; $('swSpd').value = s.hw.sweep_spd; swShow();
+  }
   $('brd').textContent = s.hw.link ? 'เชื่อมต่อแล้ว' : 'ไม่ได้เชื่อมต่อ';
   $('brd').style.color = s.hw.link ? 'var(--ok)' : 'var(--bad)';
   $('rdy').textContent = ready ? 'ติด (พร้อม)' : 'ดับ (กำลังเตรียม)';
@@ -2347,6 +2389,22 @@ $('btnLive').onclick = () => {
 };
 
 const steps = () => parseInt($('steps').value, 10);
+
+// ---- การกวาดตอนไล่ ----
+let swDirty = false;
+function swShow(){
+  $('swDegV').textContent = '±' + $('swDeg').value + '°';
+  $('swSpdV').textContent = $('swSpd').value + '%';
+}
+['swDeg','swSpd'].forEach(id => $(id).oninput = () => { swDirty = true; swShow(); });
+$('swSave').onclick = async () => {
+  const r = await run('/api/sweep', {deg: +$('swDeg').value, spd: +$('swSpd').value});
+  if(r.ok) swDirty = false;
+};
+$('swTest').onclick = async () => {
+  if(swDirty){ await $('swSave').onclick(); if(swDirty) return; }   // ยังไม่บันทึก = บันทึกก่อนแล้วค่อยทดสอบ
+  run('/api/sweep', {test: true});
+};
 $('mL').onclick = () => run('/api/motor', {action:'left',  steps: steps()});
 $('mR').onclick = () => run('/api/motor', {action:'right', steps: steps()});
 $('mH').onclick = () => run('/api/motor', {action:'home'});

@@ -106,6 +106,33 @@ def main_flow(page, sim):
     page.click("#mH")
     wait_state(sim, lambda s: s["hw"]["pos"] == 0 and not s["hw"]["moving"], 5)
 
+    # ---------- การกวาดตอนไล่ (v7.7) ----------
+    page.wait_for_selector("#swBox:not([hidden])", timeout=5000)
+    check("ตัวปรับการกวาดแสดงค่าเริ่มต้น ±40° / 30%",
+          page.inner_text("#swDegV") == "±40°" and page.inner_text("#swSpdV") == "30%",
+          (page.inner_text("#swDegV"), page.inner_text("#swSpdV")))
+    page.fill("#swDeg", "25")
+    page.dispatch_event("#swDeg", "input")
+    page.wait_for_timeout(1500)                         # รอบอัปเดตสถานะต้องไม่ทับค่าที่กำลังแก้
+    check("เลื่อนแล้วค่าไม่เด้งกลับระหว่างยังไม่บันทึก", page.input_value("#swDeg") == "25")
+    page.click("#swTest")                               # ยังไม่บันทึก = บันทึกให้ก่อนแล้วทดสอบ
+    m = wait_msg(page, "ทดสอบกวาด", 4)
+    check("ทดสอบกวาด -> บันทึกค่าก่อนแล้วกวาด", "ทดสอบกวาด" in m, m)
+    peak, pump, end = 0, False, time.time() + 8
+    while time.time() < end:
+        hw = state(sim)["hw"]
+        peak = max(peak, abs(hw["pos"]))
+        pump |= hw["pump"]
+        if not hw["repel"] and not hw["moving"] and peak > 0:
+            break
+        time.sleep(0.1)
+    check("ทดสอบกวาดไม่ฉีดน้ำ และกว้างไม่เกิน ±25° (111 สเต็ป)", not pump and 0 < peak <= 111, (pump, peak))
+    s = state(sim)["hw"]
+    check("บอร์ดจำค่าใหม่ SWP=25", s["sweep_deg"] == 25 and s["sweep_spd"] == 30, s.get("sweep_deg"))
+    shot(page, "01b_sweep.png")
+    page.evaluate("run('/api/sweep', {deg:40, spd:30})")
+    wait_state(sim, lambda s: s["hw"]["sweep_deg"] == 40, 5)
+
     # ---------- ปั๊ม ----------
     page.click("#bPump")
     m = wait_msg(page, "OK PUMP", 3)

@@ -251,14 +251,47 @@ def main():
         b.cmd("MOT HOME")
         b.wait_for("$^", 2.0)
 
+        # ---------- ตั้งค่าการกวาด (v7.7) ----------
+        st = b.stat()
+        check("ค่าเริ่มต้นกวาด ±40° ความเร็ว 30%", st.get("SWP") == "40" and st.get("RSP") == "30", st)
+        for bad in ("RCFG 5 30", "RCFG 90 30", "RCFG 40 5", "RCFG 40 101", "RCFG 40"):
+            r = b.cmd(bad)
+            check(f"{bad} -> ERR", first(r, "ERR") is not None, r)
+        r = b.cmd("RCFG 30 50")
+        check("RCFG 30 50 -> OK", first(r, "OK RCFG 30 50") is not None, r)
+        st = b.stat()
+        check("STAT เห็นค่าใหม่", st.get("SWP") == "30" and st.get("RSP") == "50", st)
+
+        # REPEL TEST: กวาดอย่างเดียว ไม่เปิดปั๊ม และไม่เกิน ±30° (133 สเต็ป)
+        r = b.cmd("REPEL TEST")
+        check("REPEL TEST -> OK REPEL TEST", first(r, "OK REPEL TEST") is not None, r)
+        peak, pump_seen, t0 = 0, False, time.time()
+        while time.time() - t0 < 8:
+            st = b.stat()
+            peak = max(peak, abs(int(st.get("POS", 0))))
+            pump_seen |= st.get("PUMP") == "1"
+            if st.get("REPEL") == "0" and st.get("MOVING") == "0":
+                break
+        check("REPEL TEST ไม่เปิดปั๊ม", not pump_seen)
+        check("REPEL TEST กวาดถึงแต่ไม่เกิน 133 สเต็ป", 110 <= peak <= 133, peak)
+        check("REPEL TEST จบที่จุดกลาง", b.stat().get("POS") == "0")
+        b.cmd("RCFG 40 30")
+
         # ---------- รอบไล่ ----------
         time.sleep(1.5)
         r = b.cmd("REPEL")
         check("REPEL -> OK REPEL", first(r, "OK REPEL") is not None, r)
         r = b.cmd("REPEL")
         check("REPEL ซ้ำระหว่างไล่ -> ERR BUSY", first(r, "ERR BUSY") is not None, r)
-        ln, seen = b.wait_for("EVT REPEL DONE", 10)
-        check("รอบไล่จบเอง EVT REPEL DONE", ln is not None, seen)
+        peak, done, t0 = 0, False, time.time()
+        while time.time() - t0 < 10 and not done:
+            for ln in b.cmd("STAT"):
+                done |= ln.startswith("EVT REPEL DONE")
+                m = re.search(r"\bPOS=(-?\d+)", ln)
+                if m:
+                    peak = max(peak, abs(int(m.group(1))))
+        check("รอบไล่กวาดไม่เกิน ±40° (177 สเต็ป) ไม่ชนขอบ", 150 <= peak <= 177, peak)
+        check("รอบไล่จบเอง EVT REPEL DONE", done)
         b.wait_for("$^", 1.5)
         st = b.stat()
         check("จบรอบไล่แล้วกลับจุดกลาง ปั๊มดับ", st.get("POS") == "0" and st.get("PUMP") == "0", st)

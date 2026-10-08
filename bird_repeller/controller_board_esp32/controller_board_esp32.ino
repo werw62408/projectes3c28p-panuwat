@@ -5,7 +5,15 @@
    หน้าที่: รับคำสั่งจาก Raspberry Pi ผ่าน USB Serial แล้วสั่งงานอุปกรณ์
             พร้อมรายงานสถานะกลับ และตัดโหลดเองเมื่อเกิดเหตุผิดปกติ
 
-   เปลี่ยนจาก v7.5 (รุ่นนี้):
+   เปลี่ยนจาก v7.6 (รุ่นนี้):
+     - รอบไล่กวาดช้าลงและแคบลง หัวฉีดไม่เหวี่ยงไปชนขอบอีก
+       เดิมกวาด ±67° ที่ความเร็วสูงสุด (~700°/วิ) แรงจนชนขอบแล้วสเต็ปหลุด
+       ตอนนี้ค่าเริ่มต้น ±40° ที่ความเร็ว 30% (~210°/วิ) และแรงบิดมากขึ้นเพราะหมุนช้า
+     - ปรับความกว้าง/ความเร็วได้จากหน้าเว็บ (คำสั่ง RCFG <องศา> <เปอร์เซ็นต์>) จำไว้ในแฟลช
+     - คำสั่ง REPEL TEST กวาดหนึ่งรอบโดยไม่เปิดปั๊ม ไว้ลองหาค่าที่ไม่ชนขอบ
+     - STAT เพิ่ม SWP (องศากวาดข้างละ) และ RSP (ความเร็ว %)
+
+   เปลี่ยนจาก v7.5:
      - ไฟส้ม (เจอนก) ติดค้าง 5 วิ แล้วดับเอง (เดิม 10 วิ)
 
    เปลี่ยนจาก v7.4:
@@ -76,7 +84,7 @@
    Arduino IDE: Board = ESP32 Dev Module / ไม่ต้องลงไลบรารีเพิ่ม
    ========================================================================== */
 
-#define FW_ID "BIRDCTRL v7.6"
+#define FW_ID "BIRDCTRL v7.7"
 
 #include <Preferences.h>
 #include <esp_system.h>
@@ -158,7 +166,15 @@ const unsigned long PUMP_DUTY_MAX_MS    = 60000;
 const unsigned long PUMP_MIN_RUN_MS     = 300;   // เหลือโควตาน้อยกว่านี้ = ไม่เปิด
 
 const unsigned long REPEL_PUMP_MS  = 2000; // รอบไล่: เปิดปั๊มกี่ ms (v7.5: 5 -> 2 วิ ประหยัดน้ำ)
-const int           REPEL_SWEEP    = 300;  // รอบไล่: กวาดข้างละกี่สเต็ป
+
+// รอบไล่: กวาดข้างละกี่องศา และเร็วแค่ไหน (ค่าเริ่มต้น ปรับจากเว็บได้ จำไว้ในแฟลช)
+// v7.7: เดิมกวาด 300 สเต็ป (±67°) ที่ความเร็วสูงสุด หัวฉีดเหวี่ยงแรงจนชนขอบ
+const int REPEL_SWEEP_DEG_DEF = 40;    // ±40° รวมกวาดกว้าง 80°
+const int REPEL_SWEEP_DEG_MIN = 10;
+const int REPEL_SWEEP_DEG_MAX = 80;    // ต้องไม่เกินกำแพงแข็ง LIMIT_STEPS (90°)
+const int REPEL_SPEED_PCT_DEF = 30;    // % ของความเร็วสูงสุด 30% ≈ 210°/วิ
+const int REPEL_SPEED_PCT_MIN = 10;
+const int REPEL_SPEED_PCT_MAX = 100;
 
 /* ==========================================================================
    4. ค่าตั้งของถังน้ำ  (แก้ 2 บรรทัดนี้ให้ตรงกับถังจริง)
@@ -269,6 +285,10 @@ RepelStep repelStep = RP_IDLE;
 // ต้องประกาศก่อนฟังก์ชันแรก เพราะ Arduino IDE สร้าง prototype ไว้ด้านบนให้เอง
 enum PumpResult { PUMP_OK, PUMP_NONE, PUMP_EMPTY, PUMP_GAP, PUMP_BUSY, PUMP_DUTY };
 unsigned long repelEndMs = 0;
+bool  repelPump = true;         // false = REPEL TEST กวาดอย่างเดียว ไม่เปิดปั๊ม
+int   repelSweepDeg = REPEL_SWEEP_DEG_DEF;
+int   repelSpeedPct = REPEL_SPEED_PCT_DEF;
+unsigned long moveMaxUs = SPEED_MAX;   // ความเร็วสูงสุดของการหมุนครั้งนี้ (us ต่อสเต็ป)
 
 String rxBuf = "";
 bool   rxOverflow = false;      // บรรทัดนี้ยาวเกิน ทิ้งทั้งบรรทัดเมื่อเจอขึ้นบรรทัดใหม่
@@ -364,13 +384,24 @@ void servicePump() {
    10. มอเตอร์สเต็ปเปอร์  (ไม่บล็อกลูปหลัก มีแรมป์เร่ง-ชะลอ)
    ========================================================================== */
 unsigned long stepIntervalUs() {
+  if (moveMaxUs >= SPEED_START) return moveMaxUs;   // ช้ากว่าความเร็วเริ่ม ไม่ต้องแรมป์
   long remain = stepsTotal - stepsDone;
   long ramp = min((long)RAMP_STEPS, stepsTotal / 2);
   long phase = min(stepsDone, remain);
-  if (ramp <= 0) return SPEED_MAX;
-  if (phase >= ramp) return SPEED_MAX;
+  if (ramp <= 0) return moveMaxUs;
+  if (phase >= ramp) return moveMaxUs;
   float k = (float)phase / (float)ramp;
-  return (unsigned long)(SPEED_START - (SPEED_START - SPEED_MAX) * k);
+  return (unsigned long)(SPEED_START - (SPEED_START - moveMaxUs) * k);
+}
+
+// ความเร็วตอนไล่: 100% = SPEED_MAX, ยิ่งเปอร์เซ็นต์น้อยยิ่งช้า
+unsigned long repelSpeedUs() {
+  return (unsigned long)SPEED_MAX * 100UL / (unsigned long)repelSpeedPct;
+}
+
+long repelSweepSteps() {
+  long s = (long)repelSweepDeg * STEPS_PER_REV / 360;
+  return min(s, (long)LIMIT_STEPS);
 }
 
 void stopMove() {
@@ -392,7 +423,10 @@ void softStop() {
   targetStep = posSteps + (dirPositive ? k : -k);
 }
 
-void startMoveTo(long target) {
+void startMoveAt(long target, unsigned long maxUs);
+void startMoveTo(long target) { startMoveAt(target, SPEED_MAX); }
+
+void startMoveAt(long target, unsigned long maxUs) {
   if (!HAS_MOTOR) return;
   if (target >  LIMIT_STEPS) target =  LIMIT_STEPS;       // กำแพงแข็ง
   if (target < -LIMIT_STEPS) target = -LIMIT_STEPS;
@@ -403,6 +437,7 @@ void startMoveTo(long target) {
   dirPositive = (delta > 0);
   stepsTotal  = labs(delta);
   stepsDone   = 0;
+  moveMaxUs   = maxUs;
 
   digitalWrite(PIN_DIR, dirPositive ? HIGH : LOW);
   if (!enaOn) { enaWrite(true); delay(ENA_SETTLE_MS); }   // ปลุกไดร์เวอร์ก่อน
@@ -445,10 +480,14 @@ void repelAbort() {
 
 // คืน PUMP_OK ถ้าเริ่มรอบไล่ได้ ไม่งั้นคืนเหตุผลที่ปั๊มเปิดไม่ได้
 // เช็กก่อนเริ่ม จะได้ไม่กวาดหัวฉีดไปมาโดยไม่มีน้ำออก
-PumpResult repelStart() {
-  PumpResult r = pumpCheck();
-  if (r != PUMP_OK) return r;
-  startMoveTo(0);                       // กลับจุดกลางก่อนเสมอ กันตำแหน่งเพี้ยน
+// withPump = false คือ REPEL TEST กวาดให้ดูเฉย ๆ ไม่ฉีดน้ำ
+PumpResult repelStart(bool withPump) {
+  if (withPump) {
+    PumpResult r = pumpCheck();
+    if (r != PUMP_OK) return r;
+  }
+  repelPump = withPump;
+  startMoveAt(0, repelSpeedUs());       // กลับจุดกลางก่อนเสมอ กันตำแหน่งเพี้ยน
   repelStep = RP_HOME;
   repelEndMs = millis() + REPEL_PUMP_MS;
   return PUMP_OK;
@@ -460,32 +499,35 @@ void serviceRepel() {
   bool timeUp = (long)(millis() - repelEndMs) >= 0;
 
   if (repelStep == RP_HOME && !moving) {
-    PumpResult r = pumpStart(REPEL_PUMP_MS);
-    if (r != PUMP_OK) {                 // เช่นน้ำหมดหรือโควตาหมดระหว่างกลับจุดกลาง
-      repelAbort();
-      Serial.printf("EVT REPEL FAIL %s\n", pumpErrText(r) + 4);
-      return;
+    if (repelPump) {
+      PumpResult r = pumpStart(REPEL_PUMP_MS);
+      if (r != PUMP_OK) {               // เช่นน้ำหมดหรือโควตาหมดระหว่างกลับจุดกลาง
+        repelAbort();
+        Serial.printf("EVT REPEL FAIL %s\n", pumpErrText(r) + 4);
+        return;
+      }
     }
     repelEndMs = millis() + REPEL_PUMP_MS;
-    startMoveTo(REPEL_SWEEP);
+    startMoveAt(repelSweepSteps(), repelSpeedUs());
     repelStep = RP_SWEEP_R;
     return;
   }
 
   // ปั๊มดับก่อนเวลา (น้ำหมด/โควตาหมด) ก็ไม่ต้องกวาดต่อให้เปลืองไฟ
-  if (!pumpOn) timeUp = true;
+  if (repelPump && !pumpOn) timeUp = true;
 
   if (timeUp && !moving) {              // หมดเวลาพ่น -> เก็บงาน
     pumpStop();
-    startMoveTo(0);
+    startMoveAt(0, repelSpeedUs());
     repelStep = RP_IDLE;
     Serial.println("EVT REPEL DONE");
     return;
   }
 
   if (!moving) {                        // ยังไม่หมดเวลา -> กวาดกลับอีกฝั่ง
-    if (repelStep == RP_SWEEP_R)      { startMoveTo(-REPEL_SWEEP); repelStep = RP_SWEEP_L; }
-    else if (repelStep == RP_SWEEP_L) { startMoveTo( REPEL_SWEEP); repelStep = RP_SWEEP_R; }
+    long sw = repelSweepSteps();
+    if (repelStep == RP_SWEEP_R)      { startMoveAt(-sw, repelSpeedUs()); repelStep = RP_SWEEP_L; }
+    else if (repelStep == RP_SWEEP_L) { startMoveAt( sw, repelSpeedUs()); repelStep = RP_SWEEP_R; }
   }
 }
 
@@ -733,6 +775,8 @@ void sendStat() {
   Serial.print(" PSTK=");    Serial.print(pirStuck ? 1 : 0);
   Serial.print(" PIRG=");    Serial.print(pirGlitchCount);
   Serial.print(" PIRI=");    Serial.print(pirIgnoredCount);
+  Serial.print(" SWP=");     Serial.print(repelSweepDeg);
+  Serial.print(" RSP=");     Serial.print(repelSpeedPct);
   Serial.print(" LIM=");     Serial.print(LIMIT_STEPS);
   Serial.print(" SPR=");     Serial.println(STEPS_PER_REV);
 }
@@ -750,8 +794,8 @@ void handleLine(String line) {
   if (up == "PING") { Serial.printf("OK PONG %s\n", FW_ID); return; }
   if (up == "STAT") { sendStat(); return; }
   if (up == "HELP") {
-    Serial.println("OK CMDS PING STAT ABORT REPEL MOT L|R <n> MOT HOME MOT STOP "
-                   "MOT ZERO PUMP <ms> WATER CAM 0|1 BIRD 0|1 VCAL <v>");
+    Serial.println("OK CMDS PING STAT ABORT REPEL REPEL TEST RCFG <deg> <pct> "
+                   "MOT L|R <n> MOT HOME MOT STOP MOT ZERO PUMP <ms> WATER CAM 0|1 BIRD 0|1 VCAL <v>");
     return;
   }
 
@@ -799,11 +843,29 @@ void handleLine(String line) {
     return;
   }
 
-  if (up == "REPEL") {
+  if (up == "REPEL" || up == "REPEL TEST") {
     if (repelStep != RP_IDLE || moving) { Serial.println("ERR BUSY"); return; }
-    PumpResult r = repelStart();
+    bool test = (up == "REPEL TEST");
+    PumpResult r = repelStart(!test);
     if (r != PUMP_OK) { Serial.println(pumpErrText(r)); return; }
-    Serial.println("OK REPEL");
+    Serial.println(test ? "OK REPEL TEST" : "OK REPEL");
+    return;
+  }
+
+  if (up.startsWith("RCFG")) {         // ตั้งการกวาดตอนไล่: RCFG <องศาข้างละ> <ความเร็ว %>
+    String a = up.substring(4);
+    a.trim();
+    int sp = a.indexOf(' ');
+    if (sp < 0) { Serial.println("ERR ARG"); return; }
+    long deg = a.substring(0, sp).toInt();
+    long pct = a.substring(sp + 1).toInt();
+    if (deg < REPEL_SWEEP_DEG_MIN || deg > REPEL_SWEEP_DEG_MAX ||
+        pct < REPEL_SPEED_PCT_MIN || pct > REPEL_SPEED_PCT_MAX) { Serial.println("ERR RANGE"); return; }
+    repelSweepDeg = (int)deg;           // มีผลรอบไล่ถัดไป รอบที่กำลังกวาดอยู่ใช้ค่าใหม่ตั้งแต่ขาถัดไป
+    repelSpeedPct = (int)pct;
+    prefs.putInt("swdeg", repelSweepDeg);
+    prefs.putInt("swpct", repelSpeedPct);
+    Serial.printf("OK RCFG %d %d\n", repelSweepDeg, repelSpeedPct);
     return;
   }
 
@@ -896,6 +958,8 @@ void setup() {
 
   prefs.begin("birdctrl", false);
   VBAT_TRIM = prefs.getFloat("vtrim", 1.0f);
+  repelSweepDeg = constrain(prefs.getInt("swdeg", REPEL_SWEEP_DEG_DEF), REPEL_SWEEP_DEG_MIN, REPEL_SWEEP_DEG_MAX);
+  repelSpeedPct = constrain(prefs.getInt("swpct", REPEL_SPEED_PCT_DEF), REPEL_SPEED_PCT_MIN, REPEL_SPEED_PCT_MAX);
 
   switch (esp_reset_reason()) {
     case ESP_RST_POWERON:  resetReasonText = "POWERON";  break;

@@ -30,6 +30,7 @@ inline void analogSetPinAttenuation(int, int) {}
 
 template <class A, class B>
 inline typename std::common_type<A, B>::type min(A a, B b) { return a < b ? a : b; }
+template <class T> inline T constrain(T x, T lo, T hi) { return x < lo ? lo : (x > hi ? hi : x); }
 
 class String {
  public:
@@ -49,6 +50,10 @@ class String {
   bool startsWith(const char* p) const { return s.rfind(p, 0) == 0; }
   int indexOf(char c) const { size_t i = s.find(c); return i == std::string::npos ? -1 : (int)i; }
   String substring(unsigned int from) const { return from >= s.size() ? String() : String(s.substr(from)); }
+  String substring(unsigned int from, unsigned int to) const {
+    if (to > s.size()) to = (unsigned int)s.size();
+    return from >= to ? String() : String(s.substr(from, to - from));
+  }
   long toInt() const { return atol(s.c_str()); }
   float toFloat() const { return (float)atof(s.c_str()); }
   const char* c_str() const { return s.c_str(); }
@@ -89,6 +94,8 @@ class Preferences {
   bool begin(const char*, bool) { return true; }
   float getFloat(const char*, float def);
   void putFloat(const char*, float v);
+  int getInt(const char* k, int def);
+  void putInt(const char* k, int v);
 };
 
 typedef enum {

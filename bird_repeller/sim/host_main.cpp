@@ -1,3 +1,5 @@
+#include <map>
+#include <string>
 // รันเฟิร์มแวร์ controller_board_esp32.ino บนคอม เพื่อทดสอบร่วมกับเซิร์ฟเวอร์ Pi
 //
 //   Serial  = stdin/stdout (ตัวจำลองจะต่อเข้ากับ pseudo-terminal ให้เอง)
@@ -60,6 +62,12 @@ int analogReadMilliVolts(int) { return 2600; }
 
 float Preferences::getFloat(const char*, float def) { return simVtrim ? simVtrim : def; }
 void Preferences::putFloat(const char*, float v) { simVtrim = v; }
+static std::map<std::string, int> simPrefInts;
+int Preferences::getInt(const char* k, int def) {
+  auto it = simPrefInts.find(k);
+  return it == simPrefInts.end() ? def : it->second;
+}
+void Preferences::putInt(const char* k, int v) { simPrefInts[k] = v; }
 
 esp_reset_reason_t esp_reset_reason() {
   const char* r = getenv("SIM_RESET");
