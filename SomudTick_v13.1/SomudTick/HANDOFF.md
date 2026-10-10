@@ -142,6 +142,13 @@
 ### 3.5 HOOKLINE `prototypes/hookline/index.html`
 เกมหุ่นยนต์ตะขอยึดพื้นที่ มุมบน (ต้นแบบเว็บ) บอตผ่าน 10/10 ราว 17 นาที · รายละเอียดใน commit `a47c4d3`
 
+### 3.6 ANT RAID (เกมวางแผนรังมด แบบ Ant Colony: Wild Forest) `prototypes/antraid/`
+ลิงก์: https://claude.ai/artifact/HVnAY7jJ4oB1X3xHepQnB8 · เซฟ `antraid.v1` · รายละเอียดทั้งหมดใน `prototypes/antraid/README.md`
+- แก้ที่ `src/*.js` แล้ว `python3 build.py` (ได้ `index.html` + `artifact.html`) ห้ามแก้ `index.html` ตรง ๆ
+- จอ 240×320 แนวตั้ง ปุ่ม A B C D E F K เหมือนบอร์ด (เตรียมพอร์ตลง ESP ทีหลัง)
+- ทดสอบ: `tests/ui.js` (กดปุ่มทุกหน้า), `tests/bot.js` (สมดุลด่าน), `tests/stress.js` (กรณีสุดขั้ว)
+- **ยังไม่ได้ทำ:** พอร์ตลงบอร์ด, ด่านอื่นของต้นฉบับ, เซฟกลางเกม
+
 ## 4. เคส กล่อง และสายไฟ (`case/`)
 
 | สคริปต์ | ได้อะไร |

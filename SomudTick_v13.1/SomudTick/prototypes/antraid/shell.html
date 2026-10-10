@@ -1,0 +1,107 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ant Raid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Chakra+Petch:wght@400;600&display=swap">
+<style>
+/* Layout: the board's 240x320 portrait screen (pixel-exact, 2x canvas), the joystick and 7 buttons under it, and the controls card beside it on wide screens. */
+:root {
+  --bg: #0e0a08;
+  --panel: #1c1511;
+  --line: #3a2a20;
+  --ink: #f4e9df;
+  --dim: #b39c8b;
+  --gold: #ffcf4a;
+  --red: #ff5d4a;
+  --f-ui: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --f-pix: "Silkscreen", ui-monospace, monospace;
+  color-scheme: dark;
+}
+html, body { background: var(--bg); color: var(--ink); margin: 0; }
+body { font-family: var(--f-ui); font-size: 15px; line-height: 1.45; padding: 12px 16px 28px; }
+.wrap { max-width: 900px; margin: 0 auto; display: grid; gap: 12px; }
+header h1 { font-family: var(--f-pix); font-size: clamp(22px, 5vw, 30px); margin: 0; letter-spacing: .03em; }
+header h1 span { color: var(--gold); }
+header p { margin: 2px 0 0; color: var(--dim); font-size: 13.5px; }
+.main { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 760px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.device { background: #050403; border: 1px solid var(--line); border-radius: 16px; padding: 10px; justify-self: center; width: min(100%, 420px); box-sizing: border-box; display: grid; gap: 10px; }
+#cv { display: block; width: 100%; aspect-ratio: 3 / 4; image-rendering: pixelated; border-radius: 4px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; outline: none; }
+#cv:focus-visible { box-shadow: 0 0 0 2px var(--gold); }
+.pad { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; user-select: none; -webkit-user-select: none; touch-action: none; }
+.dpad { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); gap: 2px; }
+.dpad button, .btns button { font-family: var(--f-pix); color: var(--ink); background: #2a201a; border: 1px solid #4a3a2c; border-radius: 8px; font-size: 13px; cursor: pointer; touch-action: none; padding: 0; }
+.dpad button:active, .btns button:active { background: #4a3a2c; transform: translateY(1px); }
+.dpad .c { background: #17110d; border-color: #2a201a; }
+.btns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.btns button { min-height: 42px; display: grid; place-items: center; line-height: 1.05; }
+.btns button small { font-family: var(--f-ui); font-size: 10px; color: var(--dim); letter-spacing: .02em; }
+.btns .a { background: #3d6a2a; border-color: #5a8a3c; }
+.btns .d { background: #5a2a1e; border-color: #7a3a2a; }
+.side { display: grid; gap: 12px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.card h2 { font-family: var(--f-pix); font-size: 13px; letter-spacing: .08em; margin: 0 0 8px; color: var(--gold); font-weight: 400; }
+.keys { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 10px; font-size: 13.5px; }
+.keys b { font-family: var(--f-pix); font-weight: 400; color: var(--ink); white-space: nowrap; }
+.keys span { color: var(--dim); }
+ul { margin: 0; padding-left: 18px; color: var(--dim); font-size: 13.5px; display: grid; gap: 3px; }
+ul b { color: var(--ink); font-weight: 600; }
+</style>
+<div class="wrap">
+  <header>
+    <h1>ANT <span>RAID</span></h1>
+    <p>Colony strategy for the SomudTick board · 240×320 portrait · stick + 7 buttons (web prototype)</p>
+  </header>
+  <div class="main">
+    <div class="device">
+      <canvas id="cv" width="480" height="640" tabindex="0" aria-label="Game screen"></canvas>
+      <div class="pad">
+        <div class="dpad" aria-label="Joystick">
+          <button class="c" tabindex="-1" aria-hidden="true"></button><button data-dir="up" aria-label="Up">▲</button><button class="c" tabindex="-1" aria-hidden="true"></button>
+          <button data-dir="left" aria-label="Left">◀</button><button data-btn="K" aria-label="Stick press">K</button><button data-dir="right" aria-label="Right">▶</button>
+          <button class="c" tabindex="-1" aria-hidden="true"></button><button data-dir="down" aria-label="Down">▼</button><button class="c" tabindex="-1" aria-hidden="true"></button>
+        </div>
+        <div class="btns">
+          <button class="a" data-btn="A">A<small>use</small></button>
+          <button data-btn="B">B<small>view</small></button>
+          <button data-btn="C">C<small>build</small></button>
+          <button class="d" data-btn="D">D<small>back</small></button>
+          <button data-btn="E">E<small>squads</small></button>
+          <button data-btn="F">F<small>ants</small></button>
+        </div>
+      </div>
+    </div>
+    <div class="side">
+      <div class="card">
+        <h2>CONTROLS</h2>
+        <div class="keys">
+          <b>Stick / arrows</b><span>move the cursor, menus</span>
+          <b>A · Z · Space</b><span>use, pick, OK</span>
+          <b>D · X · Esc</b><span>back · in game: menu</span>
+          <b>B</b><span>surface ↔ nest</span>
+          <b>C</b><span>build mode (time stops)</span>
+          <b>E · F</b><span>squads · queen (make ants) · build: tool</span>
+          <b>Touch</b><span>tap = point + A, drag = move the map, wheel = zoom</span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>HOW A GAME GOES</h2>
+        <ul>
+          <li><b>Boosts:</b> pick 2 of 3 cards before the game.</li>
+          <li><b>Nest:</b> mark tiles to dig, place rooms; builders bring food to build them.</li>
+          <li><b>Queen:</b> queue eggs; builders feed her; 2 queen-room tiles = 1 slot.</li>
+          <li><b>Outside:</b> scouts clear the fog, loaders bring food, guards protect.</li>
+          <li><b>Raids:</b> point at a base → SEND RAID. Bases drop sugar, chitin, cards.</li>
+          <li><b>Squads:</b> group 2–12 ants and order them: patrol an area, guard a spot, walk a trail, raid, guard the queen.</li>
+          <li><b>Workshop:</b> chitin → plates → level ants up to 5.</li>
+          <li><b>Outside the game:</b> deck, forge, perks, shop, queen path, almanac.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+/*@SCRIPTS@*/
+</script>

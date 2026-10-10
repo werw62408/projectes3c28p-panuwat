@@ -1,0 +1,30 @@
+// Smoke test: open, play through the start screens with buttons, run the game, take shots.
+const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const path = require('path');
+const OUT = process.argv[2] || path.join(__dirname, 'shots');
+require('fs').mkdirSync(OUT, { recursive: true });
+(async () => {
+  const b = await chromium.launch({ args: ['--ignore-certificate-errors'] });
+  const p = await b.newPage({ viewport: { width: 1000, height: 1100 } });
+  const errs = [];
+  p.on('pageerror', (e) => errs.push('pageerror: ' + e.message + '\n' + (e.stack || '').split('\n').slice(0, 4).join('\n')));
+  p.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
+  await p.goto('file://' + path.join(__dirname, '..', 'index.html'));
+  await p.waitForTimeout(800);
+  const shot = async (n) => { await p.locator('#cv').screenshot({ path: path.join(OUT, n + '.png') }); };
+  const press = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.evaluate((k) => AR.press(k), k); await p.waitForTimeout(30); } };
+  const dir = async (d, n = 1) => { for (let i = 0; i < n; i++) { await p.evaluate((d) => AR.dirPress(d), d); await p.waitForTimeout(20); } };
+  await shot('01_home');
+  await press('A'); await p.waitForTimeout(100); await shot('02_deck');
+  await press('A'); await p.waitForTimeout(100); await shot('03_boosts');
+  await press('A'); await press('A'); await p.waitForTimeout(200);
+  console.log('mode', await p.evaluate(() => AR.APP.mode));
+  await shot('04_start');
+  await p.evaluate(() => AR.fast(40));
+  await p.waitForTimeout(100); await shot('05_t40');
+  await press('B'); await p.waitForTimeout(100); await shot('06_nest');
+  const st = await p.evaluate(() => { const G = AR.G; return { t: G.t, ants: G.ants.length, eggs: G.eggs.length, food: G.pile.food, castes: G.ants.map(a => a.caste).join(','), over: G.over }; });
+  console.log(JSON.stringify(st));
+  console.log(errs.length ? errs.join('\n') : 'no errors');
+  await b.close();
+})();
