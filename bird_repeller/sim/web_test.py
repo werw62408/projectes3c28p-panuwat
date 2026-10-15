@@ -8,16 +8,21 @@
 """
 import argparse
 from datetime import datetime
+import http.cookiejar
+import io
 import json
 import os
+import re
+import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+import zipfile
 
 from playwright.sync_api import sync_playwright
 
-from run_sim import HERE, Sim
+from run_sim import HERE, SERVER, Sim
 
 SHOTS = os.path.join(HERE, "build", "shots")
 FAILS = []
@@ -29,9 +34,50 @@ def check(name, ok, detail=""):
         FAILS.append(name)
 
 
+def opener(sim):
+    """urllib ที่ล็อกอินแล้ว (เก็บคุกกี้ไว้) ใช้เรียก API ตรง ๆ จากสคริปต์ทดสอบ"""
+    op = getattr(sim, "_op", None)
+    if op is None:
+        op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        req = urllib.request.Request(sim.url + "/api/login", method="POST",
+                                     data=json.dumps({"password": sim.password}).encode(),
+                                     headers={"Content-Type": "application/json", "X-Bird-UI": "1"})
+        op.open(req, timeout=5).read()
+        sim._op = op
+    return op
+
+
+def get(sim, path, op=None):
+    """คืน (status, body) ไม่โยน error ตอนได้ 4xx"""
+    try:
+        with (op or opener(sim)).open(sim.url + path, timeout=30) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
+def api_post(sim, path, body, op=None):
+    req = urllib.request.Request(sim.url + path, method="POST", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json", "X-Bird-UI": "1"})
+    try:
+        with (op or opener(sim)).open(req, timeout=10) as r:
+            return r.status, json.load(r)
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"{}")
+
+
 def state(sim):
-    with urllib.request.urlopen(sim.url + "/api/state", timeout=5) as r:
+    with opener(sim).open(sim.url + "/api/state", timeout=5) as r:
         return json.load(r)
+
+
+def open_ui(page, sim):
+    """เปิดหน้าเว็บ ถ้าเจอหน้าล็อกอินก็ใส่รหัสให้"""
+    page.goto(sim.url)
+    if "/login" in page.url:
+        page.fill("#pw", sim.password)
+        page.click("#go")
+        page.wait_for_url(sim.url + "/", timeout=10000)
 
 
 def wait_state(sim, pred, timeout):
@@ -73,7 +119,7 @@ def wait_msg(page, text, timeout=4.0):
 
 
 def main_flow(page, sim):
-    page.goto(sim.url)
+    open_ui(page, sim)
     page.wait_for_function("document.getElementById('brd').textContent === 'เชื่อมต่อแล้ว'", timeout=20000)
     page.wait_for_timeout(4000)                  # รอ STAT รอบแรก
     warns = page.inner_text("#warns")
@@ -236,7 +282,7 @@ def main_flow(page, sim):
 
 def pir_flow(page, sim):
     """ปิดตรวจอัตโนมัติ -> PIR ทริก -> กล้องจับนก -> ไฟส้มติด -> ดับเอง"""
-    page.goto(sim.url)
+    open_ui(page, sim)
     page.wait_for_function("document.getElementById('brd').textContent === 'เชื่อมต่อแล้ว'", timeout=20000)
     page.evaluate("document.getElementById('tech').open = true")   # บันทึก PIR อยู่ในส่วนพับเก็บ
     page.uncheck("#autoDet")
@@ -264,7 +310,7 @@ def pir_flow(page, sim):
     page.evaluate("window.scrollTo(0, document.getElementById('cnt').getBoundingClientRect().top - 300)")
     shot(page, "07_pir_bird_lamp.png")
     with open(os.path.join(HERE, "build", "fw_pins.log"), encoding="utf-8") as f:
-        check("ขารีเลย์ไฟส้ม (GPIO26) เป็น HIGH จริง", "LAMP_ORANGE HIGH" in f.read())
+        check("ขารีเลย์ไฟส้ม (GPIO21) เป็น HIGH จริง", "LAMP_ORANGE HIGH" in f.read())
 
     sim.set_sensors(PIR=0, ECHO_CM=15)
     page.wait_for_timeout(1500)
@@ -285,7 +331,7 @@ def field_flow(page, sim):
     """โหมดทดสอบภาคสนาม: ไม่ต้องกดอะไร เจอนกแล้วไล่จริง + เก็บ log/ภาพ"""
     log_path = os.path.join(HERE, "build", "fw_pins.log")
     pins_before = open(log_path, encoding="utf-8").read()
-    page.goto(sim.url)
+    open_ui(page, sim)
     page.wait_for_function("document.getElementById('brd').textContent === 'เชื่อมต่อแล้ว'", timeout=20000)
     page.wait_for_timeout(1500)
     warns = page.inner_text("#warns")
@@ -300,6 +346,9 @@ def field_flow(page, sim):
     check("รีเลย์ปั๊ม (GPIO18) เปิดแล้วปิดเอง", "PUMP HIGH" in pins and "PUMP LOW" in pins, pins[-400:])
     check("มอเตอร์กวาดหัวฉีด", "STEPS" in pins, pins[-400:])
     check("ไฟส้มติดตอนเจอนก", "LAMP_ORANGE HIGH" in pins)
+    ds_dir = os.path.join(sim.data_dir, "dataset")
+    repel_imgs = [f for f in os.listdir(ds_dir) if "_repel_" in f] if os.path.isdir(ds_dir) else []
+    check(f"สั่งไล่แล้วเก็บภาพเข้าชุดข้อมูลเสมอ ({len(repel_imgs)} ภาพ)", len(repel_imgs) >= 1)
     page.wait_for_timeout(6000)
     with open(os.path.join(sim.data_dir, "detection_log.csv"), encoding="utf-8-sig") as f:
         rows = f.read()
@@ -342,7 +391,7 @@ def empty_clip():
 
 def pir_stuck_flow(page, sim):
     """PIR ค้าง HIGH และกล้องไม่เจอนก -> บอร์ดเลิกทริกซ้ำ หน้าเว็บเตือน"""
-    page.goto(sim.url)
+    open_ui(page, sim)
     page.wait_for_function("document.getElementById('brd').textContent === 'เชื่อมต่อแล้ว'", timeout=20000)
     page.evaluate("document.getElementById('tech').open = true")   # บันทึก PIR อยู่ในส่วนพับเก็บ
     page.uncheck("#autoDet")
@@ -379,23 +428,171 @@ def pir_stuck_flow(page, sim):
           "Sx" in page.inner_text("#pirHint"), page.inner_text("#pirHint"))
 
 
-def pin_flow(page, sim):
-    code = raw_post(sim.url + "/api/pump", b"{}", {"Content-Type": "application/json", "X-Bird-UI": "1"})
-    check("ตั้ง PIN แล้ว สั่งโดยไม่มี PIN -> 401", code == 401, code)
+def dataset_flow(page, sim):
+    """การ์ดข้อมูลสำหรับเทรน: ติดป้าย ลบ และดาวน์โหลด ZIP แบบ YOLO"""
+    ds_dir = os.path.join(sim.data_dir, "dataset")
+    page.evaluate("window.scrollTo(0,0)")
+    page.evaluate("dsLoad(true)")
+    page.wait_for_function("ds.counts.all >= 4 && ds.items.length >= 4", timeout=60000)
+    c0 = page.evaluate("ds.counts")
+    check(f"การ์ดข้อมูลเทรนแสดงภาพ ({c0['all']} ภาพ ยังไม่ติดป้าย {c0['todo']})",
+          c0["all"] == c0["todo"] and c0["all"] >= 4, c0)
+    jpgs = sorted(f for f in os.listdir(ds_dir) if f.endswith(".jpg"))
+    metas = [json.load(open(os.path.join(ds_dir, f[:-4] + ".json"))) for f in jpgs
+             if os.path.exists(os.path.join(ds_dir, f[:-4] + ".json"))]
+    check("ทุกภาพในชุดข้อมูลมีไฟล์กรอบ .json คู่กัน", len(metas) == len(jpgs), (len(jpgs), len(metas)))
+    check("ไฟล์กรอบมีกรอบนกจากโมเดลอย่างน้อยหนึ่งภาพ",
+          any(any(b[4] >= 0.25 for b in m["boxes"]) for m in metas))
+    page.locator("#dsCard").scroll_into_view_if_needed()
+    page.wait_for_timeout(800)
+    page.locator("#dsCard").screenshot(path=os.path.join(SHOTS, "12_dataset_card.png"))
+
+    names = page.evaluate("ds.items.slice(0, 4).map(i => i.n)")
+    page.click("#dsGrid .dsi >> nth=0")
+    page.wait_for_selector("#dsv:not([hidden])")
+    page.wait_for_timeout(600)
+    shot(page, "12b_dataset_viewer.png")
+    for lab in ("bird", "none", "fix"):
+        cur = page.evaluate("ds.cur")
+        page.click(f".dsvBtns .{lab}")
+        page.wait_for_function(f"ds.cur === {cur + 1}", timeout=5000)
+    c1 = page.evaluate("ds.counts")
+    check("ติดป้าย ✓ ✗ ✎ แล้วเลื่อนไปภาพถัดไปเอง และตัวนับตรง",
+          (c1["bird"], c1["none"], c1["fix"], c1["todo"]) == (1, 1, 1, c0["all"] - 3), c1)
+    page.once("dialog", lambda d: d.accept())
+    page.click("#dsvDel")
+    page.wait_for_function(f"ds.counts.all === {c0['all'] - 1}", timeout=5000)
+    check("ลบภาพจากตัวดูได้ (ไฟล์ภาพและไฟล์กรอบหายจริง)",
+          not os.path.exists(os.path.join(ds_dir, names[3]))
+          and not os.path.exists(os.path.join(ds_dir, names[3][:-4] + ".json")))
+    page.click("#dsvX")
+
+    _, j = get(sim, "/api/dataset?f=bird")
+    j = json.loads(j)
+    check("API แยกหมวดป้ายถูกต้อง", [i["n"] for i in j["items"]] == [names[0]], j["items"][:1])
+    page.evaluate("ds.f = 'all'; dsLoad(true)")
+    page.wait_for_timeout(800)
+    page.evaluate("dsLoad(true)")
+    labels = json.load(open(os.path.join(ds_dir, "labels.json")))
+    check("ป้ายจำไว้ในไฟล์ labels.json", labels == {names[0]: "bird", names[1]: "none", names[2]: "fix"}, labels)
+
+    # ---------- ZIP ----------
+    code, data = get(sim, "/dataset/export.zip?scope=labeled")
+    z = zipfile.ZipFile(io.BytesIO(data))
+    imgs = sorted(n for n in z.namelist() if n.startswith("images/"))
+    lbls = sorted(n for n in z.namelist() if n.startswith("labels/"))
+    check("ZIP เฉพาะที่ติดป้ายมี 3 ภาพพร้อมไฟล์กรอบครบ",
+          code == 200 and len(imgs) == 3 and [n[7:-4] for n in imgs] == [n[7:-4] for n in lbls], (code, imgs))
+    check("ZIP มี data.yaml (คลาส 0 = bird) และ README", "0: bird" in z.read("data.yaml").decode()
+          and "README.txt" in z.namelist())
+    line_re = re.compile(r"^0( (0|1)\.\d{6}){4}$")
+    bad = [ln for n in lbls for ln in z.read(n).decode().splitlines() if not line_re.match(ln)]
+    check("ทุกบรรทัดในไฟล์กรอบเป็นรูปแบบ YOLO ที่ถูกต้อง", not bad, bad[:3])
+    check("ภาพที่ติดป้าย ✗ ไม่มีนก ได้ไฟล์กรอบว่าง", z.read(f"labels/{names[1][:-4]}.txt") == b"")
+    review = z.read("review_needed.txt").decode()
+    check("ภาพ ✎ ต้องแก้กรอบ อยู่ในรายการ review_needed.txt", names[2] in review, review)
+    check("ZIP ตรวจไฟล์ภาพครบไม่เสีย", z.testzip() is None)
+    code, data = get(sim, "/dataset/export.zip?scope=all")
+    n_all = len([n for n in zipfile.ZipFile(io.BytesIO(data)).namelist() if n.startswith("images/")])
+    check(f"ZIP ทั้งหมดมีครบทุกภาพ ({n_all})", n_all >= c0["all"] - 1, n_all)
+
+    code, _ = api_post(sim, "/api/dataset/label", {"name": "../auth.json", "label": "bird"})
+    check("ชื่อไฟล์แปลก ๆ (../) ถูกปฏิเสธ", code == 400, code)
+    code, _ = get(sim, "/dataset/img/" + "x" * 5 + ".jpg")
+    check("ขอไฟล์ภาพที่ชื่อไม่ตรงรูปแบบ -> ปฏิเสธ", code == 400, code)
+
+
+def auth_flow(browser, phone, sim):
+    """ล็อกอิน: ตั้งรหัสครั้งแรก / หน้าที่ป้องกันไว้ / เปลี่ยนรหัส / ลืมรหัส / ล็อกเมื่อเดาผิด"""
+    anon = urllib.request.build_opener()          # ไม่มีคุกกี้ = ไม่ได้ล็อกอิน
+    blocked = []
+    for path in ["/api/state", "/stream", "/image", "/preview", "/history/x.jpg", "/log", "/api/dataset",
+                 "/dataset/img/20260101_000000_000_bird_1.jpg", "/dataset/export.zip?scope=all"]:
+        code, _ = get(sim, path, anon)
+        if code != 401:
+            blocked.append((path, code))
+    check("ไม่ล็อกอิน -> ทุกหน้าข้อมูล/ภาพ/ไฟล์ตอบ 401", not blocked, blocked)
+    with anon.open(sim.url + "/", timeout=5) as r:
+        check("ไม่ล็อกอินเปิดหน้าแรก -> เด้งไปหน้าล็อกอิน", r.url.endswith("/login"), r.url)
+    code, _ = api_post(sim, "/api/pump", {}, anon)
+    check("ไม่ล็อกอินสั่งปั๊ม -> 401", code == 401, code)
+    code, _ = get(sim, "/health", anon)
+    check("/health ยังเปิดได้ (ไว้เช็กว่าเครื่องทำงาน)", code == 200, code)
+
+    page = browser.new_page(**phone)
     page.goto(sim.url)
+    page.wait_for_url("**/login")
+    check("ยังไม่มีรหัส -> หน้าตั้งรหัสครั้งแรก", page.is_visible("#setupNote") and page.is_visible("#pw2"))
+    shot(page, "13_first_setup.png")
+    page.fill("#pw", "abc"); page.fill("#pw2", "abc"); page.click("#go")
+    check("รหัสสั้นเกิน -> ไม่ยอม", "6" in page.inner_text("#msg"), page.inner_text("#msg"))
+    page.fill("#pw", "secret123"); page.fill("#pw2", "secret124"); page.click("#go")
+    check("พิมพ์ซ้ำไม่ตรง -> ไม่ยอม", "ไม่ตรง" in page.inner_text("#msg"), page.inner_text("#msg"))
+    page.fill("#pw2", "secret123"); page.click("#go")
+    page.wait_for_url(sim.url + "/", timeout=10000)
     page.wait_for_function("document.getElementById('brd').textContent === 'เชื่อมต่อแล้ว'", timeout=20000)
-    page.once("dialog", lambda d: d.accept("0000"))
-    page.click("#mH")
-    m = wait_msg(page, "PIN", 3)
-    check("ใส่ PIN ผิด -> ไม่ยอมสั่ง", "PIN ไม่ถูกต้อง" in m, m)
-    page.evaluate("localStorage.removeItem('birdPin')")
-    page.once("dialog", lambda d: d.accept("4821"))
-    page.click("#mH")
-    m = wait_msg(page, "OK HOME", 3)
-    check("ใส่ PIN ถูก -> สั่งงานได้ และจำ PIN ไว้", "OK HOME" in m, m)
-    page.click("#mH")
-    m = wait_msg(page, "OK HOME", 3)
-    check("กดครั้งถัดไปไม่ต้องใส่ PIN ซ้ำ", "OK HOME" in m, m)
+    check("ตั้งรหัสแล้วเข้าหน้าหลักได้ทันที", True)
+    sim.password, sim._op = "secret123", None
+    code, _ = api_post(sim, "/api/setup", {"password": "hacker999"})
+    check("ตั้งรหัสแล้ว เรียกหน้าตั้งรหัสซ้ำไม่ได้ (409)", code == 409, code)
+    perm = oct(os.stat(os.path.join(sim.data_dir, "auth.json")).st_mode & 0o777)
+    raw = open(os.path.join(sim.data_dir, "auth.json")).read()
+    check("auth.json เก็บแค่ hash อ่านได้เฉพาะเจ้าของ", "secret123" not in raw and perm == "0o600", perm)
+
+    # เครื่องที่สองล็อกอินไว้ แล้วเครื่องแรกเปลี่ยนรหัส -> เครื่องที่สองต้องหลุด
+    ctx2 = browser.new_context(**phone)
+    p2 = ctx2.new_page()
+    open_ui(p2, sim)
+    page.evaluate("document.getElementById('tech').open = true")
+    page.fill("#pwCur", "wrongpass"); page.fill("#pwNew", "newpass456"); page.fill("#pwNew2", "newpass456")
+    page.click("#pwSave")
+    m = wait_msg(page, "ไม่ถูกต้อง", 3)
+    check("เปลี่ยนรหัสโดยใส่รหัสเดิมผิด -> ไม่ยอม", "ไม่ถูกต้อง" in m, m)
+    page.fill("#pwCur", "secret123"); page.fill("#pwNew", "newpass456"); page.fill("#pwNew2", "newpass456")
+    page.click("#pwSave")
+    m = wait_msg(page, "เปลี่ยนรหัสแล้ว", 3)
+    check("เปลี่ยนรหัสได้", "เปลี่ยนรหัสแล้ว" in m, m)
+    sim.password, sim._op = "newpass456", None
+    try:
+        p2.wait_for_url("**/login", timeout=6000)
+        kicked = True
+    except Exception:                                  # noqa: BLE001
+        kicked = False
+    check("เปลี่ยนรหัสแล้ว เครื่องอื่นที่ล็อกอินไว้ถูกให้ล็อกอินใหม่", kicked, p2.url)
+    page.wait_for_timeout(2500)
+    check("เครื่องที่เปลี่ยนรหัสยังใช้งานต่อได้", page.url == sim.url + "/", page.url)
+    ctx2.close()
+
+    page.click("#btnLogout")
+    page.wait_for_url("**/login", timeout=5000)
+    check("ปุ่มออกจากระบบใช้ได้", True)
+
+    # ลืมรหัส: ตั้งใหม่ด้วยคำสั่งบน Pi ขณะเซิร์ฟเวอร์รันอยู่
+    env = dict(os.environ, BIRD_DATA_DIR=sim.data_dir)
+    r = subprocess.run([sys.executable, SERVER, "--set-password"], input="clipass789\nclipass789\n",
+                       env=env, text=True, capture_output=True, timeout=60, start_new_session=True)
+    check("คำสั่ง --set-password ตั้งรหัสใหม่ได้", r.returncode == 0 and "บันทึกแล้ว" in r.stdout,
+          (r.returncode, r.stdout[-200:], r.stderr[-300:]))
+    code, _ = api_post(sim, "/api/login", {"password": "newpass456"}, urllib.request.build_opener())
+    check("หลังตั้งด้วยคำสั่ง รหัสเดิมใช้ไม่ได้ทันที (ไม่ต้องรีสตาร์ท)", code == 401, code)
+    sim.password, sim._op = "clipass789", None
+    open_ui(page, sim)
+    check("รหัสที่ตั้งด้วยคำสั่งใช้ล็อกอินได้", page.url == sim.url + "/", page.url)
+    page.click("#btnLogout")
+    page.wait_for_url("**/login", timeout=5000)
+    shot(page, "13b_login.png")
+
+    # เดารหัสผิด 5 ครั้ง -> ล็อก
+    for i in range(5):
+        page.fill("#pw", f"guess{i}xx")
+        page.click("#go")
+        page.wait_for_function("document.getElementById('msg').textContent !== ''", timeout=5000)
+        page.wait_for_timeout(500)
+    m = page.inner_text("#msg")
+    check("ใส่ผิด 5 ครั้ง -> ล็อกและบอกเวลารอ", "ลองใหม่ในอีก" in m or "ล็อก" in m, m)
+    check("ระหว่างล็อก ปุ่มเข้าสู่ระบบกดไม่ได้", page.is_disabled("#go"))
+    code, j = api_post(sim, "/api/login", {"password": "clipass789"}, urllib.request.build_opener())
+    check("ระหว่างล็อก ใส่รหัสถูกก็ยังเข้าไม่ได้ (429)", code == 429, (code, j))
 
 
 def main():
@@ -412,10 +609,12 @@ def main():
         phone = dict(viewport={"width": 390, "height": 844}, device_scale_factor=2,
                      is_mobile=True, has_touch=True)
 
-        print("== ใช้งานปกติ (ไม่มี PIN) ==")
+        print("== ใช้งานปกติ + ข้อมูลสำหรับเทรน ==")
         sim = Sim(a.clip, a.model, port=5055).start()
         try:
-            main_flow(browser.new_page(**phone), sim)
+            page = browser.new_page(**phone)
+            main_flow(page, sim)
+            dataset_flow(page, sim)
         finally:
             sim.stop()
 
@@ -440,10 +639,10 @@ def main():
         finally:
             sim.stop()
 
-        print("== ตั้ง PIN ==")
-        sim = Sim(a.clip, a.model, port=5056, pin="4821").start()
+        print("== ล็อกอิน ==")
+        sim = Sim(a.clip, a.model, port=5056, password="").start()
         try:
-            pin_flow(browser.new_page(**phone), sim)
+            auth_flow(browser, phone, sim)
         finally:
             sim.stop()
         browser.close()

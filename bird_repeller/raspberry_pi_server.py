@@ -2,10 +2,19 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v6.8
- ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.7 (กวาดช้าลง ไม่ชนขอบ)
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v7.0
+ ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.7 ขึ้นไป (v7.8 = ผังขาใหม่ เซิร์ฟเวอร์ไม่ต้องรู้เลขขา)
 --------------------------------------------------------------------------
- เปลี่ยนจาก v6.7 (รุ่นนี้):
+ เปลี่ยนจาก v6.8 (รุ่นนี้):
+   - ล็อกอินด้วยรหัสผ่าน (แทน PIN เดิม) ทุกหน้าต้องล็อกอินก่อน รวมภาพสด ภาพย้อนหลัง
+     log และไฟล์เทรน / ใส่ผิด 5 ครั้งล็อก 5 นาที / จำการล็อกอิน 30 วัน
+     ครั้งแรกที่เปิดเว็บจะให้ตั้งรหัส / ลืมรหัส: python3 raspberry_pi_server.py --set-password
+   - การ์ด "ข้อมูลสำหรับเทรน": ดูภาพชุดข้อมูลพร้อมกรอบที่โมเดลตีไว้ ติดป้าย
+     ✓ นก / ✗ ไม่มีนก / ✎ ต้องแก้กรอบ / ลบภาพ แล้วดาวน์โหลด ZIP รูปแบบ YOLO
+     (มีกรอบจากโมเดลให้ก่อน แก้เฉพาะที่ผิด) ไปเทรนต่อบน Colab/คอม
+   - เก็บกรอบที่โมเดลเห็นคู่กับภาพชุดข้อมูล (ไฟล์ .json ข้างภาพ) และเก็บภาพทุกครั้งที่สั่งไล่
+
+ เปลี่ยนจาก v6.7:
    - ตั้งความกว้างและความเร็วการกวาดตอนไล่นกได้จากหน้าเว็บ (การ์ด "ควบคุมด้วยมือ")
      พร้อมปุ่มทดสอบกวาดโดยไม่ฉีดน้ำ ไว้หาค่าที่หัวฉีดไม่ชนขอบ (ต้องใช้บอร์ด v7.7)
 
@@ -94,20 +103,23 @@
 """
 
 import csv
-import hmac
 import json
 import logging
 import os
 import queue
+import re
 import shutil
+import sys
 import threading
 import time
+import zipfile
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import cv2
 import numpy as np
-from flask import Flask, Response, jsonify, request, send_file
+from flask import Flask, Response, jsonify, redirect, request, send_file, session
+from werkzeug.security import check_password_hash, generate_password_hash
 
 try:
     import serial
@@ -186,6 +198,9 @@ DATASET_MOTION_FRAC = 0.02      # สัดส่วนพิกเซลที�
 DATASET_RANDOM_EVERY = 5        # สุ่มเก็บทุก ๆ กี่รอบ
 DATASET_BIRD_MIN_GAP_S = 30     # ภาพที่เจอนก เก็บห่างกันอย่างน้อยกี่วินาที (นกเกาะนิ่งจะได้ไม่ซ้ำเป็นร้อยใบ)
 DATASET_MIN_FREE_MB = 1024      # พื้นที่ว่างเหลือน้อยกว่านี้ หยุดเก็บ
+DATASET_LABELS = os.path.join(DATASET_DIR, "labels.json")   # ป้ายที่ติดจากหน้าเว็บ
+DATASET_PRELABEL_CONF = 0.25    # กรอบจากโมเดลที่ความมั่นใจตั้งแต่เท่านี้ ใส่เป็นกรอบเริ่มต้นในไฟล์ YOLO
+DATASET_PAGE = 24               # ภาพต่อหน้าในการ์ดข้อมูลเทรน
 
 # ---------- การยืนยันก่อนสั่งไล่ ----------
 # โมเดล COCO ที่ยังไม่ได้เทรนเองมีโอกาสเห็นผิด การบังคับให้เจอติดกันหลายเฟรม
@@ -218,11 +233,19 @@ PUMP_MS_MAX = 8000
 PUMP_BUTTON_MS = 2000       # ปุ่มปั๊มบนหน้าเว็บเปิดกี่ ms (รอบไล่ของบอร์ดตั้งไว้ในเฟิร์มแวร์ = 2 วิ)
 STEPS_PER_REV = 1600
 
-# ---------- ความปลอดภัยหน้าเว็บ ----------
-# ตั้ง PIN แล้วปุ่มสั่งงานทุกปุ่มต้องใส่ PIN ก่อน (ดูภาพ/สถานะได้ไม่ต้องใส่)
-#   BIRD_PIN=4821 python3 raspberry_pi_server.py
-# ถ้าใช้ฮอตสปอตที่มีคนอื่นต่ออยู่ด้วย ควรตั้งไว้ ไม่งั้นใครก็สั่งปั๊ม/มอเตอร์ได้
-WEB_PIN = os.environ.get("BIRD_PIN", "")
+# ---------- ความปลอดภัยหน้าเว็บ (v7.0: ล็อกอินด้วยรหัสผ่าน) ----------
+# ทุกหน้าต้องล็อกอินก่อน รหัสเก็บเป็น hash ใน auth.json (ไม่เก็บตัวรหัสจริง)
+# ตั้งรหัสได้ 3 ทาง:
+#   1) เปิดเว็บครั้งแรก จะมีหน้าให้ตั้งรหัส (ใครเปิดก่อนได้ตั้ง จึงควรตั้งทันทีหลังติดตั้ง)
+#   2) บน Pi:  python3 raspberry_pi_server.py --set-password   (ใช้ตอนลืมรหัสด้วย)
+#   3) env BIRD_PASSWORD=xxxx  ใช้เป็นรหัสเริ่มต้นเมื่อยังไม่มี auth.json (BIRD_PIN รุ่นเก่าก็ได้)
+AUTH_FILE = os.path.join(DATA_DIR, "auth.json")
+SECRET_FILE = os.path.join(DATA_DIR, "secret.key")   # กุญแจเซ็นคุกกี้ล็อกอิน สร้างเองครั้งแรก
+LOGIN_DAYS = 30             # จำการล็อกอินในเบราว์เซอร์กี่วัน
+LOGIN_MAX_FAIL = 5          # ใส่ผิดกี่ครั้งติดกันถึงล็อก
+LOGIN_LOCK_S = 300          # ล็อกกี่วินาที
+PASSWORD_MIN_LEN = 6
+ENV_PASSWORD = os.environ.get("BIRD_PASSWORD") or os.environ.get("BIRD_PIN", "")
 
 # ============================ โหมดการทำงาน ============================
 # "field" = ทดสอบภาคสนาม (ค่าเริ่มต้น): เจอนกแล้วไล่จริง (ปั๊ม + มอเตอร์) และเก็บข้อมูลเต็มที่
@@ -269,6 +292,133 @@ os.makedirs(HIST_DIR, exist_ok=True)
 app = Flask(__name__)
 
 
+def _load_secret():
+    try:
+        with open(SECRET_FILE, "rb") as f:
+            key = f.read()
+        if len(key) >= 32:
+            return key
+    except OSError:
+        pass
+    key = os.urandom(32)
+    atomic_write_bytes(SECRET_FILE, key)
+    os.chmod(SECRET_FILE, 0o600)
+    return key
+
+
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+                  SESSION_COOKIE_NAME="bird_session",
+                  PERMANENT_SESSION_LIFETIME=timedelta(days=LOGIN_DAYS))
+
+# ============================ AUTH ============================
+# ver เพิ่มทุกครั้งที่เปลี่ยนรหัส คุกกี้ที่ออกก่อนหน้าจะใช้ไม่ได้ทันที (ทุกเครื่องต้องล็อกอินใหม่)
+_auth = {"hash": "", "ver": 0, "mtime": None}
+_auth_lock = threading.Lock()
+_login_fail = {}            # ip -> [ครั้งที่ผิดติดกัน, ล็อกถึงเวลา]
+
+
+def _auth_refresh():
+    """อ่าน auth.json ใหม่ถ้าไฟล์เปลี่ยน (เช่น ตั้งรหัสด้วย --set-password ตอนเซิร์ฟเวอร์รันอยู่)"""
+    try:
+        mtime = os.path.getmtime(AUTH_FILE)
+    except OSError:
+        mtime = None
+    with _auth_lock:
+        if mtime == _auth["mtime"]:
+            return
+        _auth["mtime"] = mtime
+        if mtime is None:
+            return
+        try:
+            with open(AUTH_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            _auth["hash"] = str(data.get("hash", ""))
+            _auth["ver"] = int(data.get("ver", 0))
+        except (OSError, ValueError) as e:
+            print(f"[Auth] อ่าน {AUTH_FILE} ไม่ได้: {e}", flush=True)
+
+
+def set_password(pw):
+    with _auth_lock:
+        ver = _auth["ver"] + 1
+        data = {"hash": generate_password_hash(pw), "ver": ver,
+                "changed": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+        atomic_write_bytes(AUTH_FILE, json.dumps(data).encode("utf-8"))
+        os.chmod(AUTH_FILE, 0o600)
+        _auth.update(hash=data["hash"], ver=ver, mtime=os.path.getmtime(AUTH_FILE))
+    return ver
+
+
+def password_is_set():
+    _auth_refresh()
+    return bool(_auth["hash"])
+
+
+def check_password(pw):
+    _auth_refresh()
+    h = _auth["hash"]
+    return bool(h) and check_password_hash(h, pw)
+
+
+def logged_in():
+    return password_is_set() and session.get("auth") == _auth["ver"]
+
+
+def _login_session():
+    session.clear()
+    session.permanent = True
+    session["auth"] = _auth["ver"]
+
+
+def _client_ip():
+    return request.remote_addr or "?"
+
+
+def _lock_left(ip):
+    rec = _login_fail.get(ip)
+    if not rec:
+        return 0
+    return max(0, int(rec[1] - time.time() + 0.999))
+
+
+def _note_fail(ip):
+    rec = _login_fail.setdefault(ip, [0, 0.0])
+    rec[0] += 1
+    if rec[0] >= LOGIN_MAX_FAIL:
+        rec[0] = 0
+        rec[1] = time.time() + LOGIN_LOCK_S
+    if len(_login_fail) > 500:                       # กันตารางโตไม่หยุด
+        for k in [k for k, v in _login_fail.items() if v[1] < time.time()][:250]:
+            _login_fail.pop(k, None)
+
+
+def init_auth():
+    _auth_refresh()
+    if not _auth["hash"] and ENV_PASSWORD:
+        if len(ENV_PASSWORD) < 4:
+            print("[Auth] BIRD_PASSWORD สั้นเกินไป ไม่ใช้", flush=True)
+        else:
+            set_password(ENV_PASSWORD)
+            print("[Auth] ตั้งรหัสเริ่มต้นจาก BIRD_PASSWORD แล้ว", flush=True)
+
+
+def cli_set_password():
+    import getpass
+    print("ตั้งรหัสผ่านหน้าเว็บใหม่ (เครื่องที่ล็อกอินอยู่ทุกเครื่องจะต้องล็อกอินใหม่)")
+    while True:
+        pw = getpass.getpass("รหัสใหม่: ")
+        if len(pw) < PASSWORD_MIN_LEN:
+            print(f"ต้องยาวอย่างน้อย {PASSWORD_MIN_LEN} ตัวอักษร")
+            continue
+        if getpass.getpass("พิมพ์ซ้ำอีกครั้ง: ") != pw:
+            print("สองครั้งไม่ตรงกัน ลองใหม่")
+            continue
+        break
+    _auth_refresh()
+    set_password(pw)
+    print(f"บันทึกแล้วที่ {AUTH_FILE} (ถ้าเซิร์ฟเวอร์รันอยู่ จะใช้รหัสใหม่ทันที)")
+
+
 class _QuietPoll(logging.Filter):
     def filter(self, record):
         msg = record.getMessage()
@@ -284,7 +434,7 @@ _model_name = "ยังไม่ได้โหลด"
 
 
 def load_model():
-    global _model, _model_name
+    global _model, _model_name, BIRD_CLASS_ID
     from ultralytics import YOLO
 
     if os.path.isdir(MODEL_NCNN):
@@ -296,6 +446,13 @@ def load_model():
 
     dummy = np.zeros((IMG_SIZE, IMG_SIZE, 3), dtype=np.uint8)
     _model.predict(dummy, imgsz=IMG_SIZE, verbose=False)
+
+    # โมเดลที่เทรนเอง (คลาสเดียว "bird") นกเป็นคลาส 0 ไม่ใช่ 14 แบบโมเดล COCO
+    names = getattr(_model, "names", None) or {}
+    ids = [int(k) for k, v in dict(names).items() if str(v).lower() == "bird"]
+    if ids and ids[0] != BIRD_CLASS_ID:
+        BIRD_CLASS_ID = ids[0]
+        print(f"[Model] คลาส bird ของโมเดลนี้คือ {BIRD_CLASS_ID}", flush=True)
     print(f"[Model] โหลดสำเร็จ: {_model_name}  imgsz={IMG_SIZE}  conf={CONF_THRESHOLD}",
           flush=True)
 
@@ -425,10 +582,12 @@ def enhance(image_bgr):
     return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
 
-def detect_and_draw(image_bgr, threshold=None):
+def detect_and_draw(image_bgr, threshold=None, boxes_out=None):
     """รัน YOLO เฉพาะคลาสนก กรองด้วย ROI แล้ววาดกรอบลงภาพ
 
     คืน (จำนวนนกที่นับ, ความมั่นใจสูงสุด, เวลาที่ใช้เป็น ms, ความมั่นใจสูงสุดของกรอบที่ต่ำกว่าเกณฑ์)
+    boxes_out: ถ้าส่ง list มา จะได้ทุกกรอบที่โมเดลเห็น [x1, y1, x2, y2, conf] พิกัดภาพเต็ม
+               (รวมกรอบอ่อนและกรอบนอก ROI) ไว้เป็นกรอบเริ่มต้นของชุดข้อมูลเทรน
     """
     if _model is None:
         return 0, 0.0, 0, 0.0
@@ -480,6 +639,8 @@ def detect_and_draw(image_bgr, threshold=None):
             x1, y1, x2, y2 = (int(v) for v in b.xyxy[0].tolist())
             x1, x2, y1, y2 = x1 + ox, x2 + ox, y1 + oy, y2 + oy   # กลับเป็นพิกัดภาพเต็ม
             conf = float(b.conf[0])
+            if boxes_out is not None:
+                boxes_out.append([max(0, x1), max(0, y1), min(w, x2), min(h, y2), round(conf, 3)])
 
             # กรอบที่ต่ำกว่าเกณฑ์: ไม่นับ ไม่วาด แต่จำไว้ให้ระบบเก็บชุดข้อมูล
             if conf < threshold:
@@ -1107,14 +1268,16 @@ def _motion_frac(raw, hw):
     return float((diff > 25).mean())
 
 
-def dataset_maybe_save(raw, source, count, max_conf, weak_max, hw):
+def dataset_maybe_save(raw, source, count, max_conf, weak_max, hw, boxes=None, repelled=False):
     with _ds_lock:
         _ds["rounds"] += 1
         motion = _motion_frac(raw, hw)
         now = time.time()
 
         reason = None
-        if source == "manual":
+        if repelled:
+            reason = "repel"            # ทุกครั้งที่สั่งไล่ ไว้ตรวจว่าไล่เพราะนกจริงหรือโมเดลเห็นผิด
+        elif source == "manual":
             reason = "manual"
         elif count > 0:
             if now - _ds["last_bird_save"] >= DATASET_BIRD_MIN_GAP_S:
@@ -1142,7 +1305,12 @@ def dataset_maybe_save(raw, source, count, max_conf, weak_max, hw):
         ts = datetime.now()
         name = f"{ts.strftime('%Y%m%d_%H%M%S_%f')[:-3]}_{reason}_{count}.jpg"
         atomic_write_jpeg(os.path.join(DATASET_DIR, name), raw, quality=92)
+        h, w = raw.shape[:2]
+        meta = {"w": w, "h": h, "boxes": boxes or [], "source": source}
+        atomic_write_bytes(_ds_meta_path(name), json.dumps(meta).encode("utf-8"))
         _dataset_count(reason)
+        if _dsx["names"] is not None:
+            _dsx["names"].append(name)
 
         new_file = not os.path.exists(DATASET_LOG)
         with open(DATASET_LOG, "a", newline="", encoding="utf-8") as f:
@@ -1185,6 +1353,207 @@ def dataset_stats():
                     out[parts[1]] = out.get(parts[1], 0) + 1
             _ds_counts = out
         return dict(_ds_counts)
+
+
+# ---------- ป้ายและไฟล์ส่งออกสำหรับเทรน ----------
+_DS_NAME_RE = re.compile(r"^\d{8}_\d{6}_\d{3}_[a-z]+_\d+\.jpg$")
+DS_LABELS = ("bird", "none", "fix")     # นก (กรอบถูก) / ไม่มีนก / มีนกแต่ต้องแก้กรอบ
+_dsx = {"names": None, "labels": None}  # แคชรายชื่อภาพ (เก่า -> ใหม่) และป้าย ใช้ภายใต้ _ds_lock
+
+
+def _ds_meta_path(name):
+    return os.path.join(DATASET_DIR, name[:-4] + ".json")
+
+
+def _ds_load():
+    """โหลดรายชื่อภาพและป้ายครั้งแรก (เรียกภายใต้ _ds_lock)"""
+    if _dsx["names"] is None:
+        try:
+            _dsx["names"] = sorted(f for f in os.listdir(DATASET_DIR) if _DS_NAME_RE.match(f))
+        except FileNotFoundError:
+            _dsx["names"] = []
+    if _dsx["labels"] is None:
+        try:
+            with open(DATASET_LABELS, encoding="utf-8") as f:
+                data = json.load(f)
+            _dsx["labels"] = {k: v for k, v in data.items() if v in DS_LABELS}
+        except (OSError, ValueError):
+            _dsx["labels"] = {}
+
+
+def _ds_save_labels():
+    os.makedirs(DATASET_DIR, exist_ok=True)
+    atomic_write_bytes(DATASET_LABELS, json.dumps(_dsx["labels"], ensure_ascii=False).encode("utf-8"))
+
+
+def _ds_meta(name):
+    try:
+        with open(_ds_meta_path(name), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None                     # ภาพจากเวอร์ชันก่อน v7.0 ไม่มีข้อมูลกรอบ
+
+
+def _ds_time(name):
+    return f"{name[0:4]}-{name[4:6]}-{name[6:8]} {name[9:11]}:{name[11:13]}:{name[13:15]}"
+
+
+def dataset_page(flt, page):
+    with _ds_lock:
+        _ds_load()
+        names = list(_dsx["names"])
+        labels = dict(_dsx["labels"])
+    names.reverse()                                     # ใหม่สุดก่อน
+    counts = {"all": len(names), "todo": 0, "bird": 0, "none": 0, "fix": 0}
+    for n in names:
+        counts[labels.get(n, "todo")] += 1
+    if flt in DS_LABELS:
+        names = [n for n in names if labels.get(n) == flt]
+    elif flt == "todo":
+        names = [n for n in names if n not in labels]
+    start = max(0, page) * DATASET_PAGE
+    items = []
+    for n in names[start:start + DATASET_PAGE]:
+        meta = _ds_meta(n) or {}
+        reason = n.rsplit("_", 2)[1]
+        items.append({"n": n, "t": _ds_time(n), "r": reason, "l": labels.get(n, ""),
+                      "w": meta.get("w"), "h": meta.get("h"),
+                      "b": meta.get("boxes") if meta else None})
+    return {"items": items, "counts": counts, "page": page,
+            "more": start + DATASET_PAGE < len(names)}
+
+
+def dataset_set_label(name, label):
+    with _ds_lock:
+        _ds_load()
+        if name not in _dsx["names"]:
+            return False
+        if label:
+            _dsx["labels"][name] = label
+        else:
+            _dsx["labels"].pop(name, None)
+        _ds_save_labels()
+    return True
+
+
+def dataset_delete(name):
+    with _ds_lock:
+        _ds_load()
+        if name not in _dsx["names"]:
+            return False
+        for path in (os.path.join(DATASET_DIR, name), _ds_meta_path(name)):
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+        _dsx["names"].remove(name)
+        if _dsx["labels"].pop(name, None) is not None:
+            _ds_save_labels()
+        if _ds_counts is not None:
+            reason = name.rsplit("_", 2)[1]
+            _ds_counts["total"] = max(0, _ds_counts["total"] - 1)
+            if _ds_counts.get(reason):
+                _ds_counts[reason] -= 1
+    return True
+
+
+def _yolo_lines(meta, min_conf):
+    """กรอบจากโมเดลเป็นบรรทัด YOLO: คลาส cx cy w h (สัดส่วน 0-1 ของภาพ)"""
+    if not meta or not meta.get("w") or not meta.get("h"):
+        return []
+    iw, ih = float(meta["w"]), float(meta["h"])
+    out = []
+    for x1, y1, x2, y2, conf in meta.get("boxes") or []:
+        if conf < min_conf or x2 <= x1 or y2 <= y1:
+            continue
+        cx, cy = (x1 + x2) / 2 / iw, (y1 + y2) / 2 / ih
+        bw, bh = (x2 - x1) / iw, (y2 - y1) / ih
+        vals = [min(1.0, max(0.0, v)) for v in (cx, cy, bw, bh)]
+        out.append("0 " + " ".join(f"{v:.6f}" for v in vals))
+    return out
+
+
+DS_README = """ชุดข้อมูลจากเครื่องไล่นกอัตโนมัติ (รูปแบบ YOLO)
+==================================================
+images/   ภาพดิบจากกล้อง (ไม่มีกรอบวาดทับ)
+labels/   ไฟล์กรอบ 1 ไฟล์ต่อภาพ แต่ละบรรทัด = 0 cx cy w h (สัดส่วน 0-1) คลาส 0 = bird
+          ไฟล์ว่าง = ภาพนี้ไม่มีนก (ใช้สอนโมเดลว่าอะไรไม่ใช่นก สำคัญมาก)
+data.yaml ใช้เทรนได้ทันที (train กับ val ชี้ที่เดียวกัน ควรแบ่งชุดตรวจสอบเองหรือให้ Roboflow แบ่ง)
+review_needed.txt  ภาพที่ต้องเปิดดูและแก้กรอบก่อนเทรน (กรอบในไฟล์มาจากโมเดล อาจผิด)
+
+ป้ายที่ติดจากหน้าเว็บ
+  ✓ นก         กรอบจากโมเดล (ความมั่นใจตั้งแต่ {conf}) ถือว่าถูกแล้ว
+  ✗ ไม่มีนก     ไฟล์กรอบว่าง
+  ✎ ต้องแก้กรอบ  ใส่กรอบจากโมเดลไว้ให้ก่อน และอยู่ใน review_needed.txt
+  (ยังไม่ติดป้าย) มีเฉพาะใน ZIP แบบ "ทั้งหมด" ใส่กรอบจากโมเดลไว้ และอยู่ใน review_needed.txt
+
+ขั้นตอนเทรนแบบสั้น
+  1. อัปโหลดทั้งโฟลเดอร์เข้า Roboflow (หรือ CVAT / Label Studio) แก้กรอบภาพใน review_needed.txt
+  2. เทรนบน Google Colab:  yolo detect train model=yolov8n.pt data=data.yaml epochs=100 imgsz=640
+  3. แปลงเป็น NCNN:        yolo export model=runs/detect/train/weights/best.pt format=ncnn
+  4. คัดลอกโฟลเดอร์ best_ncnn_model ไปที่ Pi ตั้งชื่อเป็น yolov8n_ncnn_model (สำรองของเดิมไว้ก่อน)
+     เซิร์ฟเวอร์จะหาเลขคลาส bird ของโมเดลใหม่ให้เอง
+"""
+
+
+class _ZipPipe:
+    """ไฟล์ปลอมสำหรับ zipfile เขียนแล้วดึงออกเป็นก้อนส่งให้เบราว์เซอร์ทันที
+
+    ไม่มี seek() zipfile จึงเขียนแบบสตรีม ไม่ต้องสร้าง ZIP ทั้งก้อนในหน่วยความจำหรือบน SD การ์ด
+    """
+
+    def __init__(self):
+        self._buf = bytearray()
+        self._pos = 0
+
+    def write(self, b):
+        self._buf += b
+        self._pos += len(b)
+        return len(b)
+
+    def tell(self):
+        return self._pos
+
+    def flush(self):
+        pass
+
+    def take(self):
+        out = bytes(self._buf)
+        self._buf.clear()
+        return out
+
+
+def dataset_export_stream(scope):
+    """สร้าง ZIP แบบ YOLO ทีละไฟล์ (generator) scope = "labeled" หรือ "all" """
+    with _ds_lock:
+        _ds_load()
+        names = list(_dsx["names"])
+        labels = dict(_dsx["labels"])
+    if scope != "all":
+        names = [n for n in names if n in labels]
+    pipe = _ZipPipe()
+    review = []
+    with zipfile.ZipFile(pipe, "w", zipfile.ZIP_STORED) as z:
+        z.writestr("data.yaml", "path: .\ntrain: images\nval: images\nnames:\n  0: bird\n")
+        z.writestr("classes.txt", "bird\n")
+        z.writestr("README.txt", DS_README.replace("{conf}", str(DATASET_PRELABEL_CONF)))
+        yield pipe.take()
+        for n in names:
+            path = os.path.join(DATASET_DIR, n)
+            if not os.path.exists(path):
+                continue
+            label = labels.get(n, "")
+            meta = _ds_meta(n)
+            lines = [] if label == "none" else _yolo_lines(meta, DATASET_PRELABEL_CONF)
+            if label in ("fix", ""):
+                review.append(f"{n}\t{'ต้องแก้กรอบ' if label else 'ยังไม่ติดป้าย'}")
+            elif label == "bird" and not lines:
+                review.append(f"{n}\tติดป้ายว่ามีนก แต่โมเดลไม่ได้ตีกรอบไว้ ต้องตีกรอบเอง")
+            z.write(path, "images/" + n)
+            z.writestr("labels/" + n[:-4] + ".txt", "\n".join(lines) + ("\n" if lines else ""))
+            yield pipe.take()
+        z.writestr("review_needed.txt", "\n".join(review) + "\n")
+    yield pipe.take()
 
 
 # ============================ WORKER ============================
@@ -1251,10 +1620,11 @@ def _process(source, requested_at):
                 STATE["processing"] = True
         raw = frame.copy()                     # เก็บภาพดิบไว้ก่อนโดนวาดกรอบทับ
         t_det = time.perf_counter()
-        count, max_conf, infer_ms, weak_max = detect_and_draw(frame, threshold)
+        boxes = []
+        count, max_conf, infer_ms, weak_max = detect_and_draw(frame, threshold, boxes)
         detect_total += int((time.perf_counter() - t_det) * 1000)
         infer_total += infer_ms
-        cand = (count, max_conf, weak_max, frame, raw)
+        cand = (count, max_conf, weak_max, frame, raw, boxes)
         if best is None or (count, max_conf, weak_max) > best[:3]:
             best = cand
         if count > 0:
@@ -1267,7 +1637,7 @@ def _process(source, requested_at):
         print(f"[Cam] {err}", flush=True)
         return
 
-    count, max_conf, weak_max, img, raw = best
+    count, max_conf, weak_max, img, raw, boxes = best
     infer_ms = infer_total
     detect_ms = detect_total
     ok, buf = cv2.imencode(".jpg", raw, [cv2.IMWRITE_JPEG_QUALITY, 90])
@@ -1279,7 +1649,9 @@ def _process(source, requested_at):
         # ไฟส้ม = เจอนก ติดทันทีไม่ว่าจะเปิดไล่อัตโนมัติหรือไม่ (บอร์ดดับเองหลัง 5 วินาที)
         CTRL.send("BIRD 1", timeout=2.0)
 
+    repels_before = CTRL.repel_count
     repel_note = CTRL.maybe_auto_repel(count)
+    repelled = CTRL.repel_count > repels_before
     hw = CTRL.snapshot()
 
     ts = datetime.now()
@@ -1328,7 +1700,7 @@ def _process(source, requested_at):
 
     if DATASET_ENABLED:
         try:
-            dataset_maybe_save(raw, source, count, max_conf, weak_max, hw)
+            dataset_maybe_save(raw, source, count, max_conf, weak_max, hw, boxes, repelled)
         except Exception as e:                                  # noqa: BLE001
             print(f"[Dataset] บันทึกไม่สำเร็จ: {e}", flush=True)
 
@@ -1399,22 +1771,95 @@ def _auto_loop():
 
 
 # ============================ API ============================
-@app.before_request
-def guard_commands():
-    """ด่านกันคำสั่งที่ไม่ได้มาจากหน้าเว็บนี้
+_PUBLIC = {"login_page", "api_login", "api_setup", "api_health"}
 
-    ทุกคำสั่ง (POST) ต้องเป็น JSON และมี header X-Bird-UI
-    เว็บอื่นที่เปิดอยู่ในมือถือจึงยิงฟอร์มมาสั่งปั๊ม/มอเตอร์ไม่ได้ (เบราว์เซอร์ไม่ยอมให้
-    เว็บอื่นใส่ header เองโดยไม่ถามเซิร์ฟเวอร์ก่อน และเซิร์ฟเวอร์นี้ไม่อนุญาต)
-    ถ้าตั้ง BIRD_PIN ไว้ ต้องส่ง PIN ให้ถูกด้วย
+
+@app.before_request
+def guard():
+    """ด่านหน้าทุกคำขอ
+
+    1) ทุกคำสั่ง (POST) ต้องเป็น JSON และมี header X-Bird-UI
+       เว็บอื่นที่เปิดอยู่ในมือถือจึงยิงฟอร์มมาสั่งปั๊ม/มอเตอร์ไม่ได้ (เบราว์เซอร์ไม่ยอมให้
+       เว็บอื่นใส่ header เองโดยไม่ถามเซิร์ฟเวอร์ก่อน และเซิร์ฟเวอร์นี้ไม่อนุญาต)
+    2) ทุกหน้า ยกเว้นหน้าล็อกอิน ต้องล็อกอินก่อน รวมภาพสด ภาพ และไฟล์ดาวน์โหลด
     """
-    if request.method != "POST":
-        return None
-    if request.headers.get("X-Bird-UI") != "1" or not request.is_json:
+    if request.method == "POST" and (request.headers.get("X-Bird-UI") != "1" or not request.is_json):
         return jsonify(ok=False, msg="คำสั่งไม่ได้มาจากหน้าเว็บของระบบ"), 403
-    if WEB_PIN and not hmac.compare_digest(request.headers.get("X-Bird-Pin", ""), WEB_PIN):
-        return jsonify(ok=False, need_pin=True, msg="PIN ไม่ถูกต้อง"), 401
-    return None
+    if request.endpoint in _PUBLIC or logged_in():
+        return None
+    if request.method == "GET" and request.path == "/":
+        return redirect("/login")
+    return jsonify(ok=False, need_login=True, msg="ต้องล็อกอินก่อน"), 401
+
+
+@app.route("/login")
+def login_page():
+    if logged_in():
+        return redirect("/")
+    page = LOGIN_HTML.replace("__SETUP__", "false" if password_is_set() else "true")
+    resp = Response(page, mimetype="text/html; charset=utf-8")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    ip = _client_ip()
+    left = _lock_left(ip)
+    if left:
+        return jsonify(ok=False, locked=left,
+                       msg=f"ใส่รหัสผิดหลายครั้ง ลองใหม่ในอีก {left} วินาที"), 429
+    if not password_is_set():
+        return jsonify(ok=False, setup=True, msg="ยังไม่ได้ตั้งรหัส"), 409
+    pw = str((request.get_json(silent=True) or {}).get("password", ""))
+    if not check_password(pw):
+        _note_fail(ip)
+        time.sleep(0.4)                              # ชะลอการสุ่มเดา
+        left = _lock_left(ip)
+        return jsonify(ok=False, locked=left or None,
+                       msg=(f"ใส่รหัสผิด {LOGIN_MAX_FAIL} ครั้ง ล็อก {left} วินาที" if left
+                            else "รหัสไม่ถูกต้อง")), 401
+    _login_fail.pop(ip, None)
+    _login_session()
+    return jsonify(ok=True)
+
+
+@app.route("/api/setup", methods=["POST"])
+def api_setup():
+    """ตั้งรหัสครั้งแรก ใช้ได้เฉพาะตอนยังไม่มีรหัสเท่านั้น"""
+    if password_is_set():
+        return jsonify(ok=False, msg="ตั้งรหัสไว้แล้ว ให้ล็อกอินแทน"), 409
+    pw = str((request.get_json(silent=True) or {}).get("password", ""))
+    if len(pw) < PASSWORD_MIN_LEN:
+        return jsonify(ok=False, msg=f"รหัสต้องยาวอย่างน้อย {PASSWORD_MIN_LEN} ตัวอักษร"), 400
+    set_password(pw)
+    print(f"[Auth] ตั้งรหัสผ่านหน้าเว็บครั้งแรกจาก {_client_ip()}", flush=True)
+    _login_session()
+    return jsonify(ok=True)
+
+
+@app.route("/api/logout", methods=["POST"])
+def api_logout():
+    session.clear()
+    return jsonify(ok=True)
+
+
+@app.route("/api/password", methods=["POST"])
+def api_password():
+    data = request.get_json(silent=True) or {}
+    ip = _client_ip()
+    left = _lock_left(ip)
+    if left:
+        return jsonify(ok=False, msg=f"ใส่รหัสผิดหลายครั้ง ลองใหม่ในอีก {left} วินาที"), 429
+    if not check_password(str(data.get("current", ""))):
+        _note_fail(ip)
+        return jsonify(ok=False, msg="รหัสปัจจุบันไม่ถูกต้อง"), 400
+    new = str(data.get("new", ""))
+    if len(new) < PASSWORD_MIN_LEN:
+        return jsonify(ok=False, msg=f"รหัสใหม่ต้องยาวอย่างน้อย {PASSWORD_MIN_LEN} ตัวอักษร"), 400
+    set_password(new)
+    _login_session()                                  # เครื่องนี้ล็อกอินต่อ เครื่องอื่นถูกออก
+    return jsonify(ok=True, msg="เปลี่ยนรหัสแล้ว เครื่องอื่นต้องล็อกอินใหม่")
 
 
 @app.route("/api/capture", methods=["POST"])
@@ -1445,7 +1890,6 @@ def api_state():
     s["corrupt_frames"] = CAM.corrupt_count
     s["test_mode"] = TEST_MODE
     s["mode"] = MODE
-    s["pin_required"] = bool(WEB_PIN)
     s["roi"] = dict(ROI)
     s["hw"] = CTRL.snapshot()
     s["history"] = list(HISTORY)[:24]
@@ -1638,6 +2082,62 @@ def api_history(name):
     return send_file(path, mimetype="image/jpeg")
 
 
+@app.route("/api/dataset")
+def api_dataset():
+    flt = request.args.get("f", "todo")
+    try:
+        page = int(request.args.get("p", 0))
+    except ValueError:
+        page = 0
+    return jsonify(dataset_page(flt, page))
+
+
+def _ds_name_ok(name):
+    return isinstance(name, str) and bool(_DS_NAME_RE.match(name))
+
+
+@app.route("/dataset/img/<name>")
+def api_dataset_img(name):
+    if not _ds_name_ok(name):
+        return "ไม่อนุญาต", 400
+    path = os.path.join(DATASET_DIR, name)
+    if not os.path.exists(path):
+        return "ไม่พบไฟล์", 404
+    resp = send_file(path, mimetype="image/jpeg")
+    resp.headers["Cache-Control"] = "private, max-age=86400"
+    return resp
+
+
+@app.route("/api/dataset/label", methods=["POST"])
+def api_dataset_label():
+    data = request.get_json(silent=True) or {}
+    name, label = data.get("name"), data.get("label") or ""
+    if not _ds_name_ok(name) or (label and label not in DS_LABELS):
+        return jsonify(ok=False, msg="ข้อมูลไม่ถูกต้อง"), 400
+    if not dataset_set_label(name, label):
+        return jsonify(ok=False, msg="ไม่พบภาพนี้แล้ว"), 404
+    return jsonify(ok=True)
+
+
+@app.route("/api/dataset/delete", methods=["POST"])
+def api_dataset_delete():
+    name = (request.get_json(silent=True) or {}).get("name")
+    if not _ds_name_ok(name):
+        return jsonify(ok=False, msg="ข้อมูลไม่ถูกต้อง"), 400
+    if not dataset_delete(name):
+        return jsonify(ok=False, msg="ไม่พบภาพนี้แล้ว"), 404
+    return jsonify(ok=True, msg="ลบภาพแล้ว")
+
+
+@app.route("/dataset/export.zip")
+def api_dataset_export():
+    scope = "all" if request.args.get("scope") == "all" else "labeled"
+    fname = f"bird_dataset_{scope}_{datetime.now().strftime('%Y%m%d_%H%M')}.zip"
+    return Response(dataset_export_stream(scope), mimetype="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"',
+                             "Cache-Control": "no-store"})
+
+
 @app.route("/log")
 def api_log():
     if not os.path.exists(LOG_CSV):
@@ -1675,6 +2175,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
     --btn:#233044; --btnh:#2c3a52; --pri:#1f6f43; --prib:#2b8a55; --dan:#6f2626; --danb:#8a3030;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  [hidden]{display:none!important}
   html{scroll-padding-top:120px}
   body{margin:0;background:var(--bg);color:var(--txt);
        font-family:-apple-system,"Segoe UI",Roboto,"Noto Sans Thai",sans-serif;
@@ -1768,6 +2269,12 @@ HTML_PAGE = r"""<!DOCTYPE html>
   input.sw:checked{background:var(--prib)}
   input.sw:checked::after{left:21px;background:#fff}
 
+  .logout{margin-left:auto;flex:none;font-size:11px;padding:4px 9px;border-radius:99px;min-height:0;white-space:nowrap}
+  .topRow .pill{white-space:nowrap;flex:none;font-size:11px}
+  @media (max-width:420px){ .top h1{font-size:16px} }
+  input.txt{width:100%;font-size:16px;padding:10px 12px;border-radius:10px;
+            border:1px solid var(--line);background:var(--card2);color:var(--txt)}
+  .pwForm{display:grid;gap:8px;max-width:420px;margin-top:6px}
   .pill{display:inline-block;padding:3px 9px;border-radius:99px;font-size:12px;font-weight:400}
   .on{background:rgba(61,220,132,.15);color:var(--ok)}
   .off{background:rgba(255,93,93,.15);color:var(--bad)}
@@ -1809,6 +2316,36 @@ HTML_PAGE = r"""<!DOCTYPE html>
   .lb img{flex:1;min-height:0;width:100%;object-fit:contain}
   .lbNav{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;padding:10px 12px}
 
+  /* ---------- ข้อมูลสำหรับเทรน ---------- */
+  .dsTabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+  .dsTabs button{min-height:0;padding:6px 10px;font-size:13px;border-radius:99px}
+  .dsTabs button b{font-weight:600;color:var(--muted);margin-left:3px}
+  .dsTabs button.on{background:var(--pri);border-color:var(--prib)}
+  .dsTabs button.on b{color:#d8ffe8}
+  .dsGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+  .dsi{display:block;padding:0;min-height:0;background:var(--card2);border-radius:10px;overflow:hidden;text-align:left}
+  .dsPic{position:relative;width:100%;background:#000}
+  .dsPic img{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;display:block}
+  .dsBx{position:absolute;border:2px solid #3ddc84;border-radius:2px;pointer-events:none}
+  .dsBx.weak{border:2px dashed #ffb020}
+  .dsBx i{position:absolute;left:-2px;top:-17px;font-size:10px;font-style:normal;line-height:15px;
+          padding:0 3px;background:#3ddc84;color:#06200f;white-space:nowrap}
+  .dsBx.weak i{background:#ffb020;color:#2a1a00}
+  .dsTag{position:absolute;right:5px;top:5px;font-size:11px;padding:2px 7px;border-radius:99px;font-weight:600}
+  .dsTag.bird{background:#1f6f43;color:#d8ffe8} .dsTag.none{background:#5a2a2a;color:#ffd0d0}
+  .dsTag.fix{background:#6b4e12;color:#ffe2a6}
+  .dsi .meta{display:block;font-size:11px;color:var(--muted);padding:5px 6px;line-height:1.35}
+  .dsv{position:fixed;inset:0;z-index:55;background:#05070a;display:flex;flex-direction:column;
+       padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+  .dsv[hidden]{display:none}
+  .dsvMid{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:0 8px}
+  .dsvMid .dsPic{max-height:100%}
+  .dsvBtns{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 12px 4px}
+  .dsvBtns button{font-size:15px}
+  .dsvBtns .bird{background:#1f6f43;border-color:#2b8a55} .dsvBtns .none{background:#5a2a2a;border-color:#7a3a3a}
+  .dsvBtns .fix{background:#6b4e12;border-color:#8a6a1a}
+  .dsvBtns button.sel{outline:3px solid #fff;outline-offset:-3px}
+
   /* ---------- อื่น ๆ ---------- */
   details.card>summary{cursor:pointer;font-size:14px;font-weight:600;list-style:none;display:flex;align-items:center;gap:8px}
   details.card>summary::-webkit-details-marker{display:none}
@@ -1828,6 +2365,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
   <div class="topRow">
     <h1>🦅 ระบบไล่นกอัตโนมัติ</h1>
     <span class="pill wn" id="modeBadge" hidden></span>
+    <button class="logout" id="btnLogout" title="ออกจากระบบ">ออกจากระบบ</button>
   </div>
   <div class="chips">
     <span class="chip" id="cCam"><i></i>กล้อง</span>
@@ -1970,6 +2508,32 @@ HTML_PAGE = r"""<!DOCTYPE html>
     <div class="row"><button id="btnLog">⬇ ดาวน์โหลด log การตรวจจับ (CSV)</button></div>
   </section>
 
+  <!-- ---------- ข้อมูลสำหรับเทรน ---------- -->
+  <section class="card" id="dsCard">
+    <div class="ctitle">ข้อมูลสำหรับเทรนโมเดล <span class="sub" id="dsSum"></span></div>
+    <div class="msg" style="margin-top:0">แตะภาพเพื่อติดป้าย ✓ มีนก (กรอบถูก) / ✗ ไม่มีนก / ✎ มีนกแต่กรอบผิด
+      — ภาพที่ระบบเห็นผิดสำคัญที่สุด กรอบเขียว = โมเดลมั่นใจ กรอบเหลืองประ = ก้ำกึ่ง
+      ปุ่ม "ถ่ายภาพเดี๋ยวนี้" เก็บภาพเข้าชุดนี้ด้วย</div>
+    <div class="dsTabs" id="dsTabs">
+      <button data-f="todo" class="on">ยังไม่ติดป้าย<b></b></button>
+      <button data-f="bird">✓ นก<b></b></button>
+      <button data-f="none">✗ ไม่มีนก<b></b></button>
+      <button data-f="fix">✎ ต้องแก้กรอบ<b></b></button>
+      <button data-f="all">ทั้งหมด<b></b></button>
+    </div>
+    <div class="dsGrid" id="dsGrid"></div>
+    <div class="row">
+      <button id="dsMore" hidden>โหลดเพิ่ม</button>
+      <button id="dsReload">↻ รีเฟรช</button>
+    </div>
+    <div class="lbl">ดาวน์โหลดไปเทรน (รูปแบบ YOLO พร้อม data.yaml)</div>
+    <div class="row" style="margin-top:0">
+      <a class="btn" id="dsZipL" href="/dataset/export.zip?scope=labeled" download>⬇ ZIP เฉพาะที่ติดป้าย</a>
+      <a class="btn" id="dsZipA" href="/dataset/export.zip?scope=all" download>⬇ ZIP ทั้งหมด</a>
+    </div>
+    <div class="msg" id="dsZipNote"></div>
+  </section>
+
   <!-- ---------- รายละเอียดเชิงเทคนิค ---------- -->
   <details class="card" id="tech">
     <summary>รายละเอียดเชิงเทคนิค และบันทึก PIR</summary>
@@ -1989,6 +2553,15 @@ HTML_PAGE = r"""<!DOCTYPE html>
     </div>
     <div class="msg" id="pirHint"></div>
     <div id="pirLog"></div>
+    <div class="lbl">เปลี่ยนรหัสผ่านหน้าเว็บ</div>
+    <form class="pwForm" id="pwForm" autocomplete="on">
+      <input type="text" name="username" value="bird" autocomplete="username" hidden>
+      <input class="txt" type="password" id="pwCur" placeholder="รหัสปัจจุบัน" autocomplete="current-password">
+      <input class="txt" type="password" id="pwNew" placeholder="รหัสใหม่ (อย่างน้อย 6 ตัว)" autocomplete="new-password">
+      <input class="txt" type="password" id="pwNew2" placeholder="พิมพ์รหัสใหม่ซ้ำ" autocomplete="new-password">
+      <button type="submit" id="pwSave">บันทึกรหัสใหม่</button>
+      <div class="msg">เปลี่ยนแล้ว มือถือ/คอมเครื่องอื่นที่ล็อกอินไว้ต้องล็อกอินใหม่</div>
+    </form>
   </details>
 </div>
 
@@ -2000,6 +2573,20 @@ HTML_PAGE = r"""<!DOCTYPE html>
     <button id="lbPrev">‹ ใหม่กว่า</button>
     <a class="btn" id="lbDl" download>⬇ บันทึก</a>
     <button id="lbNext">เก่ากว่า ›</button>
+  </div>
+</div>
+<div class="dsv" id="dsv" hidden>
+  <div class="lbTop"><span id="dsvCap"></span><button id="dsvX" aria-label="ปิด">✕</button></div>
+  <div class="dsvMid" id="dsvMid"></div>
+  <div class="dsvBtns">
+    <button class="bird" data-l="bird">✓ มีนก</button>
+    <button class="none" data-l="none">✗ ไม่มีนก</button>
+    <button class="fix" data-l="fix">✎ กรอบผิด</button>
+  </div>
+  <div class="lbNav">
+    <button id="dsvPrev">‹ ก่อนหน้า</button>
+    <button class="dan" id="dsvDel">🗑 ลบ</button>
+    <button id="dsvNext">ถัดไป ›</button>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -2023,22 +2610,17 @@ function setMsg(t, hold){
   if(hold !== false){ msgHoldUntil = Date.now() + 4000; toast(thaiMsg(t)); }
 }
 
-function getPin(){ try{ return localStorage.getItem('birdPin') || ''; }catch(e){ return ''; } }
-function setPin(p){ try{ localStorage.setItem('birdPin', p); }catch(e){} }
+// หมดอายุการล็อกอิน (หรือมีคนเปลี่ยนรหัส) -> กลับไปหน้าล็อกอิน
+function toLogin(){ location.replace('/login'); }
 
-// ทุกคำสั่งส่ง header X-Bird-UI (กันเว็บอื่นยิงคำสั่งแทน) และ PIN ถ้าเซิร์ฟเวอร์ตั้งไว้
-async function post(url, body, retried){
+// ทุกคำสั่งส่ง header X-Bird-UI (กันเว็บอื่นยิงคำสั่งแทน) คุกกี้ล็อกอินไปเองกับคำขอ
+async function post(url, body){
   try{
     const r = await fetch(url, {method:'POST',
-      headers:{'Content-Type':'application/json', 'X-Bird-UI':'1', 'X-Bird-Pin': getPin()},
+      headers:{'Content-Type':'application/json', 'X-Bird-UI':'1'},
       body: JSON.stringify(body||{})});
     const j = await r.json();
-    if(r.status === 401 && j.need_pin && !retried){
-      const p = prompt('ใส่ PIN เพื่อสั่งงานเครื่อง');
-      if(p === null) return {ok:false, msg:'ยกเลิก'};
-      setPin(p.trim());
-      return post(url, body, true);
-    }
+    if(r.status === 401 && j.need_login){ toLogin(); return {ok:false, msg:'ต้องล็อกอินใหม่'}; }
     return j;
   }catch(e){ setMsg('ติดต่อเซิร์ฟเวอร์ไม่ได้'); return {ok:false}; }
 }
@@ -2088,7 +2670,11 @@ function chip(id, cls, text){
 
 async function tick(){
   let s;
-  try{ s = await (await fetch('/api/state')).json(); }
+  try{
+    const r = await fetch('/api/state');
+    if(r.status === 401){ toLogin(); return; }
+    s = await r.json();
+  }
   catch(e){ chip('cBrd', 'bad', 'ติดต่อ Pi ไม่ได้'); return; }
 
   // ---- แถบหัว ----
@@ -2413,11 +2999,147 @@ $('mZ').onclick = () => {
   if(confirm('หัวฉีดอยู่ตรงกลางจริงแล้วใช่ไหม? ระบบจะถือว่าตำแหน่งนี้คือ 0°'))
     run('/api/motor', {action:'zero'});
 };
+$('btnLogout').onclick = async () => { await post('/api/logout', {}); toLogin(); };
+$('pwForm').onsubmit = async e => {
+  e.preventDefault();
+  if($('pwNew').value !== $('pwNew2').value){ setMsg('รหัสใหม่สองช่องไม่ตรงกัน'); return; }
+  const r = await run('/api/password', {current: $('pwCur').value, new: $('pwNew').value});
+  if(r.ok) $('pwForm').reset();
+};
 $('bPump').onclick  = () => run('/api/pump', {});
 $('bRepel').onclick = () => run('/api/repel');
 $('bWater').onclick = () => run('/api/water');
 $('bAbort').onclick = () => run('/api/abort');
 $('bLamp').onclick  = () => run('/api/bird_lamp', {on: true});
+
+// ---------- ข้อมูลสำหรับเทรน ----------
+const DS_REASON = {bird:'เจอนก', repel:'สั่งไล่', lowconf:'ก้ำกึ่ง', manual:'กดถ่าย', pir:'PIR',
+                   motion:'มีการเคลื่อนไหว', random:'สุ่มเก็บ'};
+const DS_TAG = {bird:'✓ นก', none:'✗ ไม่มีนก', fix:'✎ แก้กรอบ'};
+const ds = {f:'todo', p:0, items:[], counts:{}, cur:-1, busy:false};
+
+function dsPic(it){
+  // กล่องอัตราส่วนเท่าภาพจริง กรอบวางเป็นเปอร์เซ็นต์จึงตรงกับภาพทุกขนาดจอ
+  const w = it.w || 4, h = it.h || 3;
+  let bx = '';
+  (it.b || []).forEach(b => {
+    const weak = b[4] < 0.25;
+    bx += '<span class="dsBx' + (weak ? ' weak' : '') + '" style="left:' + (b[0]/w*100) + '%;top:' + (b[1]/h*100) +
+          '%;width:' + ((b[2]-b[0])/w*100) + '%;height:' + ((b[3]-b[1])/h*100) + '%"><i>' + b[4].toFixed(2) + '</i></span>';
+  });
+  const tag = it.l ? '<span class="dsTag ' + it.l + '">' + DS_TAG[it.l] + '</span>' : '';
+  return '<div class="dsPic" style="aspect-ratio:' + w + '/' + h + '"><img loading="lazy" alt="" src="/dataset/img/' +
+         it.n + '">' + bx + tag + '</div>';
+}
+function dsRenderCounts(){
+  const c = ds.counts;
+  document.querySelectorAll('#dsTabs button').forEach(b => {
+    b.classList.toggle('on', b.dataset.f === ds.f);
+    b.querySelector('b').textContent = c[b.dataset.f] !== undefined ? c[b.dataset.f] : '';
+  });
+  $('dsSum').textContent = c.all !== undefined ? (c.all + ' ภาพ · ติดป้ายแล้ว ' + (c.all - c.todo)) : '';
+  const lab = (c.bird||0) + (c.none||0) + (c.fix||0);
+  const mb = n => n ? ' (~' + Math.max(1, Math.round(n * 0.15)) + ' MB)' : '';   // ภาพละ ~150 KB
+  $('dsZipNote').textContent = 'ติดป้ายแล้ว ' + lab + ' ภาพ' + mb(lab) + ' · ทั้งหมด ' + (c.all||0) + ' ภาพ' +
+    mb(c.all||0) + ' — ไฟล์ใหญ่ ดาวน์โหลดผ่านเน็ตมือถือจะใช้เวลานาน';
+}
+function dsRenderGrid(){
+  if(!ds.items.length){
+    $('dsGrid').innerHTML = '<div class="empty">' + (ds.f === 'todo' ? 'ติดป้ายครบแล้ว หรือยังไม่มีภาพ' : 'ไม่มีภาพในหมวดนี้') + '</div>';
+    return;
+  }
+  $('dsGrid').innerHTML = ds.items.map((it, i) =>
+    '<button class="dsi" data-i="' + i + '">' + dsPic(it) + '<span class="meta">' + it.t.slice(5, 16) + ' · ' +
+    (DS_REASON[it.r] || it.r) + '</span></button>').join('');
+}
+async function dsLoad(reset){
+  if(ds.busy) return;
+  ds.busy = true;
+  if(reset){ ds.p = 0; ds.items = []; }
+  try{
+    const r = await fetch('/api/dataset?f=' + ds.f + '&p=' + ds.p);
+    if(r.status === 401){ toLogin(); return; }
+    const j = await r.json();
+    ds.items = ds.items.concat(j.items);
+    ds.counts = j.counts;
+    $('dsMore').hidden = !j.more;
+    dsRenderCounts(); dsRenderGrid();
+  }catch(e){ $('dsGrid').innerHTML = '<div class="empty">โหลดไม่สำเร็จ</div>'; }
+  finally{ ds.busy = false; }
+}
+$('dsTabs').onclick = e => {
+  const b = e.target.closest('button'); if(!b) return;
+  ds.f = b.dataset.f; dsLoad(true);
+};
+$('dsMore').onclick = () => { ds.p++; dsLoad(false); };
+$('dsReload').onclick = () => dsLoad(true);
+$('dsGrid').onclick = e => {
+  const b = e.target.closest('.dsi'); if(b) dsOpen(+b.dataset.i);
+};
+function dsOpen(i){
+  if(i < 0 || i >= ds.items.length) return;
+  ds.cur = i;
+  const it = ds.items[i];
+  const w = it.w || 4, h = it.h || 3;
+  $('dsvMid').innerHTML = dsPic(it);
+  // กว้างสุดเท่าที่ภาพยังสูงไม่เกินพื้นที่ตรงกลาง
+  $('dsvMid').firstChild.style.width = 'min(100%, calc((100vh - 230px) * ' + (w/h) + '))';
+  const nb = (it.b || []).filter(b => b[4] >= 0.25).length;
+  $('dsvCap').textContent = (i+1) + '/' + ds.items.length + ' · ' + it.t + ' · ' + (DS_REASON[it.r] || it.r) +
+    (it.b === null ? ' · ไม่มีข้อมูลกรอบ (ภาพรุ่นเก่า)' : ' · กรอบมั่นใจ ' + nb);
+  document.querySelectorAll('.dsvBtns button').forEach(b => b.classList.toggle('sel', b.dataset.l === it.l));
+  $('dsvPrev').disabled = i === 0;
+  $('dsvNext').disabled = i === ds.items.length - 1 && $('dsMore').hidden;
+  $('dsv').hidden = false;
+}
+function dsClose(){ $('dsv').hidden = true; dsRenderGrid(); }
+async function dsNext(){
+  if(ds.cur + 1 < ds.items.length){ dsOpen(ds.cur + 1); return; }
+  if(!$('dsMore').hidden){ ds.p++; await dsLoad(false); if(ds.cur + 1 < ds.items.length){ dsOpen(ds.cur + 1); return; } }
+  dsClose(); toast('ดูครบทุกภาพในหมวดนี้แล้ว');
+}
+async function dsLabel(label){
+  const it = ds.items[ds.cur]; if(!it) return;
+  const nl = it.l === label ? '' : label;            // กดป้ายเดิมซ้ำ = ล้างป้าย
+  const r = await post('/api/dataset/label', {name: it.n, label: nl});
+  if(!r.ok){ toast(r.msg || 'บันทึกป้ายไม่สำเร็จ'); return; }
+  ds.counts[it.l || 'todo']--; ds.counts[nl || 'todo']++;
+  it.l = nl;
+  dsRenderCounts();
+  if(nl) dsNext(); else dsOpen(ds.cur);
+}
+document.querySelectorAll('.dsvBtns button').forEach(b => b.onclick = () => dsLabel(b.dataset.l));
+$('dsvX').onclick = dsClose;
+$('dsvPrev').onclick = () => dsOpen(ds.cur - 1);
+$('dsvNext').onclick = dsNext;
+$('dsvDel').onclick = async () => {
+  const it = ds.items[ds.cur]; if(!it || !confirm('ลบภาพนี้ออกจากชุดข้อมูล?')) return;
+  const r = await post('/api/dataset/delete', {name: it.n});
+  if(!r.ok){ toast(r.msg || 'ลบไม่สำเร็จ'); return; }
+  ds.counts.all--; ds.counts[it.l || 'todo']--;
+  ds.items.splice(ds.cur, 1);
+  dsRenderCounts();
+  if(!ds.items.length){ dsClose(); return; }
+  dsOpen(Math.min(ds.cur, ds.items.length - 1));
+};
+document.addEventListener('keydown', e => {
+  if($('dsv').hidden) return;
+  const k = {'1':'bird', '2':'none', '3':'fix'}[e.key];
+  if(k) dsLabel(k);
+  else if(e.key === 'ArrowRight') dsNext();
+  else if(e.key === 'ArrowLeft') dsOpen(ds.cur - 1);
+  else if(e.key === 'Escape') dsClose();
+});
+(() => {   // ปัดซ้าย/ขวาบนมือถือเพื่อเปลี่ยนภาพ
+  let x0 = null;
+  $('dsvMid').addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, {passive:true});
+  $('dsvMid').addEventListener('touchend', e => {
+    if(x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0; x0 = null;
+    if(dx < -50) dsNext(); else if(dx > 50) dsOpen(ds.cur - 1);
+  });
+})();
+dsLoad(true);
 
 tick();
 setInterval(tick, 1000);
@@ -2427,7 +3149,116 @@ setInterval(tick, 1000);
 
 
 # ============================ MAIN ============================
+# ============================ LOGIN PAGE ============================
+LOGIN_HTML = r"""<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#11151c">
+<title>เข้าสู่ระบบ — ระบบไล่นกอัตโนมัติ</title>
+<style>
+  :root{--bg:#11151c;--card:#1a1f29;--line:#2a3140;--txt:#e7ecf3;--muted:#8b97a8;
+        --ok:#3ddc84;--bad:#ff5d5d;--warn:#ffb020;--pri:#1f6f43;--prib:#2b8a55;--btn:#233044}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       background:var(--bg);color:var(--txt);padding:16px;
+       font-family:-apple-system,"Segoe UI",Roboto,"Noto Sans Thai",sans-serif}
+  .box{width:100%;max-width:380px;background:var(--card);border:1px solid var(--line);
+       border-radius:16px;padding:24px 20px}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 18px;line-height:1.5}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
+  .pw{position:relative}
+  input{width:100%;font-size:17px;padding:12px 44px 12px 12px;border-radius:10px;
+        border:1px solid var(--line);background:#11151c;color:var(--txt);outline:none}
+  input:focus{border-color:var(--ok)}
+  .eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:0;
+       color:var(--muted);font-size:18px;padding:6px;cursor:pointer}
+  button.go{width:100%;margin-top:18px;padding:13px;font-size:16px;font-weight:600;border-radius:10px;
+            border:1px solid var(--prib);background:var(--pri);color:#fff;cursor:pointer}
+  button.go:disabled{opacity:.6}
+  .msg{min-height:22px;margin-top:12px;font-size:14px;color:var(--bad)}
+  .warn{background:#2a2414;border:1px solid #5a4a1a;color:#ffd48a;border-radius:10px;
+        padding:10px 12px;font-size:13px;line-height:1.5;margin-bottom:6px}
+</style>
+</head>
+<body>
+<form class="box" id="f" autocomplete="on">
+  <h1>🦅 ระบบไล่นกอัตโนมัติ</h1>
+  <p class="sub" id="sub">ใส่รหัสผ่านเพื่อเข้าดูและสั่งงานเครื่อง</p>
+  <div class="warn" id="setupNote" hidden>ยังไม่ได้ตั้งรหัสผ่าน ตั้งตอนนี้เลย
+    (ใครเปิดหน้านี้ก่อนจะได้ตั้งรหัส) อย่างน้อย 6 ตัวอักษร</div>
+  <input type="text" name="username" value="bird" autocomplete="username" hidden>
+  <label for="pw" id="pwLbl">รหัสผ่าน</label>
+  <div class="pw"><input type="password" id="pw" autocomplete="current-password" required>
+    <button type="button" class="eye" data-for="pw" aria-label="แสดงรหัส">👁</button></div>
+  <div id="pw2Wrap" hidden>
+    <label for="pw2">พิมพ์รหัสซ้ำอีกครั้ง</label>
+    <div class="pw"><input type="password" id="pw2" autocomplete="new-password">
+      <button type="button" class="eye" data-for="pw2" aria-label="แสดงรหัส">👁</button></div>
+  </div>
+  <button class="go" id="go" type="submit">เข้าสู่ระบบ</button>
+  <div class="msg" id="msg" role="alert"></div>
+</form>
+<script>
+const SETUP = __SETUP__;
+const $ = id => document.getElementById(id);
+if(SETUP){
+  $('sub').textContent = 'ตั้งรหัสผ่านสำหรับหน้าเว็บนี้';
+  $('setupNote').hidden = false;
+  $('pw2Wrap').hidden = false;
+  $('pwLbl').textContent = 'รหัสผ่านใหม่';
+  $('pw').autocomplete = 'new-password';
+  $('go').textContent = 'ตั้งรหัสและเข้าสู่ระบบ';
+}
+document.querySelectorAll('.eye').forEach(b => b.onclick = () => {
+  const i = $(b.dataset.for); i.type = i.type === 'password' ? 'text' : 'password';
+});
+let lockTimer = null;
+function lock(sec){
+  $('go').disabled = true;
+  clearInterval(lockTimer);
+  lockTimer = setInterval(() => {
+    sec--;
+    $('msg').textContent = 'ใส่รหัสผิดหลายครั้ง ลองใหม่ในอีก ' + sec + ' วินาที';
+    if(sec <= 0){ clearInterval(lockTimer); $('go').disabled = false; $('msg').textContent = ''; }
+  }, 1000);
+}
+$('f').onsubmit = async e => {
+  e.preventDefault();
+  const pw = $('pw').value;
+  if(SETUP){
+    if(pw.length < 6){ $('msg').textContent = 'รหัสต้องยาวอย่างน้อย 6 ตัวอักษร'; return; }
+    if(pw !== $('pw2').value){ $('msg').textContent = 'รหัสสองช่องไม่ตรงกัน'; return; }
+  }
+  $('go').disabled = true; $('msg').textContent = '';
+  try{
+    const r = await fetch(SETUP ? '/api/setup' : '/api/login', {method:'POST',
+      headers:{'Content-Type':'application/json','X-Bird-UI':'1'},
+      body: JSON.stringify({password: pw})});
+    const j = await r.json();
+    if(j.ok){ location.replace('/'); return; }
+    if(r.status === 409){ location.reload(); return; }
+    $('msg').textContent = j.msg || 'เข้าสู่ระบบไม่สำเร็จ';
+    $('pw').select();
+    if(j.locked){ lock(j.locked); return; }
+  }catch(err){ $('msg').textContent = 'ติดต่อเครื่องไม่ได้'; }
+  $('go').disabled = false;
+};
+$('pw').focus();
+</script>
+</body>
+</html>
+"""
+
+
 def main():
+    if "--set-password" in sys.argv[1:]:
+        cli_set_password()
+        return
+    app.secret_key = _load_secret()
+    init_auth()
     load_roi()
     if os.path.isfile(os.path.expanduser(CAM_DEVICE)):
         print(f"[Cam] ใช้ไฟล์วิดีโอแทนเว็บแคม: {CAM_DEVICE}", flush=True)
@@ -2454,9 +3285,9 @@ def main():
           flush=True)
     print(f"[Detect] CLAHE={'เปิด' if DETECT_CLAHE else 'ปิด'}  "
           f"ตัดภาพตาม ROI={'เปิด' if ROI_CROP else 'ปิด'}", flush=True)
-    if not WEB_PIN:
-        print("[Web] ยังไม่ได้ตั้ง PIN — ใครอยู่ Wi-Fi เดียวกันสั่งปั๊ม/มอเตอร์ได้ "
-              "(ตั้งด้วย BIRD_PIN=xxxx)", flush=True)
+    if not password_is_set():
+        print("[Auth] *** ยังไม่ได้ตั้งรหัสผ่าน — เปิดหน้าเว็บแล้วตั้งรหัสทันที "
+              "(หรือ python3 raspberry_pi_server.py --set-password) ***", flush=True)
     if DATASET_ENABLED:
         print(f"[Dataset] เก็บภาพดิบสำหรับเทรนที่ {DATASET_DIR}", flush=True)
     if not PIR_TRIGGER_ENABLED:

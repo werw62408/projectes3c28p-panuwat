@@ -24,8 +24,9 @@ SERVER = os.path.join(HERE, "..", "raspberry_pi_server.py")
 
 
 class Sim:
-    def __init__(self, clip, model, port=5055, pin="", fw="build/fw_host", mode="demo"):
-        self.clip, self.model, self.port, self.pin, self.mode = clip, model, port, pin, mode
+    # password = รหัสผ่านหน้าเว็บที่ตั้งให้ตั้งแต่เริ่ม ("" = ยังไม่ตั้ง เปิดเว็บแล้วจะเจอหน้าตั้งรหัส)
+    def __init__(self, clip, model, port=5055, password="birdtest1", fw="build/fw_host", mode="demo"):
+        self.clip, self.model, self.port, self.password, self.mode = clip, model, port, password, mode
         self.fw_exe = os.path.join(HERE, fw)
         self.data_dir = tempfile.mkdtemp(prefix="bird_sim_")
         self.master, self.slave = pty.openpty()
@@ -66,7 +67,8 @@ class Sim:
         self.start_board()
         env = dict(os.environ, BIRD_SERIAL=self.slave_path, BIRD_CAM=self.clip,
                    BIRD_MODEL=self.model, BIRD_DATA_DIR=self.data_dir,
-                   BIRD_PORT=str(self.port), BIRD_PIN=self.pin, BIRD_MODE=self.mode,
+                   BIRD_PORT=str(self.port), BIRD_PASSWORD=self.password, BIRD_PIN="",
+                   BIRD_MODE=self.mode,
                    PYTHONUNBUFFERED="1")
         self.server = subprocess.Popen([sys.executable, SERVER], env=env,
                                        stdout=open(self.server_log_path, "w"),
@@ -90,11 +92,11 @@ def main():
     ap.add_argument("--clip", required=True, help="คลิปวิดีโอที่ใช้แทนเว็บแคม")
     ap.add_argument("--model", required=True, help="ไฟล์ yolov8n.pt")
     ap.add_argument("--port", type=int, default=5055)
-    ap.add_argument("--pin", default="")
+    ap.add_argument("--password", default="birdtest1", help="รหัสผ่านหน้าเว็บ (\"\" = ให้ตั้งเองตอนเปิดเว็บ)")
     ap.add_argument("--mode", default="field", choices=["field", "demo", "real"])
     a = ap.parse_args()
-    sim = Sim(a.clip, a.model, a.port, a.pin, mode=a.mode).start()
-    print(f"เปิด {sim.url}  (Ctrl+C เพื่อหยุด)")
+    sim = Sim(a.clip, a.model, a.port, a.password, mode=a.mode).start()
+    print(f"เปิด {sim.url}  รหัสผ่าน: {a.password or '(ตั้งเองตอนเปิดเว็บ)'}  (Ctrl+C เพื่อหยุด)")
     try:
         while True:
             time.sleep(1)
