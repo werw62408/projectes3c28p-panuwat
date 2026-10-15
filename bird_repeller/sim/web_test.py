@@ -327,16 +327,18 @@ def pir_flow(page, sim):
     check("ปุ่มทดสอบไฟส้มใช้ได้", "OK BIRD 1" in m, m)
 
 
-def field_flow(page, sim):
-    """โหมดทดสอบภาคสนาม: ไม่ต้องกดอะไร เจอนกแล้วไล่จริง + เก็บ log/ภาพ"""
+def normal_flow(page, sim):
+    """เวอร์ชันใช้งานปกติ: ไม่ต้องกดอะไร เจอนกแล้วไล่จริง เก็บ log/ภาพย้อนหลัง แต่ไม่เก็บภาพเทรน"""
     log_path = os.path.join(HERE, "build", "fw_pins.log")
     pins_before = open(log_path, encoding="utf-8").read()
     open_ui(page, sim)
     page.wait_for_function("document.getElementById('brd').textContent === 'เชื่อมต่อแล้ว'", timeout=20000)
     page.wait_for_timeout(1500)
     warns = page.inner_text("#warns")
-    check("หน้าเว็บบอกว่าอยู่โหมดทดสอบภาคสนาม (ไล่จริง)", "ภาคสนาม" in warns and "โหมดทดสอบเปิดอยู่" not in warns, warns)
+    check("หน้าเว็บบอกว่าเป็นเวอร์ชันใช้งานปกติ", page.inner_text("#modeBadge") == "ใช้งานปกติ"
+          and "โหมดทดสอบเปิดอยู่" not in warns and "เก็บภาพเทรน" not in warns, (page.inner_text("#modeBadge"), warns))
     check("ไล่อัตโนมัติเปิดอยู่ตั้งแต่เริ่ม", page.is_checked("#autoRep"))
+    check("เวอร์ชันปกติไม่มีการ์ดข้อมูลเทรน", page.is_hidden("#dsCard"))
     page.once("dialog", lambda d: d.accept())
     page.click("#mZ")                                   # ตั้งจุดกลางเหมือนตอนติดตั้งจริง
     s = wait_state(sim, lambda s: s["hw"]["repel_count"] >= 1, 60)
@@ -346,9 +348,6 @@ def field_flow(page, sim):
     check("รีเลย์ปั๊ม (GPIO18) เปิดแล้วปิดเอง", "PUMP HIGH" in pins and "PUMP LOW" in pins, pins[-400:])
     check("มอเตอร์กวาดหัวฉีด", "STEPS" in pins, pins[-400:])
     check("ไฟส้มติดตอนเจอนก", "LAMP_ORANGE HIGH" in pins)
-    ds_dir = os.path.join(sim.data_dir, "dataset")
-    repel_imgs = [f for f in os.listdir(ds_dir) if "_repel_" in f] if os.path.isdir(ds_dir) else []
-    check(f"สั่งไล่แล้วเก็บภาพเข้าชุดข้อมูลเสมอ ({len(repel_imgs)} ภาพ)", len(repel_imgs) >= 1)
     page.wait_for_timeout(6000)
     with open(os.path.join(sim.data_dir, "detection_log.csv"), encoding="utf-8-sig") as f:
         rows = f.read()
@@ -367,12 +366,46 @@ def field_flow(page, sim):
           st["roi"])
     ds = os.path.join(sim.data_dir, "dataset")
     n = len([f for f in os.listdir(ds) if f.endswith(".jpg")]) if os.path.isdir(ds) else 0
-    check(f"เก็บภาพดิบสำหรับเทรนแล้ว {n} ภาพ", n >= 1)
+    check("เวอร์ชันปกติไม่เก็บภาพเทรน (ประหยัด SD การ์ด)", n == 0, n)
+    hist = os.listdir(os.path.join(sim.data_dir, "history"))
+    check(f"เวอร์ชันปกติยังเก็บภาพย้อนหลังที่พบนก ({len(hist)} ภาพ)", len(hist) >= 1)
+    code, _ = get(sim, "/api/dataset")
+    check("เวอร์ชันปกติเรียก API ข้อมูลเทรนไม่ได้ (403)", code == 403, code)
     st = state(sim)
     check(f"ภายใน 1 นาทีไล่ไม่เกินที่ช่วงพักกำหนด ({st['hw']['repel_count']} ครั้ง)",
           st["hw"]["repel_count"] <= 4, st["hw"]["repel_count"])
     page.evaluate("window.scrollTo(0,0)")
-    shot(page, "11_field_mode.png")
+    shot(page, "11_normal_mode.png")
+
+
+def train_flow(page, sim):
+    """เวอร์ชันเก็บภาพเทรน: ไม่ไล่เองเป็นค่าเริ่มต้น เก็บภาพถี่ มีการ์ดติดป้าย"""
+    open_ui(page, sim)
+    page.wait_for_function("document.getElementById('brd').textContent === 'เชื่อมต่อแล้ว'", timeout=20000)
+    page.wait_for_timeout(1500)
+    st = state(sim)
+    check("ชื่อโหมดเก่า field ใช้ได้ = เวอร์ชันเก็บภาพเทรน", st["mode"] == "train" and st["train_mode"], st["mode"])
+    warns = page.inner_text("#warns")
+    check("หน้าเว็บบอกว่าเป็นเวอร์ชันเก็บภาพเทรน", page.inner_text("#modeBadge") == "เวอร์ชันเก็บภาพเทรน"
+          and "เก็บภาพเทรน" in warns, (page.inner_text("#modeBadge"), warns))
+    check("เวอร์ชันเทรนไม่ไล่อัตโนมัติเป็นค่าเริ่มต้น", not page.is_checked("#autoRep"))
+    check("เวอร์ชันเทรนมีการ์ดข้อมูลเทรน", page.is_visible("#dsCard"))
+    page.once("dialog", lambda d: d.accept())
+    page.click("#mZ")
+    s = wait_state(sim, lambda s: s["total_detections"] >= 3, 60)
+    check("เจอนกหลายรอบแต่ไม่สั่งไล่ (ปล่อยนกอยู่ให้ถ่าย)", s is not None and s["hw"]["repel_count"] == 0,
+          s and s["hw"]["repel_count"])
+    page.check("#autoRep")
+    s = wait_state(sim, lambda s: s["hw"]["repel_count"] >= 1, 60)
+    check("เปิดสวิตช์ไล่อัตโนมัติแล้วไล่ได้ตามปกติ", s is not None)
+    wait_state(sim, lambda s: not s["hw"]["repel"] and not s["hw"]["busy"], 20)
+    page.wait_for_timeout(3000)
+    ds_dir = os.path.join(sim.data_dir, "dataset")
+    repel_imgs = [f for f in os.listdir(ds_dir) if "_repel_" in f] if os.path.isdir(ds_dir) else []
+    check(f"สั่งไล่แล้วเก็บภาพเข้าชุดข้อมูลเสมอ ({len(repel_imgs)} ภาพ)", len(repel_imgs) >= 1)
+    page.uncheck("#autoRep")                      # ปิดไล่ กลับไปเก็บภาพอย่างเดียว
+    page.evaluate("window.scrollTo(0,0)")
+    shot(page, "11b_train_mode.png")
 
 
 def empty_clip():
@@ -609,12 +642,10 @@ def main():
         phone = dict(viewport={"width": 390, "height": 844}, device_scale_factor=2,
                      is_mobile=True, has_touch=True)
 
-        print("== ใช้งานปกติ + ข้อมูลสำหรับเทรน ==")
+        print("== สาธิต (demo) ==")
         sim = Sim(a.clip, a.model, port=5055).start()
         try:
-            page = browser.new_page(**phone)
-            main_flow(page, sim)
-            dataset_flow(page, sim)
+            main_flow(browser.new_page(**phone), sim)
         finally:
             sim.stop()
 
@@ -625,10 +656,19 @@ def main():
         finally:
             sim.stop()
 
-        print("== ทดสอบภาคสนาม: เจอแล้วไล่จริง ==")
-        sim = Sim(a.bird_clip or a.clip, a.model, port=5059, mode="field").start()
+        print("== เวอร์ชันใช้งานปกติ: เจอแล้วไล่จริง ==")
+        sim = Sim(a.bird_clip or a.clip, a.model, port=5059, mode="normal").start()
         try:
-            field_flow(browser.new_page(**phone), sim)
+            normal_flow(browser.new_page(**phone), sim)
+        finally:
+            sim.stop()
+
+        print("== เวอร์ชันเก็บภาพเทรน + ติดป้าย ==")
+        sim = Sim(a.bird_clip or a.clip, a.model, port=5060, mode="field").start()   # ชื่อเก่า = train
+        try:
+            page = browser.new_page(**phone)
+            train_flow(page, sim)
+            dataset_flow(page, sim)
         finally:
             sim.stop()
 

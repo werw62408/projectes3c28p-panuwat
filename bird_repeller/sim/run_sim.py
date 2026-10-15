@@ -93,7 +93,7 @@ def main():
     ap.add_argument("--model", required=True, help="ไฟล์ yolov8n.pt")
     ap.add_argument("--port", type=int, default=5055)
     ap.add_argument("--password", default="birdtest1", help="รหัสผ่านหน้าเว็บ (\"\" = ให้ตั้งเองตอนเปิดเว็บ)")
-    ap.add_argument("--mode", default="field", choices=["field", "demo", "real"])
+    ap.add_argument("--mode", default="normal", choices=["normal", "train", "demo", "field", "real"])
     a = ap.parse_args()
     sim = Sim(a.clip, a.model, a.port, a.password, mode=a.mode).start()
     print(f"เปิด {sim.url}  รหัสผ่าน: {a.password or '(ตั้งเองตอนเปิดเว็บ)'}  (Ctrl+C เพื่อหยุด)")

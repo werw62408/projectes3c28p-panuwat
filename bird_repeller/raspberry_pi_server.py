@@ -2,10 +2,18 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v7.0
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v7.1
  ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.7 ขึ้นไป (v7.8 = ผังขาใหม่ เซิร์ฟเวอร์ไม่ต้องรู้เลขขา)
 --------------------------------------------------------------------------
- เปลี่ยนจาก v6.8 (รุ่นนี้):
+ เปลี่ยนจาก v7.0 (รุ่นนี้):
+   - แบ่งเป็น 2 เวอร์ชันด้วยบรรทัด MODE_DEFAULT ต้นไฟล์ (หรือ env BIRD_MODE)
+       "normal" = ใช้งานปกติ: ไล่นกจริง ไม่เก็บภาพเทรน ไม่มีการ์ดติดป้าย (ประหยัด SD การ์ด)
+       "train"  = เก็บภาพไปเทรน: เก็บภาพถี่ขึ้น + การ์ดติดป้าย/ดาวน์โหลด ZIP
+                  ไม่ไล่อัตโนมัติเป็นค่าเริ่มต้น นกจะได้อยู่ให้ถ่ายนาน ๆ (เปิดไล่ได้จากหน้าเว็บ)
+     ชื่อโหมดเดิมยังใช้ได้: real = normal, field = train
+   - หน้าเว็บบอกชัดว่าอยู่เวอร์ชันไหน
+
+ เปลี่ยนจาก v6.8:
    - ล็อกอินด้วยรหัสผ่าน (แทน PIN เดิม) ทุกหน้าต้องล็อกอินก่อน รวมภาพสด ภาพย้อนหลัง
      log และไฟล์เทรน / ใส่ผิด 5 ครั้งล็อก 5 นาที / จำการล็อกอิน 30 วัน
      ครั้งแรกที่เปิดเว็บจะให้ตั้งรหัส / ลืมรหัส: python3 raspberry_pi_server.py --set-password
@@ -190,7 +198,7 @@ PIR_TRIGGER_ENABLED = True
 #   pir     = PIR ทริกแต่ YOLO ไม่เจอ            <- มักเป็นนกที่โมเดลพลาด
 #   motion  = ภาพเปลี่ยนเยอะแต่ YOLO ไม่เจอ
 #   random  = สุ่มเก็บทุก ๆ N รอบ ไว้เป็นภาพพื้นหลังไม่มีนก
-DATASET_ENABLED = True
+DATASET_ENABLED = True          # ถูกตั้งใหม่ตามเวอร์ชันในหัวข้อ "เวอร์ชัน / โหมดการทำงาน" ด้านล่าง
 DATASET_DIR = os.path.join(DATA_DIR, "dataset")
 DATASET_LOG = os.path.join(DATASET_DIR, "dataset_log.csv")
 DATASET_LOWCONF = 0.10          # เก็บกรอบที่ความมั่นใจตั้งแต่เท่านี้ แม้จะต่ำกว่าเกณฑ์นับ
@@ -247,27 +255,37 @@ LOGIN_LOCK_S = 300          # ล็อกกี่วินาที
 PASSWORD_MIN_LEN = 6
 ENV_PASSWORD = os.environ.get("BIRD_PASSWORD") or os.environ.get("BIRD_PIN", "")
 
-# ============================ โหมดการทำงาน ============================
-# "field" = ทดสอบภาคสนาม (ค่าเริ่มต้น): เจอนกแล้วไล่จริง (ปั๊ม + มอเตอร์) และเก็บข้อมูลเต็มที่
-#           ภาพทุกรอบลง history/, ภาพดิบสำหรับเทรนลง dataset/, ทุกรอบลง detection_log.csv
-#           เกณฑ์ 0.30 + ต้องเจอ 2 เฟรมติดกัน กันโมเดลเห็นผิดแล้วฉีดน้ำมั่ว
-#           ROI จำค่าไว้ใน roi.json เหมือนของจริง
-# "demo"  = โชว์กรอบอย่างเดียว: ROI เริ่มแบบปิด, ไม่ต้องยืนยันหลายเฟรม,
-#           ไม่สั่งไล่เอง และลดเกณฑ์คะแนนให้เห็นกรอบง่ายขึ้น
-# "real"  = ใช้งานจริง ใช้ค่าข้างบนทั้งหมด
-# เลือกได้ที่นี่ หรือตอนรัน:  BIRD_MODE=demo python3 raspberry_pi_server.py
-# (ROI กับการไล่เอง เปิด-ปิดจากหน้าเว็บได้ทุกโหมด)
-MODE = os.environ.get("BIRD_MODE", "field").strip().lower()
-if MODE not in ("field", "demo", "real"):
-    print(f"[Mode] ไม่รู้จักโหมด '{MODE}' ใช้ field แทน", flush=True)
-    MODE = "field"
-TEST_MODE = MODE == "demo"
-FIELD_TEST = MODE == "field"
+# ============================ เวอร์ชัน / โหมดการทำงาน ============================
+# >>>>>  เลือกเวอร์ชันที่บรรทัดนี้  <<<<<
+#   "normal" = ใช้งานปกติ: เจอนก 2 เฟรมติดกันแล้วไล่จริง (ปั๊ม + มอเตอร์)
+#              ไม่เก็บภาพเทรน ไม่มีการ์ดติดป้าย (ภาพย้อนหลังที่พบนกและ log ยังเก็บตามปกติ)
+#   "train"  = เก็บภาพไปเทรน (ใช้ตอนติดตั้งอุปกรณ์ครบแล้ว วางไว้หน้างานให้เก็บภาพ):
+#              เก็บภาพดิบถี่ขึ้น + กรอบจากโมเดล, มีการ์ดติดป้ายและดาวน์โหลด ZIP แบบ YOLO
+#              ไม่ไล่อัตโนมัติเป็นค่าเริ่มต้น นกจะได้อยู่ให้ถ่ายหลายท่า (เปิดไล่ได้จากสวิตช์บนหน้าเว็บ)
+#   "demo"   = สาธิตบนโต๊ะ: ตีกรอบโชว์ ไม่ไล่เอง ไม่ยืนยันหลายเฟรม ปิด ROI ไม่เก็บภาพเทรน
+# หรือเลือกตอนรันโดยไม่แก้ไฟล์:  BIRD_MODE=train python3 raspberry_pi_server.py
+#   (ใน bird.service ใส่ Environment=BIRD_MODE=train ใต้ [Service])
+# ชื่อโหมดรุ่นเก่ายังใช้ได้: real = normal, field = train
+MODE_DEFAULT = "normal"
 
-if FIELD_TEST:
-    CONF_THRESHOLD = 0.30       # ภาพจริงจากหน้างานเคยได้นกที่ 0.25-0.4 ลดลงนิดนึง
+MODE = os.environ.get("BIRD_MODE", MODE_DEFAULT).strip().lower()
+MODE = {"real": "normal", "field": "train"}.get(MODE, MODE)
+if MODE not in ("normal", "train", "demo"):
+    print(f"[Mode] ไม่รู้จักโหมด '{MODE}' ใช้ normal แทน", flush=True)
+    MODE = "normal"
+TEST_MODE = MODE == "demo"
+TRAIN_MODE = MODE == "train"
+
+if MODE in ("normal", "train"):
+    CONF_THRESHOLD = 0.30       # ภาพจริงจากหน้างานเคยได้นกที่ 0.25-0.4 (เทรนโมเดลเองแล้วค่อยขยับขึ้น)
     CONFIRM_FRAMES = 2          # แต่ต้องเจอ 2 เฟรมติดกัน (เฟรมยืนยันถ่ายตามใน 3 วิ) ถึงไล่
     AUTO_REPEL_DEFAULT = True
+
+DATASET_ENABLED = TRAIN_MODE    # เก็บภาพเทรนเฉพาะเวอร์ชัน train
+if TRAIN_MODE:
+    AUTO_REPEL_DEFAULT = False  # ปล่อยนกอยู่ให้ถ่ายได้หลายภาพ (กดเปิดไล่บนหน้าเว็บได้)
+    DATASET_BIRD_MIN_GAP_S = 10     # เจอนกเก็บถี่ขึ้น (ปกติ 30 วิ)
+    DATASET_RANDOM_EVERY = 3        # ภาพพื้นหลังไม่มีนก สุ่มเก็บทุก 3 รอบ (ปกติ 5)
 
 if TEST_MODE:
     CONF_THRESHOLD = 0.25       # ต่ำลงนิดนึง จะได้เห็นว่าโมเดลเห็นอะไรบ้าง
@@ -1772,6 +1790,8 @@ def _auto_loop():
 
 # ============================ API ============================
 _PUBLIC = {"login_page", "api_login", "api_setup", "api_health"}
+_TRAIN_ONLY = {"api_dataset", "api_dataset_img", "api_dataset_label", "api_dataset_delete",
+               "api_dataset_export"}
 
 
 @app.before_request
@@ -1785,7 +1805,11 @@ def guard():
     """
     if request.method == "POST" and (request.headers.get("X-Bird-UI") != "1" or not request.is_json):
         return jsonify(ok=False, msg="คำสั่งไม่ได้มาจากหน้าเว็บของระบบ"), 403
-    if request.endpoint in _PUBLIC or logged_in():
+    if request.endpoint in _PUBLIC:
+        return None
+    if logged_in():
+        if request.endpoint in _TRAIN_ONLY and not DATASET_ENABLED:
+            return jsonify(ok=False, msg="ใช้ได้เฉพาะเวอร์ชันเก็บภาพเทรน (BIRD_MODE=train)"), 403
         return None
     if request.method == "GET" and request.path == "/":
         return redirect("/login")
@@ -1889,6 +1913,7 @@ def api_state():
     s["burst_frames"] = BURST_FRAMES
     s["corrupt_frames"] = CAM.corrupt_count
     s["test_mode"] = TEST_MODE
+    s["train_mode"] = DATASET_ENABLED
     s["mode"] = MODE
     s["roi"] = dict(ROI)
     s["hw"] = CTRL.snapshot()
@@ -2509,7 +2534,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
   </section>
 
   <!-- ---------- ข้อมูลสำหรับเทรน ---------- -->
-  <section class="card" id="dsCard">
+  <section class="card" id="dsCard" hidden>
     <div class="ctitle">ข้อมูลสำหรับเทรนโมเดล <span class="sub" id="dsSum"></span></div>
     <div class="msg" style="margin-top:0">แตะภาพเพื่อติดป้าย ✓ มีนก (กรอบถูก) / ✗ ไม่มีนก / ✎ มีนกแต่กรอบผิด
       — ภาพที่ระบบเห็นผิดสำคัญที่สุด กรอบเขียว = โมเดลมั่นใจ กรอบเหลืองประ = ก้ำกึ่ง
@@ -2679,8 +2704,11 @@ async function tick(){
 
   // ---- แถบหัว ----
   const mb = $('modeBadge');
-  mb.hidden = s.mode === 'real';
-  mb.textContent = s.mode === 'field' ? 'ทดสอบภาคสนาม' : s.mode === 'demo' ? 'โหมดสาธิต' : '';
+  mb.hidden = false;
+  mb.textContent = s.mode === 'train' ? 'เวอร์ชันเก็บภาพเทรน' : s.mode === 'demo' ? 'โหมดสาธิต' : 'ใช้งานปกติ';
+  mb.className = 'pill ' + (s.mode === 'normal' ? 'on' : 'wn');
+  $('dsCard').hidden = !s.train_mode;
+  if(s.train_mode && !dsStarted){ dsStarted = true; dsLoad(true); }
   chip('cCam', s.cam_online ? 'ok' : 'bad', s.cam_online ? 'กล้อง' : 'กล้องหลุด');
   chip('cBrd', s.hw.link ? 'ok' : 'bad', s.hw.link ? 'บอร์ด' : 'บอร์ดไม่ต่อ');
   const ready = s.hw.link && s.hw.ready;          // อ่านจากบอร์ดจริง = ตรงกับไฟเขียวจริง
@@ -2724,11 +2752,11 @@ async function tick(){
 
   // ---- แถบเตือน ----
   const w = [];
-  if(s.mode === 'field') w.push(['w', 'โหมดทดสอบภาคสนาม: ตรวจทุก ' + s.auto_interval + ' วิ เจอนกแล้วถ่ายเฟรมยืนยันใน ' +
-                               s.confirm_delay + ' วิ เจอ ' + cf + ' เฟรมติดกันจึงไล่จริง (ปั๊ม + มอเตอร์) ' +
-                               'และเก็บภาพ/log ทุกรอบ — ดาวน์โหลด log ได้ที่ท้ายหน้า']);
+  if(s.mode === 'train') w.push(['w', 'เวอร์ชันเก็บภาพเทรน: เก็บภาพดิบพร้อมกรอบเข้าชุดข้อมูล (ติดป้ายที่การ์ด ' +
+                               '"ข้อมูลสำหรับเทรนโมเดล" ท้ายหน้า) — ค่าเริ่มต้นไม่ไล่นกเอง ให้นกอยู่ถ่ายได้หลายภาพ ' +
+                               (s.hw.auto_repel ? '(ตอนนี้เปิดไล่อัตโนมัติอยู่)' : 'เปิดไล่ได้ที่สวิตช์ "ไล่อัตโนมัติเมื่อเจอนก"')]);
   if(s.test_mode) w.push(['w', 'โหมดทดสอบเปิดอยู่: ไม่ไล่นกเอง ไม่ต้องยืนยันหลายเฟรม และเกณฑ์คะแนนต่ำกว่าปกติ ' +
-                               'ก่อนใช้งานจริงให้แก้ MODE เป็น field หรือ real']);
+                               'ก่อนใช้งานจริงให้แก้ MODE_DEFAULT เป็น normal']);
   if(s.hw.link && s.hw.error) w.push(['b', s.hw.error]);
   if(s.hw.link && ['BROWNOUT','PANIC','WDT'].includes(s.hw.reset_reason) && !s.hw.error)
     w.push(['b', 'บอร์ดควบคุมรีบูตเองครั้งล่าสุด (' + s.hw.reset_reason + ') ' +
@@ -3139,7 +3167,7 @@ document.addEventListener('keydown', e => {
     if(dx < -50) dsNext(); else if(dx > 50) dsOpen(ds.cur - 1);
   });
 })();
-dsLoad(true);
+let dsStarted = false;           // โหลดการ์ดเทรนครั้งแรกเมื่อรู้ว่าเป็นเวอร์ชัน train
 
 tick();
 setInterval(tick, 1000);
@@ -3275,11 +3303,11 @@ def main():
     if TEST_MODE:
         print("[Mode] *** โหมดสาธิต (demo): ปิด ROI / ไม่ยืนยันเฟรม / ไม่ไล่เอง / "
               f"conf={CONF_THRESHOLD} ***", flush=True)
-    elif FIELD_TEST:
-        print(f"[Mode] *** ทดสอบภาคสนาม (field): ไล่จริง + เก็บข้อมูล / conf={CONF_THRESHOLD} ***",
-              flush=True)
+    elif TRAIN_MODE:
+        print(f"[Mode] *** เวอร์ชันเก็บภาพเทรน (train): เก็บภาพ + ติดป้ายบนเว็บ / "
+              f"ไม่ไล่อัตโนมัติเป็นค่าเริ่มต้น / conf={CONF_THRESHOLD} ***", flush=True)
     else:
-        print(f"[Mode] ใช้งานจริง (real) conf={CONF_THRESHOLD}", flush=True)
+        print(f"[Mode] ใช้งานปกติ (normal): ไล่จริง ไม่เก็บภาพเทรน / conf={CONF_THRESHOLD}", flush=True)
     print(f"[Auto] ตรวจจับทุก {AUTO_INTERVAL_S} วินาที รอบละ {BURST_FRAMES} เฟรม "
           f"(เจอนก {CONFIRM_FRAMES} เฟรมติดกันก่อนสั่งไล่ เฟรมยืนยันถ่ายตามใน {CONFIRM_DELAY_S:g} วิ)",
           flush=True)
