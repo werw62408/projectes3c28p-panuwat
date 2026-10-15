@@ -664,7 +664,7 @@ def main():
             sim.stop()
 
         print("== เวอร์ชันเก็บภาพเทรน + ติดป้าย ==")
-        sim = Sim(a.bird_clip or a.clip, a.model, port=5060, mode="field").start()   # ชื่อเก่า = train
+        sim = Sim(a.bird_clip or a.clip, a.model, port=5064, mode="field").start()   # ชื่อเก่า = train
         try:
             page = browser.new_page(**phone)
             train_flow(page, sim)
