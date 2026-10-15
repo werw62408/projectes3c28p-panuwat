@@ -465,8 +465,10 @@ def dataset_flow(page, sim):
     """การ์ดข้อมูลสำหรับเทรน: ติดป้าย ลบ และดาวน์โหลด ZIP แบบ YOLO"""
     ds_dir = os.path.join(sim.data_dir, "dataset")
     page.evaluate("window.scrollTo(0,0)")
-    page.evaluate("dsLoad(true)")
-    page.wait_for_function("ds.counts.all >= 4 && ds.items.length >= 4", timeout=60000)
+    end = time.time() + 60                       # โหลดซ้ำจนมีภาพพอ (การ์ดอาจกำลังโหลดเองอยู่)
+    while time.time() < end and not page.evaluate("ds.counts.all >= 4 && ds.items.length >= 4"):
+        page.evaluate("dsLoad(true)")
+        page.wait_for_timeout(2000)
     c0 = page.evaluate("ds.counts")
     check(f"การ์ดข้อมูลเทรนแสดงภาพ ({c0['all']} ภาพ ยังไม่ติดป้าย {c0['todo']})",
           c0["all"] == c0["todo"] and c0["all"] >= 4, c0)
