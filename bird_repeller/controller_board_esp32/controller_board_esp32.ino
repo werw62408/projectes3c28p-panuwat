@@ -1,11 +1,16 @@
 /* ==========================================================================
-   บอร์ดควบคุมโหลด  ESP32  —  เฟิร์มแวร์ v7.9
+   บอร์ดควบคุมโหลด  ESP32  —  เฟิร์มแวร์ v7.10
    โครงงาน: เครื่องไล่นกอัตโนมัติ
 
    หน้าที่: รับคำสั่งจาก Raspberry Pi ผ่าน USB Serial แล้วสั่งงานอุปกรณ์
             พร้อมรายงานสถานะกลับ และตัดโหลดเองเมื่อเกิดเหตุผิดปกติ
 
-   เปลี่ยนจาก v7.8 (รุ่นนี้):
+   เปลี่ยนจาก v7.9 (รุ่นนี้):
+     - PIR ทริกครั้งใหม่ได้ถี่ขึ้น: OUT ขึ้น HIGH ใหม่ห่างจากทริกก่อนแค่ 1.5 วิก็ส่ง EVT PIR
+       (เดิมต้องห่าง 5 วิ นกที่ขยับซ้ำเร็ว ๆ หลังทริกแรกจึงหลุด ถ้า OUT ไม่ค้าง HIGH นานพอ)
+       ทริกซ้ำระหว่าง OUT ค้าง HIGH ยังเป็นทุก 5 วิเหมือนเดิม / อื่น ๆ เหมือน v7.9 ทุกอย่าง
+
+   เปลี่ยนจาก v7.8:
      - รอบไล่เปิดปั๊ม 3 วิ (เดิม 2 วิ) และปรับได้จากหน้าเว็บ 1-8 วิ จำไว้ในแฟลช
        คำสั่ง RCFG <องศา> <เปอร์เซ็นต์> <ms ปั๊ม> (ไม่ใส่ตัวที่ 3 = ใช้เวลาปั๊มเดิม)
      - STAT เพิ่ม RPM (เวลาปั๊มต่อรอบไล่ ms) / ขาและการทำงานอื่นเหมือน v7.8 ทุกอย่าง
@@ -97,7 +102,7 @@
    Arduino IDE: Board = ESP32 Dev Module / ไม่ต้องลงไลบรารีเพิ่ม
    ========================================================================== */
 
-#define FW_ID "BIRDCTRL v7.9"
+#define FW_ID "BIRDCTRL v7.10"
 
 #include <Preferences.h>
 #include <esp_system.h>
@@ -238,8 +243,9 @@ const float VBAT_LOW_V = 11.5;    // ต่ำกว่านี้ = เตื�
    6. ค่าตั้งของ PIR และการเชื่อมต่อ
    ========================================================================== */
 #define PIR_ENABLED HAS_PIR            // ใช้สวิตช์จากบล็อก 0 ด้านบน
-const unsigned long PIR_LOCKOUT_MS  = 5000;   // ทริกแล้วห้ามทริกซ้ำในกี่ ms
-                                              // ถ้า OUT ยัง HIGH อยู่ จะทริกซ้ำทุกช่วงนี้
+const unsigned long PIR_LOCKOUT_MS  = 5000;   // OUT ยัง HIGH ค้าง จะทริกซ้ำทุกช่วงนี้
+const unsigned long PIR_EDGE_GAP_MS = 1500;   // OUT ขึ้น HIGH ครั้งใหม่ ต้องห่างจากทริกก่อนอย่างน้อยเท่านี้
+                                              // (v7.10: เดิมใช้ 5 วิเท่ากัน การเคลื่อนไหวใหม่หลังทริกแรกไม่นานจึงหลุด)
 const unsigned long PIR_STUCK_MS = 30000;     // OUT ค้าง HIGH นานเกินนี้ + ไม่เจอนกช่วงนี้
                                               // = ถือว่าเซนเซอร์ค้าง เลิกทริกซ้ำ
 const unsigned long PIR_DEBOUNCE_MS = 200;    // ต้อง HIGH/LOW ต่อเนื่องเท่านี้ถึงจะเชื่อ
@@ -743,7 +749,7 @@ void servicePir() {
     if (raw) {
       pirHighSince = now;
       Serial.println("EVT PLVL 1");
-      if ((long)(now - pirLastTrig) >= (long)PIR_LOCKOUT_MS || pirTrigCount == 0) pirTrigger(now, false);
+      if ((long)(now - pirLastTrig) >= (long)PIR_EDGE_GAP_MS || pirTrigCount == 0) pirTrigger(now, false);
     } else {
       Serial.printf("EVT PLVL 0 %lu\n", now - pirHighSince);   // HIGH ค้างนานเท่าไหร่
       pirSetStuck(false, now);

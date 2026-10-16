@@ -2,10 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v7.3
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v7.4
  ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.7 ขึ้นไป (v7.9 = ตั้งเวลาปั๊มรอบไล่จากเว็บได้)
 --------------------------------------------------------------------------
- เปลี่ยนจาก v7.2 (รุ่นนี้):
+ เปลี่ยนจาก v7.3 (รุ่นนี้):
+   - PIR ทริกได้คิวก่อนรอบตรวจอัตโนมัติ (เดิมถ้าคิวเต็ม คำขอจาก PIR ถูกทิ้ง ต้องรอรอบ 5 วิ)
+   - ใช้คู่กับบอร์ด v7.10 (PIR ทริกครั้งใหม่ได้ห่างกันแค่ 1.5 วิ) ใช้กับบอร์ดรุ่นก่อนก็ได้
+
+ เปลี่ยนจาก v7.2:
    - สวิตช์ "ไล่ทันทีเมื่อเจอภาพเดียว" บนหน้าเว็บ: เจอนกเฟรมเดียวก็ฉีดน้ำเลย ไม่รอเฟรมยืนยัน
      (เร็วขึ้นราว 3 วิ แต่ไล่ผิดบ่อยขึ้น) จำค่าไว้ใน settings.json ปิดเครื่องแล้วไม่หาย
 
@@ -1807,14 +1811,25 @@ def dataset_export_stream(scope):
 
 # ============================ WORKER ============================
 _job_q = queue.Queue(maxsize=2)
-_manual_q = queue.Queue(maxsize=3)     # ภาพที่กดถ่ายเอง (ถ่ายมาแล้ว) ได้ทำก่อนงานอัตโนมัติ
+_manual_q = queue.Queue(maxsize=3)     # ภาพที่กดถ่ายเอง (ถ่ายมาแล้ว) และ PIR ได้ทำก่อนงานอัตโนมัติ
+_pir_pending = threading.Lock()        # ถืออยู่ = มีงาน PIR รอในคิว
 
 
 def request_detection(source="manual"):
     """ขอให้ทำงานตรวจจับหนึ่งรอบ คืน True ถ้ารับคำขอไว้แล้ว
 
     ถ้าคิวเต็มแปลว่ามีงานค้างอยู่แล้ว ไม่ต้องต่อคิวซ้ำ
+    PIR ได้คิวก่อนงานอัตโนมัติ (นกที่ PIR เห็นอาจอยู่ไม่นาน) มี PIR รอคิวอยู่แล้วก็ไม่ต่อซ้ำ
     """
+    if source == "pir":
+        if not _pir_pending.acquire(blocking=False):
+            return True                             # มี PIR รออยู่ในคิวแล้ว
+        try:
+            _manual_q.put_nowait(("pir", time.time()))
+            return True
+        except queue.Full:
+            _pir_pending.release()
+            return False
     try:
         _job_q.put_nowait((source, time.time()))
         return True
@@ -1986,6 +2001,8 @@ def _worker():
     while True:
         job = _next_job()
         source = job[0]
+        if source == "pir":
+            _pir_pending.release()
         try:
             _process(*job)
         except Exception as e:                                  # noqa: BLE001
@@ -3140,6 +3157,8 @@ async function tick(){
   else if(s.hw.pir_stuck || log.some(e => e.stuck))
     hint = 'เคยค้าง HIGH จนต้องหยุดถ่ายซ้ำ: ลด Sx (ความไว) ทีละนิด ถ้ายังค้างให้หมุน Tx (หน่วงเวลา) ทวนเข็มจนสุด';
   else if(holds.length && Math.max(...holds) > 20) hint = 'HIGH ค้างนาน: หมุนปุ่ม Tx (หน่วงเวลา) บน PIR ทวนเข็มจนสุด';
+  else if(!log.length && s.hw.pir_warm === 0 && !s.hw.pir_glitch)
+    hint = 'ยังไม่เคยเห็นการเคลื่อนไหว: ลองโบกมือห่าง 1 เมตร ถ้ายังเงียบ เช็กไฟเลี้ยง PIR (ต้อง 5V) สาย OUT ที่ขา 32 และหมุน Sx ตามเข็มเพิ่มความไว';
   $('pirHint').textContent = hint;
   if(s.hw.pir_stuck && !pirStuckSeen) $('tech').open = true;   // ค้างเมื่อไหร่ กางบันทึก PIR ให้เห็นเอง
   pirStuckSeen = !!s.hw.pir_stuck;

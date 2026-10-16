@@ -133,6 +133,29 @@ def pir_tests():
         held = int(ln.split()[3]) if ln else 0
         check(f"OUT กลับเป็น LOW -> EVT PLVL 0 บอกเวลาที่ HIGH ({held} ms)", ln is not None and held >= 5000, seen)
 
+        # v7.10: การเคลื่อนไหวครั้งใหม่ไม่นานหลังทริกก่อน (OUT สั้น ไม่ค้างถึง 5 วิ) ต้องไม่หลุด
+        time.sleep(5.2)
+        b.set_ctl(PIR=1, ECHO_CM=15)
+        r = b.lines(1.0)
+        b.set_ctl(PIR=0, ECHO_CM=15)
+        r += b.lines(1.2)
+        b.set_ctl(PIR=1, ECHO_CM=15)
+        r2 = b.lines(1.0)
+        b.set_ctl(PIR=0, ECHO_CM=15)
+        r2 += b.lines(0.5)
+        check("ขยับใหม่ห่างทริกแรก ~2.2 วิ -> ทริกใหม่อีกครั้ง (เดิมหลุดเพราะต้องห่าง 5 วิ)",
+              has(r, "EVT PIR") and has(r2, "EVT PIR"), (r, r2))
+        time.sleep(2.0)
+        b.set_ctl(PIR=1, ECHO_CM=15)
+        r3 = b.lines(0.5)
+        b.set_ctl(PIR=0, ECHO_CM=15)
+        b.lines(0.35)
+        b.set_ctl(PIR=1, ECHO_CM=15)
+        r4 = b.lines(0.6)
+        b.set_ctl(PIR=0, ECHO_CM=15)
+        b.lines(0.5)
+        check("ขึ้นซ้ำห่างไม่ถึง 1.5 วิ -> ไม่ทริกรัว", has(r3, "EVT PIR") and not has(r4, "EVT PIR"), (r3, r4))
+
         # ตอนมอเตอร์หมุน ต้องไม่ทริก
         time.sleep(5.2)
         b.cmd("MOT R 300", wait=0.02)
