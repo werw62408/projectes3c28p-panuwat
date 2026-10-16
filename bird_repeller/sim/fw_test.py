@@ -257,10 +257,17 @@ def main():
         for bad in ("RCFG 5 30", "RCFG 90 30", "RCFG 40 5", "RCFG 40 101", "RCFG 40"):
             r = b.cmd(bad)
             check(f"{bad} -> ERR", first(r, "ERR") is not None, r)
+        check("ค่าเริ่มต้นปั๊มรอบไล่ 3 วิ (v7.9)", st.get("RPM") == "3000", st)
+        for bad in ("RCFG 40 30 500", "RCFG 40 30 9000"):
+            r = b.cmd(bad)
+            check(f"{bad} -> ERR", first(r, "ERR") is not None, r)
         r = b.cmd("RCFG 30 50")
-        check("RCFG 30 50 -> OK", first(r, "OK RCFG 30 50") is not None, r)
+        check("RCFG 30 50 -> OK (ไม่ใส่เวลาปั๊ม = ใช้ค่าเดิม)", first(r, "OK RCFG 30 50 3000") is not None, r)
         st = b.stat()
         check("STAT เห็นค่าใหม่", st.get("SWP") == "30" and st.get("RSP") == "50", st)
+        r = b.cmd("RCFG 30 50 4500")
+        check("RCFG 30 50 4500 -> OK", first(r, "OK RCFG 30 50 4500") is not None, r)
+        check("STAT เห็นเวลาปั๊มใหม่", b.stat().get("RPM") == "4500")
 
         # REPEL TEST: กวาดอย่างเดียว ไม่เปิดปั๊ม และไม่เกิน ±30° (133 สเต็ป)
         r = b.cmd("REPEL TEST")
@@ -275,21 +282,30 @@ def main():
         check("REPEL TEST ไม่เปิดปั๊ม", not pump_seen)
         check("REPEL TEST กวาดถึงแต่ไม่เกิน 133 สเต็ป", 110 <= peak <= 133, peak)
         check("REPEL TEST จบที่จุดกลาง", b.stat().get("POS") == "0")
-        b.cmd("RCFG 40 30")
+        b.cmd("RCFG 40 30 3000")
 
         # ---------- รอบไล่ ----------
         time.sleep(1.5)
+        duty_left = int(b.stat().get("PDUTY", 0)) / 1000      # ชุดทดสอบตั้งโควตาไว้แค่ 10 วิ
+        t_send = time.time()                                  # อยู่จุดกลางแล้ว ปั๊มเปิดแทบทันที
         r = b.cmd("REPEL")
         check("REPEL -> OK REPEL", first(r, "OK REPEL") is not None, r)
         r = b.cmd("REPEL")
         check("REPEL ซ้ำระหว่างไล่ -> ERR BUSY", first(r, "ERR BUSY") is not None, r)
         peak, done, t0 = 0, False, time.time()
+        pump_on = []
         while time.time() - t0 < 10 and not done:
             for ln in b.cmd("STAT"):
                 done |= ln.startswith("EVT REPEL DONE")
                 m = re.search(r"\bPOS=(-?\d+)", ln)
                 if m:
                     peak = max(peak, abs(int(m.group(1))))
+                if re.search(r"\bPUMP=1\b", ln):
+                    pump_on.append(time.time())
+        pump_s = pump_on[-1] - t_send if pump_on else 0      # สุ่ม STAT ทุก ~0.25 วิ คลาดได้เท่านั้น
+        want = min(3.0, duty_left)
+        check(f"รอบไล่เปิดปั๊ม 3 วิ (หรือเท่าโควตาที่เหลือ {duty_left:.1f} วิ)", want - 0.4 <= pump_s <= want + 0.3,
+              round(pump_s, 2))
         check("รอบไล่กวาดไม่เกิน ±40° (177 สเต็ป) ไม่ชนขอบ", 150 <= peak <= 177, peak)
         check("รอบไล่จบเอง EVT REPEL DONE", done)
         b.wait_for("$^", 1.5)

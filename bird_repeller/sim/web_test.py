@@ -12,6 +12,7 @@ import http.cookiejar
 import io
 import json
 import os
+import shutil
 import re
 import subprocess
 import sys
@@ -175,14 +176,26 @@ def main_flow(page, sim):
     check("ทดสอบกวาดไม่ฉีดน้ำ และกว้างไม่เกิน ±25° (111 สเต็ป)", not pump and 0 < peak <= 111, (pump, peak))
     s = state(sim)["hw"]
     check("บอร์ดจำค่าใหม่ SWP=25", s["sweep_deg"] == 25 and s["sweep_spd"] == 30, s.get("sweep_deg"))
+    check("แถบเวลาฉีดน้ำแสดงค่าเริ่มต้น 3 วิ (บอร์ด v7.9)",
+          page.is_visible("#swPumpRow") and page.inner_text("#swPumpV") == "3 วิ", page.inner_text("#swPumpV"))
+    page.fill("#swPump", "4.5")
+    page.dispatch_event("#swPump", "input")
+    page.click("#swSave")
+    s = wait_state(sim, lambda s: s["hw"]["repel_pump_ms"] == 4500, 5)
+    check("ตั้งเวลาฉีดน้ำ 4.5 วิ -> บอร์ดจำ RPM=4500 และปุ่มปั๊มเปลี่ยนตาม",
+          s is not None and s["pump_button_ms"] == 4500, s and (s["hw"]["repel_pump_ms"], s["pump_button_ms"]))
+    page.wait_for_timeout(1200)
+    check("ปุ่มปั๊มบนเว็บบอกเวลาใหม่", page.inner_text("#pumpS") == "4.5", page.inner_text("#pumpS"))
     shot(page, "01b_sweep.png")
-    page.evaluate("run('/api/sweep', {deg:40, spd:30})")
-    wait_state(sim, lambda s: s["hw"]["sweep_deg"] == 40, 5)
+    page.evaluate("run('/api/sweep', {deg:40, spd:30, pump_ms:3000})")
+    wait_state(sim, lambda s: s["hw"]["sweep_deg"] == 40 and s["hw"]["repel_pump_ms"] == 3000, 5)
+    code, _ = api_post(sim, "/api/sweep", {"deg": 40, "spd": 30, "pump_ms": 9000})
+    check("เวลาฉีดน้ำเกิน 8 วิ -> ปฏิเสธ", code == 400, code)
 
     # ---------- ปั๊ม ----------
     page.click("#bPump")
     m = wait_msg(page, "OK PUMP", 3)
-    check("กดปั๊ม 2 วินาที -> OK", "OK PUMP 2000" in m, m)
+    check("กดปั๊ม 3 วินาที (เท่ารอบไล่ของบอร์ด v7.9) -> OK", "OK PUMP 3000" in m, m)
     page.click("#bPump")
     m = wait_msg(page, "ปั๊มเปิดอยู่แล้ว", 3)
     check("กดปั๊มซ้ำตอนปั๊มเปิดอยู่ -> ไม่ยืดเวลา", "ปั๊มเปิดอยู่แล้ว" in m, m)
@@ -535,6 +548,47 @@ def dataset_flow(page, sim):
     check("ชื่อไฟล์แปลก ๆ (../) ถูกปฏิเสธ", code == 400, code)
     code, _ = get(sim, "/dataset/img/" + "x" * 5 + ".jpg")
     check("ขอไฟล์ภาพที่ชื่อไม่ตรงรูปแบบ -> ปฏิเสธ", code == 400, code)
+
+    # ---------- v7.2: ถ่ายภาพทันที / ลบภาพซ้ำ / ลบทั้งแท็บ / ไฟล์หายจากเทอร์มินัล ----------
+    before = set(os.listdir(ds_dir))
+    t0 = time.time()
+    code, j = api_post(sim, "/api/capture", {})
+    dt = time.time() - t0
+    check(f"ปุ่มถ่ายภาพตอบภายในไม่ถึง 1.5 วิ ({dt:.2f} วิ) และได้ภาพทันที", code == 200 and j["ok"] and dt < 1.5, (code, j))
+    end = time.time() + 15
+    while time.time() < end and not [f for f in set(os.listdir(ds_dir)) - before if "_manual_" in f]:
+        time.sleep(0.3)
+    check("ภาพที่กดถ่ายเข้าชุดข้อมูล", any("_manual_" in f for f in set(os.listdir(ds_dir)) - before))
+
+    page.evaluate("ds.f = 'todo'; dsLoad(true)")
+    page.wait_for_timeout(800)
+    todo = page.evaluate("ds.items.map(i => i.n)")
+    src = names[0]                                                  # ภาพที่ติดป้ายนกไว้ (ไม่โดนลบ ใช้เป็นต้นฉบับ)
+    dup = src[:15] + "_999" + src[19:]                              # ชื่อเวลาถัดไปนิดเดียว ภาพเดียวกัน
+    shutil.copy(os.path.join(ds_dir, src), os.path.join(ds_dir, dup))
+    shutil.copy(os.path.join(ds_dir, src[:-4] + ".json"), os.path.join(ds_dir, dup[:-4] + ".json"))
+    os.remove(os.path.join(ds_dir, todo[0]))                        # ลบจากเทอร์มินัลขณะเซิร์ฟเวอร์รัน
+    page.evaluate("dsLoad(true)")
+    page.wait_for_timeout(800)
+    check("ไฟล์ที่ถูกลบจากเทอร์มินัล หายจากการ์ดเอง ไม่ขึ้น ?",
+          todo[0] not in page.evaluate("ds.items.map(i => i.n)"))
+    code, j = api_post(sim, "/api/dataset/bulk", {"action": "dedupe"})
+    check(f"ลบภาพซ้ำ: {j.get('msg')}", code == 200 and j["ok"] and j["n"] >= 1
+          and not os.path.exists(os.path.join(ds_dir, dup)), j)
+    check("ลบภาพซ้ำไม่แตะภาพที่ติดป้ายแล้ว", all(os.path.exists(os.path.join(ds_dir, n)) for n in names[:3]))
+
+    page.evaluate("ds.f = 'none'; dsLoad(true)")
+    page.wait_for_timeout(800)
+    check("แท็บไม่มีนกมีปุ่มลบทั้งแท็บ", page.is_visible("#dsDelTab"), page.inner_text("#dsDelTab"))
+    page.once("dialog", lambda d: d.accept())
+    page.click("#dsDelTab")
+    page.wait_for_function("ds.counts.none === 0", timeout=5000)
+    check("ลบทั้งแท็บไม่มีนกแล้ว ไฟล์หายจริง ภาพหมวดอื่นยังอยู่",
+          not os.path.exists(os.path.join(ds_dir, names[1])) and os.path.exists(os.path.join(ds_dir, names[0])))
+    check("แท็บนกไม่มีปุ่มลบทั้งแท็บ", page.evaluate("ds.f = 'bird'; dsRenderCounts(); $('dsDelTab').hidden"))
+    code, _ = api_post(sim, "/api/dataset/bulk", {"action": "delete", "f": "bird", "upto": names[0]})
+    check("API ไม่ยอมลบทั้งแท็บนก", code == 400, code)
+    check("บอกพื้นที่ว่างบนการ์ด", "GB" in page.inner_text("#dsFree"), page.inner_text("#dsFree"))
 
 
 def auth_flow(browser, phone, sim):

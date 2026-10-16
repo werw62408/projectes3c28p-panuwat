@@ -2,10 +2,21 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v7.1
- ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.7 ขึ้นไป (v7.8 = ผังขาใหม่ เซิร์ฟเวอร์ไม่ต้องรู้เลขขา)
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v7.2
+ ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.7 ขึ้นไป (v7.9 = ตั้งเวลาปั๊มรอบไล่จากเว็บได้)
 --------------------------------------------------------------------------
- เปลี่ยนจาก v7.0 (รุ่นนี้):
+ เปลี่ยนจาก v7.1 (รุ่นนี้):
+   - ปุ่ม "ถ่ายภาพเดี๋ยวนี้" ถ่ายทันทีตอนกด (เดิมต่อคิวหลังรอบตรวจอัตโนมัติ + รอแกนหยุด)
+     และดูหลายเฟรมแล้วเลือกเฟรมที่คมสุด ภาพตรวจอัตโนมัติก็เลือกเฟรมคมสุดจาก 2 เฟรม
+   - เก็บภาพเทรนซ้ำน้อยลงมาก: ภาพอัตโนมัติที่แทบเหมือนภาพที่เก็บล่าสุด (กรอบตรงกัน) ไม่เก็บ
+     ก้ำกึ่ง/PIR/มีการเคลื่อนไหว มีระยะห่างขั้นต่ำ ภาพสุ่มนับเป็นเวลา (เดิมนับรอบ ได้ทุก 15 วิ)
+   - การ์ดเทรน: ปุ่ม "ลบภาพซ้ำ" และ "ลบทั้งหมดในแท็บนี้" (ยังไม่ติดป้าย / ไม่มีนก) บอกพื้นที่ว่าง
+   - ภาพเทรนเขียนลงการ์ดจริงก่อนนับว่าเสร็จ (fsync) ไฟดับ/ถอดปลั๊กแล้วไม่ได้ไฟล์ว่าง
+     ภาพเสียที่ค้างจากก่อนหน้า (แสดงเป็น ? บนเว็บ) ถูกลบเองตอนเปิดเซิร์ฟเวอร์
+   - เวลาฉีดน้ำรอบไล่ตั้งได้จากหน้าเว็บ ค่าเริ่มต้น 3 วิ (ต้องใช้บอร์ด v7.9)
+     ปุ่มปั๊มบนเว็บเปิดนานเท่ากับรอบไล่
+
+ เปลี่ยนจาก v7.0:
    - แบ่งเป็น 2 เวอร์ชันด้วยบรรทัด MODE_DEFAULT ต้นไฟล์ (หรือ env BIRD_MODE)
        "normal" = ใช้งานปกติ: ไล่นกจริง ไม่เก็บภาพเทรน ไม่มีการ์ดติดป้าย (ประหยัด SD การ์ด)
        "train"  = เก็บภาพไปเทรน: เก็บภาพถี่ขึ้น + การ์ดติดป้าย/ดาวน์โหลด ZIP
@@ -165,6 +176,8 @@ CAM_FPS = 15
 CAM_FETCH_TIMEOUT = 4.0     # รอเฟรมใหม่นานสุดกี่วินาที
 CAM_OFFLINE_AFTER = 3.0     # ไม่มีเฟรมใหม่เกินกี่วินาที ถือว่ากล้องหลุด
 CAM_WAIT_STILL_S = 5.0      # ก่อนถ่าย รอแกนหมุนหยุดนานสุดกี่วินาที
+CAM_SHARP_FRAMES = 2        # ถ่ายแต่ละครั้งดูกี่เฟรมติดกัน แล้วเลือกเฟรมที่คมสุด (กันภาพเบลอจากการขยับ)
+CAM_SHARP_FRAMES_MANUAL = 5 # ปุ่มถ่ายภาพเดี๋ยวนี้ ดู 5 เฟรม (~0.3 วิ ที่ 15 fps)
 STREAM_WIDTH = 960          # ย่อภาพสดก่อนส่งให้มือถือ ลดภาระฮอตสปอต
 STREAM_MAX_FPS = 10
 STREAM_MAX_CLIENTS = 3      # เปิดภาพสดพร้อมกันได้กี่เครื่อง แต่ละเครื่องกิน CPU แย่งกับ YOLO
@@ -203,8 +216,12 @@ DATASET_DIR = os.path.join(DATA_DIR, "dataset")
 DATASET_LOG = os.path.join(DATASET_DIR, "dataset_log.csv")
 DATASET_LOWCONF = 0.10          # เก็บกรอบที่ความมั่นใจตั้งแต่เท่านี้ แม้จะต่ำกว่าเกณฑ์นับ
 DATASET_MOTION_FRAC = 0.02      # สัดส่วนพิกเซลที่เปลี่ยน (2%) ถึงจะถือว่ามีอะไรขยับ
-DATASET_RANDOM_EVERY = 5        # สุ่มเก็บทุก ๆ กี่รอบ
 DATASET_BIRD_MIN_GAP_S = 30     # ภาพที่เจอนก เก็บห่างกันอย่างน้อยกี่วินาที (นกเกาะนิ่งจะได้ไม่ซ้ำเป็นร้อยใบ)
+DATASET_GAP_S = {"lowconf": 60, "pir": 20, "motion": 30}   # เหตุผลอื่น เก็บห่างกันอย่างน้อยกี่วินาที
+DATASET_RANDOM_GAP_S = 1800     # ภาพพื้นหลังสุ่มเก็บทุกกี่วินาที (v7.2: เดิมนับรอบ ตรวจทุก 5 วิเลยได้ภาพซ้ำเยอะ)
+# ภาพอัตโนมัติ (ก้ำกึ่ง/PIR/เคลื่อนไหว/สุ่ม) ที่ต่างจากภาพที่เก็บล่าสุดไม่ถึงเท่านี้ของพิกเซล
+# และกรอบที่โมเดลเห็นอยู่ที่เดิม = ภาพซ้ำ ไม่เก็บ (เช่นถุงพลาสติกที่โมเดลเห็นก้ำกึ่งทุก 5 วิ)
+DATASET_DUP_FRAC = 0.01
 DATASET_MIN_FREE_MB = 1024      # พื้นที่ว่างเหลือน้อยกว่านี้ หยุดเก็บ
 DATASET_LABELS = os.path.join(DATASET_DIR, "labels.json")   # ป้ายที่ติดจากหน้าเว็บ
 DATASET_PRELABEL_CONF = 0.25    # กรอบจากโมเดลที่ความมั่นใจตั้งแต่เท่านี้ ใส่เป็นกรอบเริ่มต้นในไฟล์ YOLO
@@ -238,7 +255,8 @@ MOTOR_STEP_MAX = 400
 SWEEP_DEG_MIN, SWEEP_DEG_MAX = 10, 80
 SWEEP_SPD_MIN, SWEEP_SPD_MAX = 10, 100
 PUMP_MS_MAX = 8000
-PUMP_BUTTON_MS = 2000       # ปุ่มปั๊มบนหน้าเว็บเปิดกี่ ms (รอบไล่ของบอร์ดตั้งไว้ในเฟิร์มแวร์ = 2 วิ)
+PUMP_BUTTON_MS = 3000       # ปุ่มปั๊มบนหน้าเว็บเปิดกี่ ms (บอร์ด v7.9 ขึ้นไป ใช้เวลาเท่ารอบไล่ที่ตั้งจากเว็บ)
+REPEL_PUMP_MS_MIN, REPEL_PUMP_MS_MAX = 1000, 8000   # ต้องตรงกับ REPEL_PUMP_MS_* ในเฟิร์มแวร์
 STEPS_PER_REV = 1600
 
 # ---------- ความปลอดภัยหน้าเว็บ (v7.0: ล็อกอินด้วยรหัสผ่าน) ----------
@@ -285,7 +303,8 @@ DATASET_ENABLED = TRAIN_MODE    # เก็บภาพเทรนเฉพา�
 if TRAIN_MODE:
     AUTO_REPEL_DEFAULT = False  # ปล่อยนกอยู่ให้ถ่ายได้หลายภาพ (กดเปิดไล่บนหน้าเว็บได้)
     DATASET_BIRD_MIN_GAP_S = 10     # เจอนกเก็บถี่ขึ้น (ปกติ 30 วิ)
-    DATASET_RANDOM_EVERY = 3        # ภาพพื้นหลังไม่มีนก สุ่มเก็บทุก 3 รอบ (ปกติ 5)
+    DATASET_GAP_S = {"lowconf": 30, "pir": 10, "motion": 15}
+    DATASET_RANDOM_GAP_S = 600      # ภาพพื้นหลังไม่มีนก สุ่มเก็บทุก 10 นาที (ปกติ 30 นาที)
 
 if TEST_MODE:
     CONF_THRESHOLD = 0.25       # ต่ำลงนิดนึง จะได้เห็นว่าโมเดลเห็นอะไรบ้าง
@@ -548,14 +567,25 @@ def save_roi():
 
 
 # ============================ HELPERS ============================
-def atomic_write_bytes(path, data):
+def atomic_write_bytes(path, data, durable=False):
+    """durable=True รอจนข้อมูลลงการ์ดจริง (fsync) ไฟดับทันทีหลังจากนี้ไฟล์ก็ไม่เสีย
+    ใช้กับไฟล์ที่เก็บถาวร (ภาพเทรน ป้าย) ไม่ใช้กับภาพล่าสุดที่เขียนทับทุกไม่กี่วินาที"""
     tmp = f"{path}.{os.getpid()}.part"
     with open(tmp, "wb") as f:
         f.write(data)
+        if durable:
+            f.flush()
+            os.fsync(f.fileno())
     os.replace(tmp, path)
 
 
-def atomic_write_jpeg(path, image_bgr, quality=85):
+def atomic_write_jpeg(path, image_bgr, quality=85, durable=False):
+    if durable:
+        ok, buf = cv2.imencode(".jpg", image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+        if not ok:
+            raise IOError(f"แปลงภาพไม่สำเร็จ: {path}")
+        atomic_write_bytes(path, buf.tobytes(), durable=True)
+        return
     tmp = path + ".part.jpg"
     if not cv2.imwrite(tmp, image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality]):
         raise IOError(f"เขียนไฟล์ไม่สำเร็จ: {tmp}")
@@ -928,6 +958,8 @@ class Controller:
                 # v7.7 ขึ้นไป: การกวาดตอนไล่ (รุ่นเก่าไม่มี = None ซ่อนตัวปรับบนเว็บ)
                 self.hw["sweep_deg"] = int(vals["SWP"]) if "SWP" in vals else None
                 self.hw["sweep_spd"] = int(vals["RSP"]) if "RSP" in vals else None
+                # v7.9 ขึ้นไป: เวลาฉีดน้ำต่อรอบไล่ (ms)
+                self.hw["repel_pump_ms"] = int(vals["RPM"]) if "RPM" in vals else None
             except ValueError:
                 pass
 
@@ -1216,6 +1248,24 @@ class Webcam:
             return nxt
         return frame
 
+    def sharp_frame_after(self, t0, n, timeout):
+        """ดู n เฟรมดีที่ถ่ายหลัง t0 แล้วคืนเฟรมที่คมที่สุด (ภาพสั่น/วัตถุขยับจะเบลอ ค่าความคมต่ำ)"""
+        deadline = time.time() + timeout
+        best, best_score, t = None, -1.0, t0
+        for _ in range(max(1, n)):
+            left = deadline - time.time()
+            if left <= 0:
+                break
+            frame = self.good_frame_after(t, left)
+            if frame is None:
+                break
+            with self._cond:
+                t = self._t
+            score = _sharpness(frame)
+            if score > best_score:
+                best, best_score = frame, score
+        return best
+
     def next_frame(self, last_seq, timeout=2.0):
         """ใช้กับสตรีม รอเฟรมถัดไป คืน (ภาพ, seq)"""
         with self._cond:
@@ -1234,6 +1284,12 @@ def _small_gray(frame):
     g = cv2.cvtColor(cv2.resize(frame, (160, 120), interpolation=cv2.INTER_AREA),
                      cv2.COLOR_BGR2GRAY)
     return cv2.GaussianBlur(g, (5, 5), 0)
+
+
+def _sharpness(frame):
+    """ความคมของภาพ = ความแปรปรวนของ Laplacian (ขอบชัด = ค่าสูง)"""
+    g = cv2.cvtColor(cv2.resize(frame, (320, 240), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
+    return float(cv2.Laplacian(g, cv2.CV_64F).var())
 
 
 def _diff_frac(a, b):
@@ -1256,12 +1312,12 @@ def wait_still():
         time.sleep(0.1)
 
 
-def capture_frame():
+def capture_frame(n=CAM_SHARP_FRAMES):
     """ถ่ายภาพนิ่งหนึ่งใบจากเว็บแคม คืน (ภาพ BGR, ข้อความผิดพลาด)
 
-    เอาเฟรมที่ถ่ายหลังจากเรียกเท่านั้น และข้ามเฟรมเสีย
+    เอาเฟรมที่ถ่ายหลังจากเรียกเท่านั้น ข้ามเฟรมเสีย และเลือกเฟรมที่คมสุดจาก n เฟรม
     """
-    frame = CAM.good_frame_after(time.time(), CAM_FETCH_TIMEOUT)
+    frame = CAM.sharp_frame_after(time.time(), n, CAM_FETCH_TIMEOUT)
     if frame is None:
         return None, CAM.last_error or "ไม่ได้รับภาพจากเว็บแคม"
     return frame, ""
@@ -1269,14 +1325,44 @@ def capture_frame():
 
 # ============================ DATASET ============================
 _ds = {"prev_gray": None, "prev_pos": None, "rounds": 0,
-       "last_bird_save": 0.0, "full_warned": False}
+       "last": {}, "saved": None, "full_warned": False}
+# last  = เวลาที่เก็บล่าสุดแยกตามเหตุผล
+# saved = (ภาพย่อ, ตำแหน่งมอเตอร์, กรอบ) ของภาพที่เก็บล่าสุด ไว้เช็กภาพซ้ำ
 _ds_lock = threading.Lock()
+
+
+def _ds_gray(img):
+    """ภาพย่อขาวดำ 160x120 เบลอเล็กน้อย ไว้เทียบว่าภาพเปลี่ยนไปแค่ไหน"""
+    if img.ndim == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img = cv2.resize(img, (160, 120), interpolation=cv2.INTER_AREA)
+    return cv2.GaussianBlur(img, (5, 5), 0)
+
+
+def _box_iou(a, b):
+    iw = min(a[2], b[2]) - max(a[0], b[0])
+    ih = min(a[3], b[3]) - max(a[1], b[1])
+    if iw <= 0 or ih <= 0:
+        return 0.0
+    inter = iw * ih
+    return inter / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter)
+
+
+def _boxes_same(a, b):
+    """กรอบสองชุดอยู่ที่เดียวกันทุกกรอบไหม (มีกรอบใหม่โผล่ เช่นนกตัวเล็กเข้ามา = ไม่เหมือน)"""
+    a, b = a or [], b or []
+    return (all(any(_box_iou(x, y) >= 0.5 for y in b) for x in a) and
+            all(any(_box_iou(x, y) >= 0.5 for y in a) for x in b))
+
+
+def _is_dup(gray, boxes, prev_gray, prev_boxes):
+    return (prev_gray is not None and float((cv2.absdiff(gray, prev_gray) > 25).mean()) < DATASET_DUP_FRAC
+            and _boxes_same(boxes, prev_boxes))
 
 
 def _motion_frac(raw, hw):
     """สัดส่วนพิกเซลที่เปลี่ยนจากรอบก่อน คืน None ถ้าเทียบไม่ได้ (รอบแรก / มอเตอร์เพิ่งหมุน)"""
-    gray = cv2.cvtColor(cv2.resize(raw, (160, 120)), cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    gray = _ds_gray(raw)
     pos = hw.get("pos")
     prev, prev_pos = _ds["prev_gray"], _ds["prev_pos"]
     _ds["prev_gray"], _ds["prev_pos"] = gray, pos
@@ -1292,25 +1378,31 @@ def dataset_maybe_save(raw, source, count, max_conf, weak_max, hw, boxes=None, r
         motion = _motion_frac(raw, hw)
         now = time.time()
 
+        last = _ds["last"]
         reason = None
         if repelled:
             reason = "repel"            # ทุกครั้งที่สั่งไล่ ไว้ตรวจว่าไล่เพราะนกจริงหรือโมเดลเห็นผิด
         elif source == "manual":
             reason = "manual"
         elif count > 0:
-            if now - _ds["last_bird_save"] >= DATASET_BIRD_MIN_GAP_S:
+            if now - last.get("bird", 0) >= DATASET_BIRD_MIN_GAP_S:
                 reason = "bird"
-                _ds["last_bird_save"] = now
         elif weak_max >= DATASET_LOWCONF:
             reason = "lowconf"
         elif source == "pir":
             reason = "pir"
         elif motion is not None and motion >= DATASET_MOTION_FRAC:
             reason = "motion"
-        elif _ds["rounds"] % DATASET_RANDOM_EVERY == 0:
+        elif now - last.get("random", 0) >= DATASET_RANDOM_GAP_S:
             reason = "random"
-        if reason is None:
+        if reason is None or now - last.get(reason, 0) < DATASET_GAP_S.get(reason, 0):
             return
+
+        gray = _ds_gray(raw)
+        if reason not in ("repel", "manual", "bird") and _ds["saved"] is not None:
+            prev_gray, prev_pos, prev_boxes = _ds["saved"]
+            if prev_pos == hw.get("pos") and _is_dup(gray, boxes, prev_gray, prev_boxes):
+                return
 
         os.makedirs(DATASET_DIR, exist_ok=True)
         free_mb = shutil.disk_usage(DATASET_DIR).free / 1e6
@@ -1322,10 +1414,12 @@ def dataset_maybe_save(raw, source, count, max_conf, weak_max, hw, boxes=None, r
 
         ts = datetime.now()
         name = f"{ts.strftime('%Y%m%d_%H%M%S_%f')[:-3]}_{reason}_{count}.jpg"
-        atomic_write_jpeg(os.path.join(DATASET_DIR, name), raw, quality=92)
+        atomic_write_jpeg(os.path.join(DATASET_DIR, name), raw, quality=92, durable=True)
         h, w = raw.shape[:2]
         meta = {"w": w, "h": h, "boxes": boxes or [], "source": source}
-        atomic_write_bytes(_ds_meta_path(name), json.dumps(meta).encode("utf-8"))
+        atomic_write_bytes(_ds_meta_path(name), json.dumps(meta).encode("utf-8"), durable=True)
+        last[reason] = now
+        _ds["saved"] = (gray, hw.get("pos"), boxes or [])
         _dataset_count(reason)
         if _dsx["names"] is not None:
             _dsx["names"].append(name)
@@ -1360,15 +1454,11 @@ def dataset_stats():
     global _ds_counts
     with _ds_lock:
         if _ds_counts is None:
-            try:
-                files = [f for f in os.listdir(DATASET_DIR) if f.endswith(".jpg")]
-            except FileNotFoundError:
-                files = []
-            out = {"total": len(files)}
-            for f in files:
-                parts = f.rsplit("_", 2)
-                if len(parts) == 3:
-                    out[parts[1]] = out.get(parts[1], 0) + 1
+            _ds_load()
+            out = {"total": len(_dsx["names"])}
+            for f in _dsx["names"]:
+                reason = f.rsplit("_", 2)[1]
+                out[reason] = out.get(reason, 0) + 1
             _ds_counts = out
         return dict(_ds_counts)
 
@@ -1383,13 +1473,43 @@ def _ds_meta_path(name):
     return os.path.join(DATASET_DIR, name[:-4] + ".json")
 
 
+def _jpeg_broken(path):
+    """ไฟล์ภาพเสียไหม (ว่าง/ถูกตัด เช่นไฟดับตอนกำลังเขียน) ดูแค่หัวกับท้ายไฟล์ เร็วพอจะเช็กทุกไฟล์"""
+    try:
+        with open(path, "rb") as f:
+            if f.read(2) != b"\xff\xd8":
+                return True
+            f.seek(-2, os.SEEK_END)
+            return f.read(2) != b"\xff\xd9"
+    except OSError:
+        return True
+
+
 def _ds_load():
-    """โหลดรายชื่อภาพและป้ายครั้งแรก (เรียกภายใต้ _ds_lock)"""
+    """โหลดรายชื่อภาพและป้ายครั้งแรก (เรียกภายใต้ _ds_lock)
+
+    ครั้งแรกจะลบภาพเสีย (บนเว็บเห็นเป็น ?) และไฟล์ .part ที่ค้างจากไฟดับตอนเขียนด้วย
+    """
     if _dsx["names"] is None:
         try:
-            _dsx["names"] = sorted(f for f in os.listdir(DATASET_DIR) if _DS_NAME_RE.match(f))
+            files = os.listdir(DATASET_DIR)
         except FileNotFoundError:
-            _dsx["names"] = []
+            files = []
+        names, broken = [], 0
+        for f in files:
+            path = os.path.join(DATASET_DIR, f)
+            if ".part" in f:
+                _rm_quiet(path)
+            elif _DS_NAME_RE.match(f):
+                if _jpeg_broken(path):
+                    _rm_quiet(path)
+                    _rm_quiet(_ds_meta_path(f))
+                    broken += 1
+                else:
+                    names.append(f)
+        if broken:
+            print(f"[Dataset] ลบภาพเสีย {broken} ไฟล์ (ไฟดับตอนกำลังเขียน)", flush=True)
+        _dsx["names"] = sorted(names)
     if _dsx["labels"] is None:
         try:
             with open(DATASET_LABELS, encoding="utf-8") as f:
@@ -1399,9 +1519,17 @@ def _ds_load():
             _dsx["labels"] = {}
 
 
+def _rm_quiet(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def _ds_save_labels():
     os.makedirs(DATASET_DIR, exist_ok=True)
-    atomic_write_bytes(DATASET_LABELS, json.dumps(_dsx["labels"], ensure_ascii=False).encode("utf-8"))
+    atomic_write_bytes(DATASET_LABELS, json.dumps(_dsx["labels"], ensure_ascii=False).encode("utf-8"),
+                       durable=True)
 
 
 def _ds_meta(name):
@@ -1430,15 +1558,27 @@ def dataset_page(flt, page):
     elif flt == "todo":
         names = [n for n in names if n not in labels]
     start = max(0, page) * DATASET_PAGE
-    items = []
+    items, gone = [], []
     for n in names[start:start + DATASET_PAGE]:
+        if not os.path.exists(os.path.join(DATASET_DIR, n)):
+            gone.append(n)                              # ถูกลบจากเทอร์มินัลขณะเซิร์ฟเวอร์รันอยู่
+            continue
         meta = _ds_meta(n) or {}
         reason = n.rsplit("_", 2)[1]
         items.append({"n": n, "t": _ds_time(n), "r": reason, "l": labels.get(n, ""),
                       "w": meta.get("w"), "h": meta.get("h"),
                       "b": meta.get("boxes") if meta else None})
+    if gone:
+        with _ds_lock:
+            for n in gone:
+                _ds_remove(n)
+            _ds_save_labels()
+    try:
+        free_gb = round(shutil.disk_usage(DATA_DIR).free / 1e9, 1)
+    except OSError:
+        free_gb = None
     return {"items": items, "counts": counts, "page": page,
-            "more": start + DATASET_PAGE < len(names)}
+            "more": start + DATASET_PAGE < len(names), "free_gb": free_gb}
 
 
 def dataset_set_label(name, label):
@@ -1454,25 +1594,81 @@ def dataset_set_label(name, label):
     return True
 
 
+def _ds_remove(name):
+    """ลบภาพหนึ่งใบออกจากดิสก์และแคช (เรียกภายใต้ _ds_lock หลัง _ds_load ไม่บันทึกป้าย)"""
+    _rm_quiet(os.path.join(DATASET_DIR, name))
+    _rm_quiet(_ds_meta_path(name))
+    try:
+        _dsx["names"].remove(name)
+    except ValueError:
+        return
+    _dsx["labels"].pop(name, None)
+    if _ds_counts is not None:
+        reason = name.rsplit("_", 2)[1]
+        _ds_counts["total"] = max(0, _ds_counts["total"] - 1)
+        if _ds_counts.get(reason):
+            _ds_counts[reason] -= 1
+
+
 def dataset_delete(name):
     with _ds_lock:
         _ds_load()
         if name not in _dsx["names"]:
             return False
-        for path in (os.path.join(DATASET_DIR, name), _ds_meta_path(name)):
-            try:
-                os.remove(path)
-            except FileNotFoundError:
-                pass
-        _dsx["names"].remove(name)
-        if _dsx["labels"].pop(name, None) is not None:
+        had_label = name in _dsx["labels"]
+        _ds_remove(name)
+        if had_label:
             _ds_save_labels()
-        if _ds_counts is not None:
-            reason = name.rsplit("_", 2)[1]
-            _ds_counts["total"] = max(0, _ds_counts["total"] - 1)
-            if _ds_counts.get(reason):
-                _ds_counts[reason] -= 1
     return True
+
+
+def dataset_delete_filter(flt, upto):
+    """ลบทุกภาพในหมวด flt ("todo" = ยังไม่ติดป้าย / "none" = ไม่มีนก)
+    เฉพาะภาพที่เก่ากว่าหรือเท่ากับ upto (ภาพใหม่สุดที่ผู้ใช้เห็นตอนกด) ภาพที่เข้ามาทีหลังไม่โดนลบ"""
+    with _ds_lock:
+        _ds_load()
+        labels = _dsx["labels"]
+        names = [n for n in _dsx["names"] if n <= upto and
+                 (n not in labels if flt == "todo" else labels.get(n) == flt)]
+        for n in names:
+            _ds_remove(n)
+        if flt != "todo":
+            _ds_save_labels()
+    return len(names)
+
+
+_dedupe_lock = threading.Lock()
+
+
+def dataset_dedupe():
+    """ลบภาพซ้ำ: ไล่จากเก่าไปใหม่ ภาพที่ยังไม่ติดป้ายที่แทบเหมือนภาพที่เก็บไว้ก่อนหน้า
+    (พิกเซลต่างไม่ถึง DATASET_DUP_FRAC และกรอบอยู่ที่เดิม) ถูกลบ
+    ไม่ลบภาพที่กดถ่ายเองและภาพที่ติดป้ายแล้ว คืน (จำนวนที่ลบ, จำนวนที่ตรวจ)"""
+    global _ds_counts
+    with _ds_lock:
+        _dsx["names"], _ds_counts = None, None          # อ่านรายชื่อจากดิสก์ใหม่ (เผื่อเพิ่ม/ลบไฟล์เอง)
+        _ds_load()
+        names = list(_dsx["names"])
+        labels = dict(_dsx["labels"])
+    drop, prev = [], None
+    for n in names:                                     # อ่านไฟล์นอกล็อก รอบตรวจจับไม่ต้องรอ
+        img = cv2.imread(os.path.join(DATASET_DIR, n), cv2.IMREAD_REDUCED_GRAYSCALE_4)
+        if img is None:
+            if os.path.exists(os.path.join(DATASET_DIR, n)):
+                drop.append(n)                          # เปิดไม่ได้ = ภาพเสีย
+            continue
+        gray = _ds_gray(img)
+        boxes = (_ds_meta(n) or {}).get("boxes") or []
+        if (prev is not None and n not in labels and n.rsplit("_", 2)[1] != "manual"
+                and _is_dup(gray, boxes, prev[0], prev[1])):
+            drop.append(n)
+            continue
+        prev = (gray, boxes)
+    with _ds_lock:
+        for n in drop:
+            if n not in _dsx["labels"]:                 # เผื่อเพิ่งติดป้ายระหว่างตรวจ
+                _ds_remove(n)
+    return len(drop), len(names)
 
 
 def _yolo_lines(meta, min_conf):
@@ -1576,6 +1772,7 @@ def dataset_export_stream(scope):
 
 # ============================ WORKER ============================
 _job_q = queue.Queue(maxsize=2)
+_manual_q = queue.Queue(maxsize=3)     # ภาพที่กดถ่ายเอง (ถ่ายมาแล้ว) ได้ทำก่อนงานอัตโนมัติ
 
 
 def request_detection(source="manual"):
@@ -1609,8 +1806,10 @@ def schedule_confirm():
         _confirm_timer.start()
 
 
-def _process(source, requested_at):
-    wait_still()
+def _process(source, requested_at, frame0=None, shot_ms=0):
+    """frame0 = ภาพที่ถ่ายมาแล้ว (ปุ่มถ่ายภาพ) ใช้ภาพนั้นภาพเดียว ไม่ต้องรอแกนหยุด"""
+    if frame0 is None:
+        wait_still()
 
     # เพิ่งเจอนกไป (กำลังรอยืนยัน) -> เฟรมนี้ใช้เกณฑ์ยืนยันที่ต่ำกว่า
     confirming = CONFIRM_FRAMES > 1 and CTRL.confirm_hits() > 0
@@ -1623,13 +1822,13 @@ def _process(source, requested_at):
     shutter_ms = 0
     infer_total = 0
     detect_total = 0
-    for i in range(max(1, BURST_FRAMES)):
+    for i in range(1 if frame0 is not None else max(1, BURST_FRAMES)):
         if i:
             time.sleep(BURST_GAP_S)
         t_shot = time.perf_counter()
-        frame, err = capture_frame()
+        frame, err = (frame0, "") if frame0 is not None else capture_frame()
         if i == 0:
-            shutter_ms = int((time.perf_counter() - t_shot) * 1000)
+            shutter_ms = shot_ms if frame0 is not None else int((time.perf_counter() - t_shot) * 1000)
         if frame is None:
             break
         if i == 0:
@@ -1735,11 +1934,25 @@ def _write_preview(frame):
         pass
 
 
+def _next_job():
+    """งานถัดไป: ภาพที่กดถ่ายเองก่อน แล้วค่อยงานอัตโนมัติ"""
+    while True:
+        try:
+            return _manual_q.get_nowait()
+        except queue.Empty:
+            pass
+        try:
+            return _job_q.get(timeout=0.2)
+        except queue.Empty:
+            pass
+
+
 def _worker():
     while True:
-        source, requested_at = _job_q.get()
+        job = _next_job()
+        source = job[0]
         try:
-            _process(source, requested_at)
+            _process(*job)
         except Exception as e:                                  # noqa: BLE001
             print(f"[Worker] ผิดพลาด: {e}", flush=True)
             with _state_lock:
@@ -1791,7 +2004,7 @@ def _auto_loop():
 # ============================ API ============================
 _PUBLIC = {"login_page", "api_login", "api_setup", "api_health"}
 _TRAIN_ONLY = {"api_dataset", "api_dataset_img", "api_dataset_label", "api_dataset_delete",
-               "api_dataset_export"}
+               "api_dataset_bulk", "api_dataset_export"}
 
 
 @app.before_request
@@ -1888,9 +2101,22 @@ def api_password():
 
 @app.route("/api/capture", methods=["POST"])
 def api_capture():
-    """ปุ่มถ่ายภาพเดี๋ยวนี้บนหน้าเว็บ"""
-    ok = request_detection("manual")
-    return jsonify(ok=ok, msg="รับคำสั่งแล้ว" if ok else "มีงานค้างอยู่ รอสักครู่")
+    """ปุ่มถ่ายภาพเดี๋ยวนี้บนหน้าเว็บ
+
+    v7.2: ถ่ายทันทีตอนกด (เลือกเฟรมคมสุดจาก ~0.3 วิ) แล้วค่อยส่งภาพนั้นไปตรวจจับ
+    ภาพจึงเป็นจังหวะที่กดจริง ไม่ต้องรอคิวรอบอัตโนมัติหรือรอแกนหยุดหมุน
+    """
+    t0 = time.perf_counter()
+    frame, _ = capture_frame(CAM_SHARP_FRAMES_MANUAL) if camera_online() else (None, "")
+    if frame is None:                                   # กล้องหลุด ใช้ทางเดิม (ได้ข้อความผิดพลาดบนเว็บ)
+        ok = request_detection("manual")
+        return jsonify(ok=ok, msg="รับคำสั่งแล้ว" if ok else "มีงานค้างอยู่ รอสักครู่")
+    _write_preview(frame)
+    try:
+        _manual_q.put_nowait(("manual", time.time(), frame, int((time.perf_counter() - t0) * 1000)))
+    except queue.Full:
+        return jsonify(ok=False, msg="กดถี่เกินไป รอสักครู่")
+    return jsonify(ok=True, msg="ถ่ายแล้ว กำลังตรวจหานก")
 
 
 @app.route("/api/state")
@@ -1908,7 +2134,7 @@ def api_state():
     s["confirm_frames"] = CONFIRM_FRAMES
     s["confirm_delay"] = CONFIRM_DELAY_S
     s["confirm_streak"] = CTRL.confirm_hits()
-    s["pump_button_ms"] = PUMP_BUTTON_MS
+    s["pump_button_ms"] = pump_button_ms()
     s["now"] = time.time()
     s["burst_frames"] = BURST_FRAMES
     s["corrupt_frames"] = CAM.corrupt_count
@@ -1982,11 +2208,16 @@ def api_motor():
     return jsonify(ok=ok, msg=line)
 
 
+def pump_button_ms():
+    """ปุ่มปั๊มบนเว็บเปิดนานเท่ารอบไล่ที่ตั้งไว้บนบอร์ด (บอร์ดเก่ากว่า v7.9 ใช้ค่าในไฟล์นี้)"""
+    return CTRL.snapshot().get("repel_pump_ms") or PUMP_BUTTON_MS
+
+
 @app.route("/api/pump", methods=["POST"])
 def api_pump():
     data = request.get_json(silent=True) or {}
     try:
-        ms = int(data.get("ms", PUMP_BUTTON_MS))
+        ms = int(data.get("ms", pump_button_ms()))
     except (TypeError, ValueError):
         return jsonify(ok=False, msg="ค่าเวลาไม่ถูกต้อง"), 400
     ms = max(200, min(PUMP_MS_MAX, ms))
@@ -2017,8 +2248,19 @@ def api_sweep():
         return jsonify(ok=False, msg="ค่าไม่ถูกต้อง"), 400
     if not (SWEEP_DEG_MIN <= deg <= SWEEP_DEG_MAX and SWEEP_SPD_MIN <= spd <= SWEEP_SPD_MAX):
         return jsonify(ok=False, msg="ค่าเกินช่วงที่ตั้งได้"), 400
-    ok, line = CTRL.send(f"RCFG {deg} {spd}")
-    return jsonify(ok=ok, msg=f"บันทึกการกวาด ±{deg}° ความเร็ว {spd}%" if ok else line)
+    pms = data.get("pump_ms")
+    if pms is not None:
+        try:
+            pms = int(pms)
+        except (TypeError, ValueError):
+            return jsonify(ok=False, msg="ค่าไม่ถูกต้อง"), 400
+        if not REPEL_PUMP_MS_MIN <= pms <= REPEL_PUMP_MS_MAX:
+            return jsonify(ok=False, msg="ค่าเกินช่วงที่ตั้งได้"), 400
+    ok, line = CTRL.send(f"RCFG {deg} {spd}" + (f" {pms}" if pms else ""))
+    if ok:
+        CTRL._wake.set()                                # อ่าน STAT ใหม่ หน้าเว็บเห็นค่าใหม่ทันที
+    note = f" ฉีดน้ำ {pms / 1000:g} วิ" if pms else ""
+    return jsonify(ok=ok, msg=f"บันทึกการไล่ ±{deg}° ความเร็ว {spd}%{note}" if ok else line)
 
 
 @app.route("/api/bird_lamp", methods=["POST"])
@@ -2152,6 +2394,28 @@ def api_dataset_delete():
     if not dataset_delete(name):
         return jsonify(ok=False, msg="ไม่พบภาพนี้แล้ว"), 404
     return jsonify(ok=True, msg="ลบภาพแล้ว")
+
+
+@app.route("/api/dataset/bulk", methods=["POST"])
+def api_dataset_bulk():
+    """{action: "dedupe"} ลบภาพซ้ำ / {action: "delete", f: "todo"|"none", upto: ชื่อภาพ} ลบทั้งแท็บ"""
+    data = request.get_json(silent=True) or {}
+    act = data.get("action")
+    if act == "dedupe":
+        if not _dedupe_lock.acquire(blocking=False):
+            return jsonify(ok=False, msg="กำลังลบภาพซ้ำอยู่แล้ว รอสักครู่"), 409
+        try:
+            n, total = dataset_dedupe()
+        finally:
+            _dedupe_lock.release()
+        return jsonify(ok=True, n=n, msg=f"ลบภาพซ้ำ {n} ภาพ (ตรวจทั้งหมด {total} ภาพ)")
+    if act == "delete":
+        flt, upto = data.get("f"), data.get("upto")
+        if flt not in ("todo", "none") or not _ds_name_ok(upto):
+            return jsonify(ok=False, msg="ข้อมูลไม่ถูกต้อง"), 400
+        n = dataset_delete_filter(flt, upto)
+        return jsonify(ok=True, n=n, msg=f"ลบแล้ว {n} ภาพ")
+    return jsonify(ok=False, msg="คำสั่งไม่รู้จัก"), 400
 
 
 @app.route("/dataset/export.zip")
@@ -2493,15 +2757,16 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <div class="lbl">การกวาดตอนไล่นก</div>
       <div class="sl"><span>กว้างข้างละ</span><input type="range" id="swDeg" min="10" max="80" step="5"><b id="swDegV"></b></div>
       <div class="sl"><span>ความเร็ว</span><input type="range" id="swSpd" min="10" max="100" step="5"><b id="swSpdV"></b></div>
+      <div class="sl" id="swPumpRow" hidden><span>ฉีดน้ำ</span><input type="range" id="swPump" min="1" max="8" step="0.5"><b id="swPumpV"></b></div>
       <div class="row">
-        <button class="pri" id="swSave">บันทึกการกวาด</button>
+        <button class="pri" id="swSave">บันทึกการไล่</button>
         <button id="swTest">↔ ทดสอบกวาด (ไม่ฉีดน้ำ)</button>
       </div>
       <div class="msg" id="swNote">ถ้าหัวฉีดชนขอบ ให้ลดความกว้าง ถ้าเหวี่ยงแรงหรือสะดุด ให้ลดความเร็ว</div>
     </div>
     <div class="lbl">น้ำและไฟ</div>
     <div class="btns">
-      <button id="bPump">💧 ปั๊มน้ำ <span id="pumpS">2</span> วินาที</button>
+      <button id="bPump">💧 ปั๊มน้ำ <span id="pumpS">3</span> วินาที</button>
       <button id="bWater">📏 วัดระดับน้ำใหม่</button>
       <button id="bLamp">💡 ทดสอบไฟส้ม</button>
     </div>
@@ -2551,6 +2816,14 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <button id="dsMore" hidden>โหลดเพิ่ม</button>
       <button id="dsReload">↻ รีเฟรช</button>
     </div>
+    <div class="lbl">ลดจำนวนภาพ <span class="sub" id="dsFree"></span></div>
+    <div class="row" style="margin-top:0">
+      <button id="dsDedupe">🧹 ลบภาพซ้ำ</button>
+      <button class="dan" id="dsDelTab" hidden>🗑 ลบทั้งหมดในแท็บนี้</button>
+    </div>
+    <div class="msg">ลบภาพซ้ำ = ภาพที่แทบเหมือนภาพก่อนหน้าและกรอบอยู่ที่เดิม
+      (ไม่ลบภาพที่กดถ่ายเองและภาพที่ติดป้ายแล้ว) · ลบทั้งหมดในแท็บ ใช้ได้กับแท็บ "ยังไม่ติดป้าย" และ "ไม่มีนก"
+      ลบแล้วกู้คืนไม่ได้ ถ้าจะเก็บไว้ให้ดาวน์โหลด ZIP ก่อน</div>
     <div class="lbl">ดาวน์โหลดไปเทรน (รูปแบบ YOLO พร้อม data.yaml)</div>
     <div class="row" style="margin-top:0">
       <a class="btn" id="dsZipL" href="/dataset/export.zip?scope=labeled" download>⬇ ZIP เฉพาะที่ติดป้าย</a>
@@ -2787,7 +3060,10 @@ async function tick(){
   $('deg').textContent = s.hw.deg + '°' + (s.hw.pos_ok === false ? ' ?' : '');
   $('swBox').hidden = s.hw.sweep_deg == null;
   if(s.hw.sweep_deg != null && !swDirty){
-    $('swDeg').value = s.hw.sweep_deg; $('swSpd').value = s.hw.sweep_spd; swShow();
+    $('swDeg').value = s.hw.sweep_deg; $('swSpd').value = s.hw.sweep_spd;
+    $('swPumpRow').hidden = s.hw.repel_pump_ms == null;
+    if(s.hw.repel_pump_ms != null) $('swPump').value = s.hw.repel_pump_ms / 1000;
+    swShow();
   }
   $('brd').textContent = s.hw.link ? 'เชื่อมต่อแล้ว' : 'ไม่ได้เชื่อมต่อ';
   $('brd').style.color = s.hw.link ? 'var(--ok)' : 'var(--bad)';
@@ -3009,10 +3285,13 @@ let swDirty = false;
 function swShow(){
   $('swDegV').textContent = '±' + $('swDeg').value + '°';
   $('swSpdV').textContent = $('swSpd').value + '%';
+  $('swPumpV').textContent = $('swPump').value + ' วิ';
 }
-['swDeg','swSpd'].forEach(id => $(id).oninput = () => { swDirty = true; swShow(); });
+['swDeg','swSpd','swPump'].forEach(id => $(id).oninput = () => { swDirty = true; swShow(); });
 $('swSave').onclick = async () => {
-  const r = await run('/api/sweep', {deg: +$('swDeg').value, spd: +$('swSpd').value});
+  const body = {deg: +$('swDeg').value, spd: +$('swSpd').value};
+  if(!$('swPumpRow').hidden) body.pump_ms = Math.round(+$('swPump').value * 1000);
+  const r = await run('/api/sweep', body);
   if(r.ok) swDirty = false;
 };
 $('swTest').onclick = async () => {
@@ -3044,7 +3323,7 @@ $('bLamp').onclick  = () => run('/api/bird_lamp', {on: true});
 const DS_REASON = {bird:'เจอนก', repel:'สั่งไล่', lowconf:'ก้ำกึ่ง', manual:'กดถ่าย', pir:'PIR',
                    motion:'มีการเคลื่อนไหว', random:'สุ่มเก็บ'};
 const DS_TAG = {bird:'✓ นก', none:'✗ ไม่มีนก', fix:'✎ แก้กรอบ'};
-const ds = {f:'todo', p:0, items:[], counts:{}, cur:-1, busy:false};
+const ds = {f:'todo', p:0, items:[], counts:{}, cur:-1, busy:false, free:null};
 
 function dsPic(it){
   // กล่องอัตราส่วนเท่าภาพจริง กรอบวางเป็นเปอร์เซ็นต์จึงตรงกับภาพทุกขนาดจอ
@@ -3066,6 +3345,10 @@ function dsRenderCounts(){
     b.querySelector('b').textContent = c[b.dataset.f] !== undefined ? c[b.dataset.f] : '';
   });
   $('dsSum').textContent = c.all !== undefined ? (c.all + ' ภาพ · ติดป้ายแล้ว ' + (c.all - c.todo)) : '';
+  const nTab = c[ds.f] || 0;
+  $('dsDelTab').hidden = !(ds.f === 'todo' || ds.f === 'none') || !nTab;
+  $('dsDelTab').textContent = '🗑 ลบทั้งหมดในแท็บนี้ (' + nTab + ')';
+  $('dsFree').textContent = ds.free != null ? '· การ์ดเหลือว่าง ' + ds.free + ' GB' : '';
   const lab = (c.bird||0) + (c.none||0) + (c.fix||0);
   const mb = n => n ? ' (~' + Math.max(1, Math.round(n * 0.15)) + ' MB)' : '';   // ภาพละ ~150 KB
   $('dsZipNote').textContent = 'ติดป้ายแล้ว ' + lab + ' ภาพ' + mb(lab) + ' · ทั้งหมด ' + (c.all||0) + ' ภาพ' +
@@ -3090,6 +3373,7 @@ async function dsLoad(reset){
     const j = await r.json();
     ds.items = ds.items.concat(j.items);
     ds.counts = j.counts;
+    ds.free = j.free_gb;
     $('dsMore').hidden = !j.more;
     dsRenderCounts(); dsRenderGrid();
   }catch(e){ $('dsGrid').innerHTML = '<div class="empty">โหลดไม่สำเร็จ</div>'; }
@@ -3167,6 +3451,24 @@ document.addEventListener('keydown', e => {
     if(dx < -50) dsNext(); else if(dx > 50) dsOpen(ds.cur - 1);
   });
 })();
+$('dsDedupe').onclick = async () => {
+  if(!confirm('ลบภาพที่แทบเหมือนภาพก่อนหน้า (เฉพาะที่ยังไม่ติดป้าย ไม่รวมภาพที่กดถ่ายเอง)?')) return;
+  const b = $('dsDedupe');
+  b.disabled = true; b.textContent = '⏳ กำลังตรวจภาพซ้ำ…';
+  const r = await post('/api/dataset/bulk', {action: 'dedupe'});
+  b.disabled = false; b.textContent = '🧹 ลบภาพซ้ำ';
+  toast(r.msg || 'ลบไม่สำเร็จ');
+  if(r.ok) dsLoad(true);
+};
+$('dsDelTab').onclick = async () => {
+  const n = ds.counts[ds.f] || 0;
+  if(!n || !ds.items.length) return;
+  const name = ds.f === 'todo' ? 'ยังไม่ติดป้าย' : 'ไม่มีนก';
+  if(!confirm('ลบภาพทั้งหมด ' + n + ' ภาพในแท็บ "' + name + '"?\nกู้คืนไม่ได้')) return;
+  const r = await post('/api/dataset/bulk', {action: 'delete', f: ds.f, upto: ds.items[0].n});
+  toast(r.msg || 'ลบไม่สำเร็จ');
+  if(r.ok) dsLoad(true);
+};
 let dsStarted = false;           // โหลดการ์ดเทรนครั้งแรกเมื่อรู้ว่าเป็นเวอร์ชัน train
 
 tick();

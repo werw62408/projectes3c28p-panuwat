@@ -1,11 +1,16 @@
 /* ==========================================================================
-   บอร์ดควบคุมโหลด  ESP32  —  เฟิร์มแวร์ v7.8
+   บอร์ดควบคุมโหลด  ESP32  —  เฟิร์มแวร์ v7.9
    โครงงาน: เครื่องไล่นกอัตโนมัติ
 
    หน้าที่: รับคำสั่งจาก Raspberry Pi ผ่าน USB Serial แล้วสั่งงานอุปกรณ์
             พร้อมรายงานสถานะกลับ และตัดโหลดเองเมื่อเกิดเหตุผิดปกติ
 
-   เปลี่ยนจาก v7.7 (รุ่นนี้) — ย้ายขาใหม่ จัดกลุ่มตามตำแหน่งบนบอร์ด:
+   เปลี่ยนจาก v7.8 (รุ่นนี้):
+     - รอบไล่เปิดปั๊ม 3 วิ (เดิม 2 วิ) และปรับได้จากหน้าเว็บ 1-8 วิ จำไว้ในแฟลช
+       คำสั่ง RCFG <องศา> <เปอร์เซ็นต์> <ms ปั๊ม> (ไม่ใส่ตัวที่ 3 = ใช้เวลาปั๊มเดิม)
+     - STAT เพิ่ม RPM (เวลาปั๊มต่อรอบไล่ ms) / ขาและการทำงานอื่นเหมือน v7.8 ทุกอย่าง
+
+   เปลี่ยนจาก v7.7 — ย้ายขาใหม่ จัดกลุ่มตามตำแหน่งบนบอร์ด:
      - ไดร์เวอร์ TB6600 ย้ายมาเรียงกันด้านซ้าย   PUL 32->25  DIR 33->26  ENA 25->27
      - รีเลย์เรียงกันด้านขวา                    ช่อง 1 = 18  ช่อง 2 = 19  ช่อง 3 (ไฟส้ม) 26->21
      - PIR 21->32 (ขา 32 มีตัวต้านทานดึงลงในตัว ขา 34-39 ไม่มี)
@@ -92,7 +97,7 @@
    Arduino IDE: Board = ESP32 Dev Module / ไม่ต้องลงไลบรารีเพิ่ม
    ========================================================================== */
 
-#define FW_ID "BIRDCTRL v7.8"
+#define FW_ID "BIRDCTRL v7.9"
 
 #include <Preferences.h>
 #include <esp_system.h>
@@ -187,7 +192,11 @@ const unsigned long PUMP_DUTY_WINDOW_MS = 600000;
 const unsigned long PUMP_DUTY_MAX_MS    = 60000;
 const unsigned long PUMP_MIN_RUN_MS     = 300;   // เหลือโควตาน้อยกว่านี้ = ไม่เปิด
 
-const unsigned long REPEL_PUMP_MS  = 2000; // รอบไล่: เปิดปั๊มกี่ ms (v7.5: 5 -> 2 วิ ประหยัดน้ำ)
+// รอบไล่: เปิดปั๊มกี่ ms (ค่าเริ่มต้น ปรับจากเว็บได้ จำไว้ในแฟลช)
+// v7.5: 5 -> 2 วิ ประหยัดน้ำ / v7.9: 2 -> 3 วิ
+const long REPEL_PUMP_MS_DEF = 3000;
+const long REPEL_PUMP_MS_MIN = 1000;
+const long REPEL_PUMP_MS_MAX = 8000;   // ต้องไม่เกิน PUMP_MAX_MS
 
 // รอบไล่: กวาดข้างละกี่องศา และเร็วแค่ไหน (ค่าเริ่มต้น ปรับจากเว็บได้ จำไว้ในแฟลช)
 // v7.7: เดิมกวาด 300 สเต็ป (±67°) ที่ความเร็วสูงสุด หัวฉีดเหวี่ยงแรงจนชนขอบ
@@ -310,6 +319,7 @@ unsigned long repelEndMs = 0;
 bool  repelPump = true;         // false = REPEL TEST กวาดอย่างเดียว ไม่เปิดปั๊ม
 int   repelSweepDeg = REPEL_SWEEP_DEG_DEF;
 int   repelSpeedPct = REPEL_SPEED_PCT_DEF;
+long  repelPumpMs   = REPEL_PUMP_MS_DEF;
 unsigned long moveMaxUs = SPEED_MAX;   // ความเร็วสูงสุดของการหมุนครั้งนี้ (us ต่อสเต็ป)
 
 String rxBuf = "";
@@ -511,7 +521,7 @@ PumpResult repelStart(bool withPump) {
   repelPump = withPump;
   startMoveAt(0, repelSpeedUs());       // กลับจุดกลางก่อนเสมอ กันตำแหน่งเพี้ยน
   repelStep = RP_HOME;
-  repelEndMs = millis() + REPEL_PUMP_MS;
+  repelEndMs = millis() + repelPumpMs;
   return PUMP_OK;
 }
 
@@ -522,14 +532,14 @@ void serviceRepel() {
 
   if (repelStep == RP_HOME && !moving) {
     if (repelPump) {
-      PumpResult r = pumpStart(REPEL_PUMP_MS);
+      PumpResult r = pumpStart(repelPumpMs);
       if (r != PUMP_OK) {               // เช่นน้ำหมดหรือโควตาหมดระหว่างกลับจุดกลาง
         repelAbort();
         Serial.printf("EVT REPEL FAIL %s\n", pumpErrText(r) + 4);
         return;
       }
     }
-    repelEndMs = millis() + REPEL_PUMP_MS;
+    repelEndMs = millis() + repelPumpMs;
     startMoveAt(repelSweepSteps(), repelSpeedUs());
     repelStep = RP_SWEEP_R;
     return;
@@ -799,6 +809,7 @@ void sendStat() {
   Serial.print(" PIRI=");    Serial.print(pirIgnoredCount);
   Serial.print(" SWP=");     Serial.print(repelSweepDeg);
   Serial.print(" RSP=");     Serial.print(repelSpeedPct);
+  Serial.print(" RPM=");     Serial.print(repelPumpMs);
   Serial.print(" LIM=");     Serial.print(LIMIT_STEPS);
   Serial.print(" SPR=");     Serial.println(STEPS_PER_REV);
 }
@@ -816,7 +827,7 @@ void handleLine(String line) {
   if (up == "PING") { Serial.printf("OK PONG %s\n", FW_ID); return; }
   if (up == "STAT") { sendStat(); return; }
   if (up == "HELP") {
-    Serial.println("OK CMDS PING STAT ABORT REPEL REPEL TEST RCFG <deg> <pct> "
+    Serial.println("OK CMDS PING STAT ABORT REPEL REPEL TEST RCFG <deg> <pct> [ms] "
                    "MOT L|R <n> MOT HOME MOT STOP MOT ZERO PUMP <ms> WATER CAM 0|1 BIRD 0|1 VCAL <v>");
     return;
   }
@@ -874,20 +885,27 @@ void handleLine(String line) {
     return;
   }
 
-  if (up.startsWith("RCFG")) {         // ตั้งการกวาดตอนไล่: RCFG <องศาข้างละ> <ความเร็ว %>
+  if (up.startsWith("RCFG")) {         // ตั้งรอบไล่: RCFG <องศาข้างละ> <ความเร็ว %> [ms ปั๊ม]
     String a = up.substring(4);
     a.trim();
     int sp = a.indexOf(' ');
     if (sp < 0) { Serial.println("ERR ARG"); return; }
     long deg = a.substring(0, sp).toInt();
-    long pct = a.substring(sp + 1).toInt();
+    String rest = a.substring(sp + 1);
+    rest.trim();
+    int sp2 = rest.indexOf(' ');
+    long pct = (sp2 < 0 ? rest : rest.substring(0, sp2)).toInt();
+    long pms = sp2 < 0 ? repelPumpMs : rest.substring(sp2 + 1).toInt();
     if (deg < REPEL_SWEEP_DEG_MIN || deg > REPEL_SWEEP_DEG_MAX ||
-        pct < REPEL_SPEED_PCT_MIN || pct > REPEL_SPEED_PCT_MAX) { Serial.println("ERR RANGE"); return; }
+        pct < REPEL_SPEED_PCT_MIN || pct > REPEL_SPEED_PCT_MAX ||
+        pms < REPEL_PUMP_MS_MIN || pms > REPEL_PUMP_MS_MAX) { Serial.println("ERR RANGE"); return; }
     repelSweepDeg = (int)deg;           // มีผลรอบไล่ถัดไป รอบที่กำลังกวาดอยู่ใช้ค่าใหม่ตั้งแต่ขาถัดไป
     repelSpeedPct = (int)pct;
+    repelPumpMs = pms;
     prefs.putInt("swdeg", repelSweepDeg);
     prefs.putInt("swpct", repelSpeedPct);
-    Serial.printf("OK RCFG %d %d\n", repelSweepDeg, repelSpeedPct);
+    prefs.putInt("pumpms", (int)repelPumpMs);
+    Serial.printf("OK RCFG %d %d %ld\n", repelSweepDeg, repelSpeedPct, repelPumpMs);
     return;
   }
 
@@ -982,6 +1000,7 @@ void setup() {
   VBAT_TRIM = prefs.getFloat("vtrim", 1.0f);
   repelSweepDeg = constrain(prefs.getInt("swdeg", REPEL_SWEEP_DEG_DEF), REPEL_SWEEP_DEG_MIN, REPEL_SWEEP_DEG_MAX);
   repelSpeedPct = constrain(prefs.getInt("swpct", REPEL_SPEED_PCT_DEF), REPEL_SPEED_PCT_MIN, REPEL_SPEED_PCT_MAX);
+  repelPumpMs   = constrain((long)prefs.getInt("pumpms", REPEL_PUMP_MS_DEF), REPEL_PUMP_MS_MIN, REPEL_PUMP_MS_MAX);
 
   switch (esp_reset_reason()) {
     case ESP_RST_POWERON:  resetReasonText = "POWERON";  break;
