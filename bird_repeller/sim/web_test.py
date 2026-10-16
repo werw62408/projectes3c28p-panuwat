@@ -218,6 +218,7 @@ def main_flow(page, sim):
 
     # ---------- ROI ----------
     check("โหมดสาธิตเริ่มแบบปิด ROI", not page.is_checked("#roiOn"))
+    check("โหมดสาธิตไม่มีสวิตช์ไล่ทันที (เจอเฟรมเดียวก็นับอยู่แล้ว)", page.is_hidden("#instRow"))
     page.check("#roiOn")
     for k, v in (("cutL", 0.35), ("cutT", 0.05), ("cutR", 0.25), ("cutB", 0.45)):
         page.evaluate(f"setCut('{k}', {v})")
@@ -389,6 +390,29 @@ def normal_flow(page, sim):
           st["hw"]["repel_count"] <= 4, st["hw"]["repel_count"])
     page.evaluate("window.scrollTo(0,0)")
     shot(page, "11_normal_mode.png")
+
+    # ---------- v7.3: ไล่ทันทีเมื่อเจอภาพเดียว ----------
+    check("มีสวิตช์ไล่ทันที ปิดอยู่เป็นค่าเริ่มต้น", page.is_visible("#instRep") and not page.is_checked("#instRep"))
+    page.click("#instRow")
+    s = wait_state(sim, lambda s: s["instant_repel"] and s["confirm_frames"] == 1, 5)
+    check("เปิดสวิตช์แล้วต้องเจอแค่ 1 เฟรม", s is not None)
+    saved = json.load(open(os.path.join(sim.data_dir, "settings.json")))
+    check("จำค่าไว้ใน settings.json", saved.get("instant_repel") is True, saved)
+    page.wait_for_timeout(1200)
+    check("หน้าเว็บบอกว่าไม่ต้องยืนยัน", page.inner_text("#cfm") == "ไม่ต้องยืนยัน", page.inner_text("#cfm"))
+    n_rows = len(open(os.path.join(sim.data_dir, "detection_log.csv"), encoding="utf-8-sig").read().splitlines())
+    n0 = state(sim)["hw"]["repel_count"]
+    s = wait_state(sim, lambda s: s["hw"]["repel_count"] > n0, 40)
+    rows = [ln.split(",") for ln in
+            open(os.path.join(sim.data_dir, "detection_log.csv"), encoding="utf-8-sig").read().splitlines()[n_rows:]]
+    hit = [r for r in rows if r[-3] == "สั่งไล่แล้ว"]
+    check("เจอนกภาพเดียวก็สั่งไล่ (รอบปกติ ไม่ใช่เฟรมยืนยัน)",
+          s is not None and hit and hit[0][1] != "confirm" and not any("รอยืนยัน" in r[-3] for r in rows),
+          [(r[1], r[-3]) for r in rows][:6])
+    shot(page, "11c_instant_repel.png")
+    page.click("#instRow")
+    s = wait_state(sim, lambda s: not s["instant_repel"] and s["confirm_frames"] == 2, 5)
+    check("ปิดสวิตช์แล้วกลับไปยืนยัน 2 เฟรม", s is not None)
 
 
 def train_flow(page, sim):

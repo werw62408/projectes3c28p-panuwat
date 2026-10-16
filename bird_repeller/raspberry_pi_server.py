@@ -2,10 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v7.2
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v7.3
  ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.7 ขึ้นไป (v7.9 = ตั้งเวลาปั๊มรอบไล่จากเว็บได้)
 --------------------------------------------------------------------------
- เปลี่ยนจาก v7.1 (รุ่นนี้):
+ เปลี่ยนจาก v7.2 (รุ่นนี้):
+   - สวิตช์ "ไล่ทันทีเมื่อเจอภาพเดียว" บนหน้าเว็บ: เจอนกเฟรมเดียวก็ฉีดน้ำเลย ไม่รอเฟรมยืนยัน
+     (เร็วขึ้นราว 3 วิ แต่ไล่ผิดบ่อยขึ้น) จำค่าไว้ใน settings.json ปิดเครื่องแล้วไม่หาย
+
+ เปลี่ยนจาก v7.1:
    - ปุ่ม "ถ่ายภาพเดี๋ยวนี้" ถ่ายทันทีตอนกด (เดิมต่อคิวหลังรอบตรวจอัตโนมัติ + รอแกนหยุด)
      และดูหลายเฟรมแล้วเลือกเฟรมที่คมสุด ภาพตรวจอัตโนมัติก็เลือกเฟรมคมสุดจาก 2 เฟรม
    - เก็บภาพเทรนซ้ำน้อยลงมาก: ภาพอัตโนมัติที่แทบเหมือนภาพที่เก็บล่าสุด (กรอบตรงกัน) ไม่เก็บ
@@ -154,6 +158,7 @@ DATA_DIR = os.environ.get("BIRD_DATA_DIR",
 HIST_DIR = os.path.join(DATA_DIR, "history")
 LOG_CSV = os.path.join(DATA_DIR, "detection_log.csv")
 ROI_FILE = os.path.join(DATA_DIR, "roi.json")
+SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")   # ค่าที่เปลี่ยนจากหน้าเว็บแล้วต้องจำไว้
 
 MODEL_PT = os.environ.get("BIRD_MODEL", os.path.join(BASE_DIR, "yolov8n.pt"))
 MODEL_NCNN = os.path.join(BASE_DIR, "yolov8n_ncnn_model")
@@ -239,6 +244,9 @@ CONFIRM_WINDOW_S = 12       # เฟรมที่เจอห่างกั�
 # แต่พอรู้แล้วว่ามีนก เฟรมยืนยันแค่ต้องเห็นนกตัวนั้นอีก (ซ้อมระบบ: นกตัวเดิมได้ 0.35 แล้ว 0.297
 # พอใช้เกณฑ์ 0.30 เท่ากัน เฟรมยืนยันพลาดซ้ำ ๆ จนไม่ได้ไล่เลย)
 CONFIRM_CONF = 0.20
+# โหมดไล่ทันที: เจอนกเฟรมเดียวก็ไล่ ไม่ต้องรอเฟรมยืนยัน (เปิด/ปิดได้จากหน้าเว็บ จำไว้ใน settings.json)
+# เร็วกว่าราว CONFIRM_DELAY_S วิ นกที่แวะแป๊บเดียวไม่หลุด แต่ของที่โมเดลเห็นผิดเฟรมเดียวก็โดนไล่
+INSTANT_REPEL_DEFAULT = False
 
 # ---------- ชุดขับไล่ ----------
 SERIAL_PORT = os.environ.get("BIRD_SERIAL", "auto")
@@ -564,6 +572,32 @@ def save_roi():
             json.dump(dict(ROI, ver=ROI_FILE_VER), f)
     except OSError:
         pass
+
+
+SETTINGS = {"instant_repel": INSTANT_REPEL_DEFAULT}
+
+
+def load_settings():
+    try:
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data.get("instant_repel"), bool):
+            SETTINGS["instant_repel"] = data["instant_repel"]
+    except (OSError, ValueError, AttributeError):
+        pass
+
+
+def save_settings():
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        atomic_write_bytes(SETTINGS_FILE, json.dumps(SETTINGS).encode("utf-8"), durable=True)
+    except OSError as e:
+        print(f"[IO] บันทึก settings.json ไม่สำเร็จ: {e}", flush=True)
+
+
+def confirm_frames():
+    """ต้องเจอนกติดกันกี่เฟรมถึงไล่ (เปิดโหมดไล่ทันที = 1)"""
+    return 1 if SETTINGS["instant_repel"] else CONFIRM_FRAMES
 
 
 # ============================ HELPERS ============================
@@ -1082,11 +1116,12 @@ class Controller:
         if bird_count <= 0:
             return "ไม่เจอนก"
 
-        # ต้องเจอติดกัน CONFIRM_FRAMES เฟรม ยังไม่ครบ -> ถ่ายเฟรมยืนยันตามไปเลย ไม่รอรอบ 5 วิ
-        if hits < CONFIRM_FRAMES:
+        # ต้องเจอติดกัน confirm_frames() เฟรม ยังไม่ครบ -> ถ่ายเฟรมยืนยันตามไปเลย ไม่รอรอบ 5 วิ
+        need = confirm_frames()
+        if hits < need:
             schedule_confirm()
-            return (f"รอยืนยัน {hits}/{CONFIRM_FRAMES} (ถ่ายซ้ำใน {CONFIRM_DELAY_S:g} วิ)"
-                    if CONFIRM_DELAY_S > 0 else f"รอยืนยัน {hits}/{CONFIRM_FRAMES} (ถ่ายซ้ำทันที)")
+            return (f"รอยืนยัน {hits}/{need} (ถ่ายซ้ำใน {CONFIRM_DELAY_S:g} วิ)"
+                    if CONFIRM_DELAY_S > 0 else f"รอยืนยัน {hits}/{need} (ถ่ายซ้ำทันที)")
         if not self.auto_repel:
             return "ปิดโหมดอัตโนมัติอยู่"
         if not self.linked:
@@ -1812,7 +1847,7 @@ def _process(source, requested_at, frame0=None, shot_ms=0):
         wait_still()
 
     # เพิ่งเจอนกไป (กำลังรอยืนยัน) -> เฟรมนี้ใช้เกณฑ์ยืนยันที่ต่ำกว่า
-    confirming = CONFIRM_FRAMES > 1 and CTRL.confirm_hits() > 0
+    confirming = confirm_frames() > 1 and CTRL.confirm_hits() > 0
     threshold = min(CONF_THRESHOLD, CONFIRM_CONF) if confirming else CONF_THRESHOLD
 
     # ถ่ายรัวหลายเฟรม เจอนกเฟรมไหนก็ใช้เฟรมนั้น (คะแนนนกตัวเดิมแกว่งมากตามท่าทาง
@@ -2131,7 +2166,9 @@ def api_state():
     s["dataset"] = dataset_stats() if DATASET_ENABLED else None
     s["model"] = _model_name
     s["auto_interval"] = AUTO_INTERVAL_S
-    s["confirm_frames"] = CONFIRM_FRAMES
+    s["confirm_frames"] = confirm_frames()
+    s["confirm_base"] = CONFIRM_FRAMES             # 1 = โหมดสาธิต ไม่ต้องมีสวิตช์ไล่ทันที
+    s["instant_repel"] = SETTINGS["instant_repel"]
     s["confirm_delay"] = CONFIRM_DELAY_S
     s["confirm_streak"] = CTRL.confirm_hits()
     s["pump_button_ms"] = pump_button_ms()
@@ -2177,6 +2214,15 @@ def api_roi():
         return jsonify(ok=False, msg="ค่าไม่ถูกต้อง"), 400
     save_roi()
     return jsonify(ok=True, roi=dict(ROI))
+
+
+@app.route("/api/instant_repel", methods=["POST"])
+def api_instant_repel():
+    """เปิด/ปิดโหมดไล่ทันทีเมื่อเจอภาพเดียว"""
+    data = request.get_json(silent=True) or {}
+    SETTINGS["instant_repel"] = bool(data.get("on", False))
+    save_settings()
+    return jsonify(ok=True, on=SETTINGS["instant_repel"])
 
 
 @app.route("/api/auto_repel", methods=["POST"])
@@ -2690,6 +2736,9 @@ HTML_PAGE = r"""<!DOCTYPE html>
           <input type="checkbox" class="sw" id="autoDet"></label>
         <label class="tg"><span class="sp">ไล่อัตโนมัติเมื่อเจอนก</span><span class="sub" id="cdTxt"></span>
           <input type="checkbox" class="sw" id="autoRep"></label>
+        <label class="tg" id="instRow" hidden><span class="sp">ไล่ทันทีเมื่อเจอภาพเดียว
+          <span class="sub" style="display:block">ไม่รอเฟรมยืนยัน · เร็วขึ้นราว 3 วิ แต่ไล่ผิดบ่อยขึ้น</span></span>
+          <input type="checkbox" class="sw" id="instRep"></label>
       </div>
     </section>
 
@@ -3112,6 +3161,8 @@ async function tick(){
 
   if(document.activeElement !== $('autoDet')) $('autoDet').checked = s.auto_detect;
   if(document.activeElement !== $('autoRep')) $('autoRep').checked = s.hw.auto_repel;
+  $('instRow').hidden = s.confirm_base <= 1;
+  if(document.activeElement !== $('instRep')) $('instRep').checked = s.instant_repel;
 
   if(s.cam_ip && s.cam_ip !== camIP){
     camIP = s.cam_ip;
@@ -3256,6 +3307,11 @@ $('autoDet').onchange = async e => {
 $('autoRep').onchange = async e => {
   const r = await post('/api/auto_repel', {on: e.target.checked});
   if(r.ok) setMsg(r.on ? 'เปิดไล่อัตโนมัติ — เจอนกแล้วจะฉีดน้ำเอง' : 'ปิดไล่อัตโนมัติ — เจอนกแค่ตีกรอบ/ไฟส้ม');
+};
+$('instRep').onchange = async e => {
+  const r = await post('/api/instant_repel', {on: e.target.checked});
+  if(r.ok) setMsg(r.on ? 'ไล่ทันที — เจอนกภาพเดียวก็ฉีดน้ำ (ไม่รอยืนยัน)'
+                       : 'กลับไปยืนยันก่อนไล่ — ต้องเจอนกติดกันก่อนฉีดน้ำ');
 };
 $('btnLog').onclick = () => location.href = '/log';
 
@@ -3590,6 +3646,7 @@ def main():
     app.secret_key = _load_secret()
     init_auth()
     load_roi()
+    load_settings()
     if os.path.isfile(os.path.expanduser(CAM_DEVICE)):
         print(f"[Cam] ใช้ไฟล์วิดีโอแทนเว็บแคม: {CAM_DEVICE}", flush=True)
     print("[Boot] กำลังโหลดโมเดล...", flush=True)
@@ -3611,7 +3668,8 @@ def main():
     else:
         print(f"[Mode] ใช้งานปกติ (normal): ไล่จริง ไม่เก็บภาพเทรน / conf={CONF_THRESHOLD}", flush=True)
     print(f"[Auto] ตรวจจับทุก {AUTO_INTERVAL_S} วินาที รอบละ {BURST_FRAMES} เฟรม "
-          f"(เจอนก {CONFIRM_FRAMES} เฟรมติดกันก่อนสั่งไล่ เฟรมยืนยันถ่ายตามใน {CONFIRM_DELAY_S:g} วิ)",
+          + ("(ไล่ทันทีเมื่อเจอภาพเดียว)" if confirm_frames() == 1 else
+             f"(เจอนก {CONFIRM_FRAMES} เฟรมติดกันก่อนสั่งไล่ เฟรมยืนยันถ่ายตามใน {CONFIRM_DELAY_S:g} วิ)"),
           flush=True)
     print(f"[Detect] CLAHE={'เปิด' if DETECT_CLAHE else 'ปิด'}  "
           f"ตัดภาพตาม ROI={'เปิด' if ROI_CROP else 'ปิด'}", flush=True)
