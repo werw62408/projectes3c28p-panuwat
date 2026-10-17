@@ -1,26 +1,58 @@
 SomudTick grey box, Game Boy layout (layout 5) - every hole in mm.
-Face: x from the LEFT edge, y from the TOP edge (looking at the face; the 2 short posts are at the BOTTOM).
+Face: x from the LEFT edge, y from the TOP edge (looking at the face; the 2 short posts are at the TOP).
 
-  face  big screen window    centre x   50.1  y   37.0   final 60.05 x 45.8, first 58.05 x 43.8
-  face  joystick             centre x   22.0  y   94.4   final diameter 28.0, first 24.0
-  face  button A             centre x   68.5  y   81.9   final diameter 13.0, first 12.0
-  face  button B             centre x   80.6  y   93.4   final diameter 13.0, first 12.0
-  face  button C             centre x   68.5  y  105.5   final diameter 13.0, first 12.0
-  face  button D             centre x   56.6  y   93.4   final diameter 13.0, first 12.0
-  face  button E             centre x   51.0  y  105.1   final diameter 4.5, first 4.0
-  face  button F             centre x   38.0  y  105.1   final diameter 4.5, first 4.0
-  face  M3 screen            centre x    8.0  y   16.0   final diameter 3.2, first 2.5
-  face  M3 screen            centre x    8.0  y   58.0   final diameter 3.2, first 2.5
-  face  M3 screen            centre x   86.0  y   16.0   final diameter 3.2, first 2.5
-  face  M3 screen            centre x   86.0  y   58.0   final diameter 3.2, first 2.5
-  face  M3 buttons           centre x    7.7  y   66.0   final diameter 3.2, first 2.5
-  face  M3 buttons           centre x   86.3  y   81.0   final diameter 3.2, first 2.5
-  face  speaker grille        30 holes 2.5: 6 slanted rows of 5 (see the template), centre x 47.0 y 153.2
+  face  small screen window  centre x   50.1  y   17.9   final 31.00 x 16.5, first 29.00 x 14.5
+  face  big screen window    centre x   50.1  y   63.5   final 60.05 x 45.8, first 58.05 x 43.8
+  face  joystick             centre x   22.0  y  121.4   final diameter 28.0, first 24.0
+  face  button A             centre x   68.5  y  108.9   final diameter 13.0, first 12.0
+  face  button B             centre x   80.6  y  120.4   final diameter 13.0, first 12.0
+  face  button C             centre x   68.5  y  132.5   final diameter 13.0, first 12.0
+  face  button D             centre x   56.6  y  120.4   final diameter 13.0, first 12.0
+  face  button E             centre x   51.0  y  132.1   final diameter 4.5, first 4.0
+  face  button F             centre x   38.0  y  132.1   final diameter 4.5, first 4.0
+  face  M3 screen            centre x    8.0  y   42.5   final diameter 3.2, first 2.5
+  face  M3 screen            centre x    8.0  y   84.5   final diameter 3.2, first 2.5
+  face  M3 screen            centre x   86.0  y   42.5   final diameter 3.2, first 2.5
+  face  M3 screen            centre x   86.0  y   84.5   final diameter 3.2, first 2.5
+  face  M3 buttons           centre x    7.7  y   93.0   final diameter 3.2, first 2.5
+  face  M3 buttons           centre x   86.3  y  108.0   final diameter 3.2, first 2.5
 
-  left   wall USB-C              y   37.0  from face   9.4   12.5 x 7.5
-  top    wall IR LED (round 5.4) x   60.0  from face  10.5   5.4 x 5.4
-  top    wall IR receiver        x   78.5  from face  10.5   7.0 x 7.5
+  left   wall USB-C              y   63.5  from face   9.4   12.5 x 7.5
+  top    wall IR LED (round 5.4) x    9.0  from face   6.2   5.4 x 5.4
+  top    wall IR receiver        x   82.5  from face   7.5   7.0 x 7.5
   bottom wall rocker switch      x    9.2  from face   9.0   12.5 x 9.0
 
-  BACK HALF, looking at the BACK: x from the LEFT edge as you see it from behind, y from the top (the screw holes are at the bottom)
-  back  small screen window  centre x   47.0  y  139.0   final 31.0 x 16.5, first 29.0 x 14.5
+  BACK HALF, looking at the BACK: x from the LEFT edge as you see it from behind, y from the top (screw-hole end)
+  back  speaker grille: 30 holes 2.5, 6 slanted rows of 5, centre x 39.0  y 67.5
+        hole x   48.5  y   72.7
+        hole x   50.0  y   70.1
+        hole x   51.5  y   67.5
+        hole x   53.0  y   64.9
+        hole x   54.5  y   62.3
+        hole x   43.5  y   72.7
+        hole x   45.0  y   70.1
+        hole x   46.5  y   67.5
+        hole x   48.0  y   64.9
+        hole x   49.5  y   62.3
+        hole x   38.5  y   72.7
+        hole x   40.0  y   70.1
+        hole x   41.5  y   67.5
+        hole x   43.0  y   64.9
+        hole x   44.5  y   62.3
+        hole x   33.5  y   72.7
+        hole x   35.0  y   70.1
+        hole x   36.5  y   67.5
+        hole x   38.0  y   64.9
+        hole x   39.5  y   62.3
+        hole x   28.5  y   72.7
+        hole x   30.0  y   70.1
+        hole x   31.5  y   67.5
+        hole x   33.0  y   64.9
+        hole x   34.5  y   62.3
+        hole x   23.5  y   72.7
+        hole x   25.0  y   70.1
+        hole x   26.5  y   67.5
+        hole x   28.0  y   64.9
+        hole x   29.5  y   62.3
+
+  back half: cut post 8 (x 12.5 from the left as you see the back, 155 from the top) down to 4.5 mm
