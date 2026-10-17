@@ -2,10 +2,15 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
- Bird Detection Server  (Raspberry Pi 4 Model B)  —  v7.4
+ Bird Detection Server  (Raspberry Pi 4 Model B)  —  v7.5
  ใช้คู่กับเฟิร์มแวร์บอร์ดควบคุม BIRDCTRL v7.7 ขึ้นไป (v7.9 = ตั้งเวลาปั๊มรอบไล่จากเว็บได้)
 --------------------------------------------------------------------------
- เปลี่ยนจาก v7.3 (รุ่นนี้):
+ เปลี่ยนจาก v7.4 (รุ่นนี้):
+   - แก้บั๊กสำคัญ (มีตั้งแต่ v7.2): กดถ่ายภาพแล้วเธรดตรวจจับตาย หลังจากนั้นไม่ตรวจอีกเลย
+     ทั้งปุ่มถ่ายภาพ ตรวจอัตโนมัติ และ PIR ภาพบนเว็บเปลี่ยนแต่ไม่มีกรอบ ผลตรวจค้างที่ภาพเก่า
+   - ชิปไฟส้มบอก "เจอนก (บอร์ดไม่ต่อ ไฟไม่ติด)" เมื่อเจอนกแต่บอร์ดไม่ได้ต่อ
+
+ เปลี่ยนจาก v7.3:
    - PIR ทริกได้คิวก่อนรอบตรวจอัตโนมัติ (เดิมถ้าคิวเต็ม คำขอจาก PIR ถูกทิ้ง ต้องรอรอบ 5 วิ)
    - ใช้คู่กับบอร์ด v7.10 (PIR ทริกครั้งใหม่ได้ห่างกันแค่ 1.5 วิ) ใช้กับบอร์ดรุ่นก่อนก็ได้
 
@@ -1998,19 +2003,19 @@ def _next_job():
 
 
 def _worker():
+    # v7.5: เดิมเรียก _job_q.task_done() ทุกงาน รวมงานจาก _manual_q ด้วย หลังกดถ่ายภาพ
+    # ตัวนับคิวติดลบ -> ValueError หลุดออกจาก finally เธรดนี้ตายเงียบ ๆ ตั้งแต่นั้นไม่มีการตรวจอีกเลย
+    # (ภาพตัวอย่างยังเปลี่ยนตามปุ่มถ่าย แต่ไม่มีกรอบ ผลตรวจค้างที่ภาพเก่า) ไม่มีใครรอ join คิว จึงเลิกเรียก
     while True:
-        job = _next_job()
-        source = job[0]
-        if source == "pir":
-            _pir_pending.release()
         try:
+            job = _next_job()
+            if job[0] == "pir":
+                _pir_pending.release()
             _process(*job)
         except Exception as e:                                  # noqa: BLE001
             print(f"[Worker] ผิดพลาด: {e}", flush=True)
             with _state_lock:
                 STATE["processing"] = False
-        finally:
-            _job_q.task_done()
 
 
 def _ready_loop():
@@ -3053,7 +3058,9 @@ async function tick(){
   const ready = s.hw.link && s.hw.ready;          // อ่านจากบอร์ดจริง = ตรงกับไฟเขียวจริง
   chip('cRdy', ready ? 'ok' : '', ready ? 'พร้อม' : 'กำลังเตรียม');
   const bl = s.hw.link && s.hw.bird_lamp;
-  chip('cBird', bl ? 'wn' : '', bl ? 'เจอนก!' : 'ไม่มีนก');
+  // บอร์ดไม่ต่อ = ไฟส้มจริงติดไม่ได้ ให้ชิปบอกผลตรวจแทน (นกใน 5 วิล่าสุด) จะได้ไม่ดูเหมือนตรวจไม่เจอ
+  const seen = !s.hw.link && s.bird_count > 0 && s.now - s.last_update < 5;
+  chip('cBird', bl || seen ? 'wn' : '', bl ? 'เจอนก!' : seen ? 'เจอนก (บอร์ดไม่ต่อ ไฟไม่ติด)' : 'ไม่มีนก');
   const wp = s.hw.water_pct;
   chip('cWat', wp < 0 ? '' : s.hw.water_empty ? 'bad' : s.hw.water_low ? 'wn' : 'ok',
        wp < 0 ? 'น้ำ -' : 'น้ำ ' + wp + '%');

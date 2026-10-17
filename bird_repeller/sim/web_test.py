@@ -583,6 +583,13 @@ def dataset_flow(page, sim):
     while time.time() < end and not [f for f in set(os.listdir(ds_dir)) - before if "_manual_" in f]:
         time.sleep(0.3)
     check("ภาพที่กดถ่ายเข้าชุดข้อมูล", any("_manual_" in f for f in set(os.listdir(ds_dir)) - before))
+    # v7.5: เดิมกดถ่ายแล้วเธรดตรวจจับตาย กดครั้งต่อไปได้แค่ภาพดิบ ไม่มีผลตรวจ/กรอบ
+    for k in range(3):
+        seq = state(sim)["frame_seq"]
+        code, j = api_post(sim, "/api/capture", {})
+        s = wait_state(sim, lambda s: s["frame_seq"] > seq, 15)
+        check(f"กดถ่ายติดกันครั้งที่ {k + 2} ยังได้ผลตรวจใหม่ (เธรดตรวจจับไม่ตาย)",
+              j.get("ok") and s and s["frame_seq"] > seq and "กดถ่ายภาพ" in s["status"], (j, s and s["status"]))
 
     page.evaluate("ds.f = 'todo'; dsLoad(true)")
     page.wait_for_timeout(800)
