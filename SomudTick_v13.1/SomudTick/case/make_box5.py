@@ -225,20 +225,25 @@ def check():
     return not bad
 
 # ============================== the paper template ==============================
-def template(path):
+def template(path, scale=1.0):
+    """scale > 1: everything drawn that much bigger, for a printer that shrinks the page (it must come out 1:1 again)"""
     import matplotlib; matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_pdf import PdfPages
     from matplotlib.patches import Rectangle, Circle, FancyBboxPatch, Polygon
     def page():
         fig = plt.figure(figsize=(210 / 25.4, 297 / 25.4)); ax = fig.add_axes([0, 0, 1, 1])
-        ax.set_xlim(0, 210); ax.set_ylim(0, 297); ax.set_aspect("equal"); ax.axis("off"); return fig, ax
+        ax.set_xlim(105 - 105 / scale, 105 + 105 / scale); ax.set_ylim(297 - 297 / scale, 297)   # bigger: zoom in, top edge kept
+        ax.set_aspect("equal"); ax.axis("off")
+        if scale != 1.0:
+            ax.text(105, 19.5, f"ONLY for a printer that shrank the normal file to {100 / scale:.0f} mm: this file is drawn {scale * 100:.1f} % big", ha="center", fontsize=6.5, color="#b03030", weight="bold")
+        return fig, ax
     def cross(ax, X, Y, s=2.0): ax.plot([X - s, X + s], [Y, Y], color="k", lw=0.35); ax.plot([X, X], [Y - s, Y + s], color="k", lw=0.35)
     def scale_bars(ax):
-        ax.plot([55, 155], [16, 16], color="k", lw=1); ax.plot([55, 55], [14, 18], color="k", lw=1); ax.plot([155, 155], [14, 18], color="k", lw=1)
-        ax.text(105, 10, "100 mm (measure it: if it is not 100, the print is scaled - print again at 100 %)", ha="center", fontsize=6.5)
-        ax.plot([8, 8], [40, 140], color="k", lw=1); ax.plot([6, 10], [40, 40], color="k", lw=1); ax.plot([6, 10], [140, 140], color="k", lw=1)
-        ax.text(5, 90, "100 mm (check this one too)", rotation=90, ha="center", va="center", fontsize=6)
+        ax.plot([55, 155], [28, 28], color="k", lw=1); ax.plot([55, 55], [26, 30], color="k", lw=1); ax.plot([155, 155], [26, 30], color="k", lw=1)
+        ax.text(105, 23, "100 mm (measure it: if it is not 100, the print is scaled - print again at 100 %)", ha="center", fontsize=6.5)
+        ax.plot([16, 16], [45, 145], color="k", lw=1); ax.plot([14, 18], [45, 45], color="k", lw=1); ax.plot([14, 18], [145, 145], color="k", lw=1)
+        ax.text(13, 95, "100 mm (check this one too)", rotation=90, ha="center", va="center", fontsize=6)
     def rect2(ax, X, Y, a, b, a0, b0, col="tab:blue"):
         ax.add_patch(Rectangle((X - a / 2, Y - b / 2), a, b, fill=False, lw=0.8, color=col))
         if a0: ax.add_patch(Rectangle((X - a0 / 2, Y - b0 / 2), a0, b0, fill=False, lw=0.5, ls=(0, (2, 1.5)), color=col))
@@ -290,7 +295,7 @@ def template(path):
         ax.text(105 + 4, 297 - 20, "solid line = final size, dashed line = cut this first, + = centre (drill a 2.5 pilot there first)", ha="center", fontsize=6.5)
         ax.text(105 + 4, 297 - 24.5, "blue = openings   red = M3 screws   gray = boards behind / posts inside   purple = looks only (no cutting)", ha="center", fontsize=5.5)
         scale_bars(ax)
-        fig.savefig(path.replace(".pdf", "_face.png"), dpi=110); pdf.savefig(fig); plt.close(fig)
+        scale == 1.0 and fig.savefig(path.replace(".pdf", "_face.png"), dpi=110); pdf.savefig(fig); plt.close(fig)
         # ---- page 2: the walls ----
         fig, ax = page()
         ax.text(105, 297 - 12, "SomudTick grey box, GAME BOY layout - WALLS of the front half (1:1)", ha="center", fontsize=9, weight="bold")
@@ -339,7 +344,7 @@ def template(path):
                 "Switch: cut the dashed slot, push the switch in, file until it clicks in.\n"
                 f"Back half: cut post 8 down to {CUT_POSTS['back post 8']:g} mm (the battery lies under it).", fontsize=6.3, va="top")
         scale_bars(ax)
-        fig.savefig(path.replace(".pdf", "_walls.png"), dpi=110); pdf.savefig(fig); plt.close(fig)
+        scale == 1.0 and fig.savefig(path.replace(".pdf", "_walls.png"), dpi=110); pdf.savefig(fig); plt.close(fig)
         # ---- page 3: the back half, seen from the BACK (outside): left and right swapped ----
         fig, ax = page(); ox, oy = (210 - BOX_W) / 2 + 4, 297 - 36 - BOX_H
         L = lambda x, y: (ox + (BOX_W - x), oy + BOX_H - y)
@@ -364,7 +369,7 @@ def template(path):
         ax.text(105 + 4, 297 - 10, "SomudTick grey box, GAME BOY layout - BACK HALF (seen from the BACK, outside)", ha="center", fontsize=8.5, weight="bold")
         ax.text(105 + 4, 297 - 15.5, "the end with the 2 screw holes is at the TOP of this page. Only the speaker grille to drill.", ha="center", fontsize=6.5)
         scale_bars(ax)
-        fig.savefig(path.replace(".pdf", "_lid.png"), dpi=110); pdf.savefig(fig); plt.close(fig)
+        scale == 1.0 and fig.savefig(path.replace(".pdf", "_lid.png"), dpi=110); pdf.savefig(fig); plt.close(fig)
 
 def drill_list(path):
     L = ["SomudTick grey box, Game Boy layout (layout 5) - every hole in mm.",
@@ -440,6 +445,8 @@ def asm_json(path):
 if __name__ == "__main__":
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out_box5"); os.makedirs(out, exist_ok=True)
     ok = check()
-    template(os.path.join(out, "drill_template.pdf")); drill_list(os.path.join(out, "drill_list.txt"))
+    template(os.path.join(out, "drill_template.pdf"))
+    template(os.path.join(out, "drill_template_fix94.pdf"), scale=297.0 / 279.4)   # A4 page shrunk onto Letter (or "fit to page"): 94.1 %
+    drill_list(os.path.join(out, "drill_list.txt"))
     layout(os.path.join(out, "inside_layout.png")); asm_json(os.path.join(out, "box_asm.json"))
     print("written to", out, "" if ok else "  (SOMETHING DOES NOT FIT)")
