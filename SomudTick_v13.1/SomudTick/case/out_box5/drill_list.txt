@@ -1,0 +1,26 @@
+SomudTick grey box, Game Boy layout (layout 5) - every hole in mm.
+Face: x from the LEFT edge, y from the TOP edge (looking at the face; the 2 short posts are at the BOTTOM).
+
+  face  big screen window    centre x   50.1  y   37.0   final 60.05 x 45.8, first 58.05 x 43.8
+  face  joystick             centre x   22.0  y   94.4   final diameter 28.0, first 24.0
+  face  button A             centre x   68.5  y   81.9   final diameter 13.0, first 12.0
+  face  button B             centre x   80.6  y   93.4   final diameter 13.0, first 12.0
+  face  button C             centre x   68.5  y  105.5   final diameter 13.0, first 12.0
+  face  button D             centre x   56.6  y   93.4   final diameter 13.0, first 12.0
+  face  button E             centre x   51.0  y  105.1   final diameter 4.5, first 4.0
+  face  button F             centre x   38.0  y  105.1   final diameter 4.5, first 4.0
+  face  M3 screen            centre x    8.0  y   16.0   final diameter 3.2, first 2.5
+  face  M3 screen            centre x    8.0  y   58.0   final diameter 3.2, first 2.5
+  face  M3 screen            centre x   86.0  y   16.0   final diameter 3.2, first 2.5
+  face  M3 screen            centre x   86.0  y   58.0   final diameter 3.2, first 2.5
+  face  M3 buttons           centre x    7.7  y   66.0   final diameter 3.2, first 2.5
+  face  M3 buttons           centre x   86.3  y   81.0   final diameter 3.2, first 2.5
+  face  speaker grille        30 holes 2.5: 6 slanted rows of 5 (see the template), centre x 47.0 y 153.2
+
+  left   wall USB-C              y   37.0  from face   9.4   12.5 x 7.5
+  top    wall IR LED (round 5.4) x   60.0  from face  10.5   5.4 x 5.4
+  top    wall IR receiver        x   78.5  from face  10.5   7.0 x 7.5
+  bottom wall rocker switch      x    9.2  from face   9.0   12.5 x 9.0
+
+  BACK HALF, looking at the BACK: x from the LEFT edge as you see it from behind, y from the top (the screw holes are at the bottom)
+  back  small screen window  centre x   47.0  y  139.0   final 31.0 x 16.5, first 29.0 x 14.5
